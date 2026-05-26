@@ -1,0 +1,32 @@
+# [CLAUDE.md §9] Vector DB: pgVector (PostgreSQL 확장) — Milvus 서비스 제거
+services:
+  dev2:
+    build: .
+    ports: ["8002:8002"]
+    env_file: .env
+    depends_on: [postgres]   # ← milvus 의존성 제거
+
+  postgres:
+    image: pgvector/pgvector:pg16    # ← pgvector 내장 이미지 (pgVector HNSW 인덱스)
+    environment:
+      POSTGRES_DB: dev2_db
+      POSTGRES_USER: user
+      POSTGRES_PASSWORD: password
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./migrations:/docker-entrypoint-initdb.d  # 시작 시 마이그레이션 자동 실행
+    ports: ["5432:5432"]
+    command: >
+      postgres -c shared_preload_libraries=vector
+               -c statement_timeout=30s
+               -c idle_in_transaction_session_timeout=30s
+
+  airflow:
+    image: apache/airflow:2.9.0
+    ports: ["8080:8080"]
+    volumes: [./dags:/opt/airflow/dags]
+    command: standalone
+    depends_on: [postgres]
+
+volumes:
+  postgres_data:
