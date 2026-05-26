@@ -47,6 +47,9 @@ VALID_SEVERITIES = frozenset({"Critical", "Major", "Minor"})
 # 이슈당 LLM 호출 타임아웃 (CLAUDE.md §6)
 LLM_TIMEOUT_SEC = 30.0
 
+# 모델별 ChatAnthropic 인스턴스 캐시 — 매 이슈마다 재생성 방지
+_llm_cache: dict[str, "ChatAnthropic"] = {}
+
 
 _MOCK_ISSUE_TYPE: dict[str, str] = {
     "Critical": "Vulnerability",
@@ -102,13 +105,16 @@ async def _call_llm_with_retry(
         {"severity": str, "suggestion": str, "rationale": str}
         파싱 2회 실패 시 {}
     """
-    llm = ChatAnthropic(
-        model=model_id,
-        temperature=0,              # severity 분류는 결정적(deterministic) 출력 필요
-        api_key=os.getenv("ANTHROPIC_API_KEY"),
-    )
+    if model_id not in _llm_cache:
+        _llm_cache[model_id] = ChatAnthropic(
+            model=model_id,
+            temperature=0,              # severity 분류는 결정적(deterministic) 출력 필요
+            api_key=os.getenv("ANTHROPIC_API_KEY"),
+        )
+    llm = _llm_cache[model_id]
 
     for attempt in range(max_retries + 1):
+        raw_text: str | None = None
         try:
             # ainvoke: LangChain 네이티브 비동기 — 이벤트 루프 블록 없음
             # LangSmith LANGCHAIN_TRACING_V2=true 시 자동으로 추적됨 (코드 변경 불필요)
@@ -132,7 +138,7 @@ async def _call_llm_with_retry(
             logger.warning(
                 "llm_judge: JSON 파싱 실패 (시도 %d/%d) — %s | 원문: %.100s",
                 attempt + 1, max_retries + 1, exc,
-                raw_text if "raw_text" in dir() else "(응답 없음)",
+                raw_text if raw_text is not None else "(응답 없음)",
             )
             if attempt < max_retries:
                 continue
