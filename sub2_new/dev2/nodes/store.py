@@ -168,9 +168,15 @@ def _load_bigquery(output: dict, payload: dict) -> None:
         logger.error("_load_bigquery: 적재 실패 — %s | 스킵하고 계속 진행", exc)
 
 
-async def _persist(output: dict, payload: dict, trace_id: str) -> None:
+async def _persist(
+    output: dict,
+    task_id: str,
+    pr_id: str,
+    developer_id: str,
+    trace_id: str,
+) -> None:
     """
-    PostgreSQL에 스캔 결과를 적재한다 (3-테이블 순차 INSERT).
+    Cloud SQL (PostgreSQL)에 스캔 결과를 적재한다 (3-테이블 순차 INSERT).
 
     순서:
         1. scan_executions INSERT → scan_id 획득
@@ -185,9 +191,11 @@ async def _persist(output: dict, payload: dict, trace_id: str) -> None:
         미설치 환경에서 _persist 미호출 시 오류가 없도록 내부에서 import한다.
 
     Args:
-        output:   AgentOutput dict
-        payload:  PR 메타데이터 (task_id, pr_id, developer)
-        trace_id: CLAUDE.md §3 형식 ("pr_{12hex}")
+        output:       AgentOutput dict
+        task_id:      PR 처리 단위 UUID (Dev2State.task_id)
+        pr_id:        GitHub PR 번호 (Dev2State.pr_id)
+        developer_id: 개발자 ID (Dev2State.developer_id)
+        trace_id:     CLAUDE.md §3 형식 ("pr_{12hex}")
     """
     # lazy import: asyncpg 미설치 환경에서 store.py 자체 import는 허용
     from dev2.db import insert_scan_execution, insert_scan_issues, insert_scan_summary  # noqa: PLC0415
@@ -196,7 +204,13 @@ async def _persist(output: dict, payload: dict, trace_id: str) -> None:
     execution_ms = output["execution_ms"]
 
     # ① scan_executions → scan_id
-    scan_id = await insert_scan_execution(payload, execution_ms, trace_id)
+    scan_id = await insert_scan_execution(
+        task_id=task_id,
+        pr_id=pr_id,
+        developer_id=developer_id,
+        execution_ms=execution_ms,
+        trace_id=trace_id,
+    )
     logger.debug("_persist: scan_id=%d (agent=%s, trace_id=%s)", scan_id, agent, trace_id)
 
     # ② scan_issues (이슈별 행 INSERT)
@@ -255,8 +269,10 @@ async def store_node(state: Dev2State) -> dict:
         {"final_output": [AgentOutput dict, ...]}
     """
     enriched: list[dict] = state.get("enriched", [])
-    payload: dict = state.get("payload", {})
-    task_id: str = payload.get("task_id", "unknown-task")
+    # Dev2State 필드를 직접 읽음 (scan.py의 _payload_to_state가 flat하게 저장)
+    task_id: str = state.get("task_id", "unknown-task")
+    pr_id: str = state.get("pr_id", "")
+    developer_id: str = state.get("developer_id", "")
     trace_id = _make_trace_id(task_id)
 
     if not enriched:
@@ -291,9 +307,9 @@ async def store_node(state: Dev2State) -> dict:
         # ① AgentOutput 빌드 (Pydantic 검증 — 내부 필드 제거)
         output = _build_output(issues, agent_name, task_id, exec_ms)
 
-        # ② PostgreSQL 적재 (실패 시 re-raise)
+        # ② Cloud SQL (PostgreSQL) 적재 (실패 시 re-raise)
         try:
-            await _persist(output, payload, trace_id)
+            await _persist(output, task_id, pr_id, developer_id, trace_id)
         except Exception as exc:
             logger.error(
                 "store_node: PostgreSQL 적재 실패 (agent=%s) — %s",

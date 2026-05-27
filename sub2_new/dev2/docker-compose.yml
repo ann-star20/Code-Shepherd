@@ -10,7 +10,7 @@ services:
     image: pgvector/pgvector:pg16    # ← pgvector 내장 이미지 (pgVector HNSW 인덱스)
     environment:
       POSTGRES_DB: dev2_db
-      POSTGRES_USER: user
+      POSTGRES_USER: dev2
       POSTGRES_PASSWORD: password
     volumes:
       - postgres_data:/var/lib/postgresql/data

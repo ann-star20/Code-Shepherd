@@ -4,6 +4,15 @@ from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession
 from sqlalchemy.orm import sessionmaker
 from sqlalchemy import text
 
+# Cloud SQL (PostgreSQL) 연결
+# 로컬 개발: Cloud SQL Auth Proxy 사용 (localhost:5432)
+# Cloud Run / GCE: unix socket 경로 사용
+#
+# 로컬 proxy 예시:
+#   DATABASE_URL=postgresql+asyncpg://user:password@localhost:5432/dev2_db
+#
+# Cloud Run 예시:
+#   DATABASE_URL=postgresql+asyncpg://user:password@/dev2_db?host=/cloudsql/project:region:instance
 DATABASE_URL = os.getenv(
     "DATABASE_URL",
     "postgresql+asyncpg://user:password@localhost:5432/dev2_db"
@@ -41,10 +50,19 @@ def AsyncSessionLocal():
     return _get_session_factory()()
 
 
-async def insert_scan_execution(payload: dict, execution_ms: int, trace_id: str) -> int:
+async def insert_scan_execution(
+    task_id: str,
+    pr_id: str,
+    developer_id: str,
+    execution_ms: int,
+    trace_id: str,
+) -> int:
     """
     scan_executions에 스캔 실행 기록을 INSERT한다.
     trace_id: CLAUDE.md §3 형식 ("pr_{12hex}" 또는 서브 에이전트 trace)
+
+    Cloud SQL (PostgreSQL) — asyncpg + SQLAlchemy async 사용.
+    연결: DATABASE_URL 환경변수 (로컬: proxy, Cloud Run: unix socket)
     """
     async with AsyncSessionLocal() as s:
         r = await s.execute(text("""
@@ -52,10 +70,10 @@ async def insert_scan_execution(payload: dict, execution_ms: int, trace_id: str)
             VALUES (:task_id, :trace_id, :pr_id, :developer_id, :execution_ms)
             RETURNING id
         """), {
-            "task_id": payload["task_id"],
-            "trace_id": trace_id,           # agent_traces 연결 키 (CLAUDE.md §3)
-            "pr_id": payload["pr_id"],
-            "developer_id": payload["developer"]["id"],
+            "task_id": task_id,
+            "trace_id": trace_id,
+            "pr_id": pr_id,
+            "developer_id": developer_id,
             "execution_ms": execution_ms,
         })
         await s.commit()
