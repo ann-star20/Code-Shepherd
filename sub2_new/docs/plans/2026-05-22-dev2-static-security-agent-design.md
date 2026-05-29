@@ -7,6 +7,21 @@
 
 ---
 
+## ⚠️ 팀 PRD M2 vs Dev2 실제 담당 범위
+
+팀 공통 PRD(prd.md)의 M2 명세에는 아래 기능이 기술되어 있으나, 팀 분업 구조(CLAUDE.md §4)상 **Dev2 담당이 아니다.**
+
+| 팀 PRD M2 명세 | 실제 담당 | 이유 |
+|---------------|----------|------|
+| GitHub PR 코멘트 등록 | **Dev4(M4)** | Dev4가 Dev2/3 결과를 취합해 GitHub PR에 코멘트 작성 |
+| Slack 즉시 알림 | **Dev4(M4)** | Dev4가 escalate 판정 시 Slack 발송. Dev2는 Dev4에 HTTP POST만 |
+| 관련 사내 문서 링크 제공 | **Dev4(M4)** | KMS 문서 링크는 Dev4가 PR 코멘트에 포함 |
+| 반복 실수 감지 + 코딩 가이드 업데이트 제안 | **Dev5** | `mistake_patterns` 테이블 분석은 Dev5 담당 |
+
+**Dev2의 실제 책임**: PR Diff 분석(정적/보안) → 이슈 추출 → severity 판단 → Output Contract JSON 생성 → Dev4에 전달. "리뷰 결과 생성"만 담당. "리뷰 결과 전달·표시"는 Dev4 담당.
+
+---
+
 ## 설계 방향 요약
 
 **하이브리드 에이전트** 구조:
@@ -760,7 +775,7 @@ CLUSTER BY developer_id, severity;
 
 ## 10. 입출력 계약
 
-### 입력: n8n → POST /scan
+### 입력: Dev1 Orchestrator → POST /scan
 
 ```json
 {
@@ -806,29 +821,27 @@ CLUSTER BY developer_id, severity;
 ## 11. Docker Compose
 
 ```yaml
+# [CLAUDE.md §9] Vector DB: pgVector (PostgreSQL 확장) — Milvus 제거
+# [CLAUDE.md §4] GitHub Webhook 수신: Dev1 Orchestrator 담당 — n8n 제거
 services:
   dev2:
     build: .
     ports:
       - "8002:8002"
     env_file: .env
-    depends_on: [postgres, milvus]
+    depends_on: [postgres]
 
   postgres:
-    image: postgres:16
+    image: pgvector/pgvector:pg16    # pgVector 내장 이미지
     environment:
       POSTGRES_DB: dev2_db
       POSTGRES_USER: user
       POSTGRES_PASSWORD: password
     volumes:
       - postgres_data:/var/lib/postgresql/data
-
-  milvus:
-    image: milvusdb/milvus:v2.4.0
+      - ./dev2/migrations:/docker-entrypoint-initdb.d
     ports:
-      - "19530:19530"
-    volumes:
-      - milvus_data:/var/lib/milvus
+      - "5432:5432"
 
   airflow:
     image: apache/airflow:2.9.0
@@ -837,18 +850,10 @@ services:
     volumes:
       - ./dags:/opt/airflow/dags
     command: standalone
-
-  n8n:
-    image: n8nio/n8n
-    ports:
-      - "5678:5678"
-    volumes:
-      - n8n_data:/home/node/.n8n
+    depends_on: [postgres]
 
 volumes:
   postgres_data:
-  milvus_data:
-  n8n_data:
 ```
 
 ---
@@ -992,7 +997,7 @@ def llm_judge_node(state):
 | Week 1 | schema + DB 스키마 + Docker 세팅 | docker-compose up 전체 실행 |
 | Week 2~3 | CLI 도구 (tools/) + LangGraph StateGraph + LLM 판단 노드 | 스캔 → LLM 판단 → DB 적재 E2E |
 | Week 4 | Milvus 유사 이슈 + BigQuery 적재 + FastAPI | /insights/* 응답 확인 |
-| Week 5 | Airflow DAG + n8n 워크플로우 | GitHub PR → n8n → Dev2 E2E |
+| Week 5 | Mock → Dev1 실제 연결 + Airflow DAG | GitHub PR → Dev1 → Dev2 E2E (USE_MOCK_LLM=false) |
 | Week 6 | 버그 수정 + 전체 데모 | 전체 데모 시나리오 동작 |
 
 ---
@@ -1002,4 +1007,4 @@ def llm_judge_node(state):
 | 직무 | 역량 |
 |------|------|
 | **데이터 엔지니어** | PostgreSQL→BigQuery ETL, Airflow DAG, 파티셔닝 쿼리 최적화, Docker 컨테이너화 |
-| **AX/DX** | LangGraph 에이전트 설계, LangChain 체인, OpenAI API 통합, Milvus 벡터 검색, n8n 워크플로우 자동화 |
+| **AX/DX** | LangGraph 에이전트 설계, LangChain 체인, Anthropic API (claude-sonnet-4-6), pgVector RAG, 다국어 정적분석/보안스캔 자동화 |
