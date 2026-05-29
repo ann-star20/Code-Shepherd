@@ -319,7 +319,7 @@ async def store_node(state: Dev2State) -> dict:
 
         # ③ BigQuery 적재 (실패 시 스킵)
         try:
-            _load_bigquery(output, payload)
+            _load_bigquery(output, {"task_id": task_id, "pr_id": pr_id, "developer": {"id": developer_id}})
         except Exception as exc:
             # _load_bigquery 내부에서 이미 처리하지만, 누출 예외도 여기서 흡수
             logger.error(

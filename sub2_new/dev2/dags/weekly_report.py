@@ -41,16 +41,17 @@ async def _fetch_false_positive_rates() -> list:
     rows = await conn.fetch(
         """
         SELECT
-            rule_id,
-            COUNT(*) FILTER (WHERE is_false_positive = true) AS fp_count,
-            COUNT(*)                                          AS total,
+            si.rule_id,
+            COUNT(*) FILTER (WHERE si.is_false_positive = true) AS fp_count,
+            COUNT(*)                                             AS total,
             ROUND(
-                COUNT(*) FILTER (WHERE is_false_positive = true) * 100.0
+                COUNT(*) FILTER (WHERE si.is_false_positive = true) * 100.0
                 / NULLIF(COUNT(*), 0), 1
             ) AS fp_rate
-        FROM scan_issues
-        WHERE created_at >= now() - interval '7 days'
-        GROUP BY rule_id
+        FROM scan_issues si
+        JOIN scan_executions se ON se.id = si.scan_id
+        WHERE se.scanned_at >= now() - interval '7 days'
+        GROUP BY si.rule_id
         ORDER BY fp_rate DESC NULLS LAST
         """
     )

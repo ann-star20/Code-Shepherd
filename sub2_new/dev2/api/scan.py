@@ -105,27 +105,19 @@ async def run_mock_bandit_scan():
 
     기존 POST /scan은 Dev1 입력 계약(TaskPayload)을 받는 정식 엔드포인트다.
     이 엔드포인트는 MVP 검증용으로:
-    1. mock_vulnerable 폴더 Bandit 스캔
-    2. bandit_result.json 생성
-    3. generate_bandit_sql.py 실행 → insert_bandit_result.sql 생성
-    4. Cloud SQL (db.py AsyncSessionLocal)로 저장
+    1. mock_vulnerable 폴더 Bandit 스캔 → bandit_result.json 생성
+    2. JSON 파싱 → db.py 함수로 Cloud SQL 저장 (generate_bandit_sql.py의 gset 우회)
 
     subprocess 호출은 asyncio.to_thread()로 오프로드해 이벤트 루프 블로킹 방지.
-    DB 저장은 docker exec 대신 db.py의 AsyncSessionLocal 사용 (Cloud SQL 호환).
     """
     import asyncio  # noqa: PLC0415
+    import json as _json  # noqa: PLC0415
 
-    from sqlalchemy import text  # noqa: PLC0415
-    from dev2.db import AsyncSessionLocal  # noqa: PLC0415
+    from dev2.db import insert_scan_execution, insert_scan_issues, insert_scan_summary  # noqa: PLC0415
 
-    # scan.py 위치: dev2/api/scan.py
-    # 프로젝트 루트: sub2_new/dev2
     project_root = Path(__file__).resolve().parents[1]
-
     target_dir = project_root / "mock_vulnerable"
-    bandit_result = project_root / "bandit_result.json"
-    sql_generator = project_root / "generate_bandit_sql.py"
-    sql_file = project_root / "insert_bandit_result.sql"
+    bandit_result_path = project_root / "bandit_result.json"
 
     if not target_dir.exists():
         return {
@@ -134,24 +126,17 @@ async def run_mock_bandit_scan():
             "message": f"스캔 대상 폴더가 없습니다: {target_dir}",
         }
 
-    if not sql_generator.exists():
-        return {
-            "status": "error",
-            "step": "check_sql_generator",
-            "message": f"SQL 생성 파일이 없습니다: {sql_generator}",
-        }
-
     # 1. Bandit 실행 — subprocess를 스레드풀로 오프로드 (이벤트 루프 블로킹 방지)
     bandit_process = await asyncio.to_thread(
         subprocess.run,
-        ["python", "-m", "bandit", "-r", str(target_dir), "-f", "json", "-o", str(bandit_result)],
+        ["python", "-m", "bandit", "-r", str(target_dir), "-f", "json", "-o", str(bandit_result_path)],
         capture_output=True,
         text=True,
         cwd=str(project_root),
     )
 
     # Bandit은 취약점 발견 시 returncode 1 반환 → json 생성 여부로 성공 판단
-    if not bandit_result.exists():
+    if not bandit_result_path.exists():
         return {
             "status": "error",
             "step": "bandit",
@@ -160,33 +145,37 @@ async def run_mock_bandit_scan():
             "stderr": bandit_process.stderr,
         }
 
-    # 2. SQL 생성 — 스레드풀 오프로드
-    sql_process = await asyncio.to_thread(
-        subprocess.run,
-        ["python", str(sql_generator)],
-        capture_output=True,
-        text=True,
-        cwd=str(project_root),
-    )
+    # 2. JSON 파싱
+    with bandit_result_path.open(encoding="utf-8") as f:
+        bandit_data = _json.load(f)
 
-    if sql_process.returncode != 0 or not sql_file.exists():
-        return {
-            "status": "error",
-            "step": "generate_sql",
-            "message": "insert_bandit_result.sql 생성 실패",
-            "returncode": sql_process.returncode,
-            "stderr": sql_process.stderr,
-        }
+    _SEV_MAP = {"HIGH": "Critical", "MEDIUM": "Major", "LOW": "Minor"}
+    issues = []
+    summary = {"critical": 0, "major": 0, "minor": 0}
+    for item in bandit_data.get("results", []):
+        sev = _SEV_MAP.get((item.get("issue_severity") or "").upper(), "Minor")
+        summary[sev.lower()] += 1
+        issues.append({
+            "severity": sev,
+            "rule_id": item.get("test_id", "UNKNOWN"),
+            "file": item.get("filename", ""),
+            "line": item.get("line_number", 0),
+            "message": item.get("issue_text", ""),
+            "suggestion": f"{item.get('test_name', '')} / {item.get('more_info', '')}".strip(" /"),
+            "similar_issues": [],
+        })
 
-    # 3. Cloud SQL에 저장 — db.py AsyncSessionLocal 사용 (docker exec 제거)
-    sql_text = sql_file.read_text(encoding="utf-8")
+    # 3. Cloud SQL 저장 — db.py 함수 사용 (\gset 우회)
     try:
-        async with AsyncSessionLocal() as s:
-            for statement in sql_text.split(";"):
-                stmt = statement.strip()
-                if stmt:
-                    await s.execute(text(stmt))
-            await s.commit()
+        scan_id = await insert_scan_execution(
+            task_id="mock-security-scan-task",
+            pr_id="local-pr-001",
+            developer_id="dev2",
+            execution_ms=0,
+            trace_id="local-trace-001",
+        )
+        await insert_scan_issues(scan_id, issues, agent="bandit")
+        await insert_scan_summary(scan_id, agent="bandit", summary=summary)
     except Exception as exc:
         logger.error("run_mock_bandit_scan: Cloud SQL 저장 실패 — %s", exc)
         return {
@@ -195,10 +184,13 @@ async def run_mock_bandit_scan():
             "message": f"Cloud SQL 저장 실패: {exc}",
         }
 
-    logger.info("run_mock_bandit_scan: 완료 (bandit_returncode=%d)", bandit_process.returncode)
+    logger.info("run_mock_bandit_scan: 완료 (issues=%d, bandit_returncode=%d)", len(issues), bandit_process.returncode)
     return {
         "status": "success",
         "message": "Mock Bandit scan result saved to Cloud SQL",
+        "scan_id": scan_id,
+        "issue_count": len(issues),
+        "summary": summary,
         "bandit_returncode": bandit_process.returncode,
     }
 

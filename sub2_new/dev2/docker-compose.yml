@@ -11,7 +11,7 @@ services:
     environment:
       POSTGRES_DB: dev2_db
       POSTGRES_USER: dev2
-      POSTGRES_PASSWORD: password
+      POSTGRES_PASSWORD: dev2
     volumes:
       - postgres_data:/var/lib/postgresql/data
       - ./migrations:/docker-entrypoint-initdb.d  # 시작 시 마이그레이션 자동 실행
