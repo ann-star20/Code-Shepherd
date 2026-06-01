@@ -26,8 +26,17 @@ Critical 이슈가 1건이라도 있으면 Dev4에 즉시 HTTP 알림. 알림 �
 **8. store (노드 5)**
 Pydantic으로 AgentOutput을 검증한 뒤 PostgreSQL(운영 조회용)과 BigQuery(분석용)에 저장한다. BigQuery 실패 시 로그만 남기고 스킵.
 
-**9. Dev4 Aggregator**
-Dev2와 Dev3 결과를 합쳐 3-Way 판정(lgtm / rework / escalate)을 내린다. GitHub에 코멘트를 달고, Critical이면 Slack에 에스컬레이션한다.
+**9. comment_generate (노드 6)**
+저장 완료 후 enriched 이슈 전체를 LLM에 전달해 개발자 수준(skill_level)에 맞는 마크다운 코멘트를 생성한다. Critical 이슈가 있으면 claude-sonnet-4-6, 그 외엔 claude-haiku-4-5를 사용한다. LLM 실패 시 fallback 코멘트로 계속 진행한다.
+
+**10. github_comment (노드 7)**
+comment_generate가 생성한 마크다운을 GitHub PR에 코멘트로 등록한다. GITHUB_TOKEN / GITHUB_REPO 미설정 시 스킵(개발 환경). 자동 머지는 하지 않는다.
+
+**11. slack_notify (노드 8, 조건부)**
+Critical 이슈가 1건이라도 있으면 SLACK_CHANNEL_SECURITY 채널에 시니어 개발자 즉시 알림을 보낸다. PR 코멘트 URL을 함께 첨부한다. 알림 실패해도 파이프라인은 종료된다.
+
+**12. Dev4 Aggregator**
+Dev2와 Dev3 결과를 합쳐 3-Way 판정(lgtm / rework / escalate)을 내린다.
 
 **10. Dev5 / 대시보드**
 판정 결과를 바탕으로 개발자 커리큘럼을 갱신하고 React 대시보드에 반영한다.

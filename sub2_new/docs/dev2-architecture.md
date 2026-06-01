@@ -24,17 +24,27 @@ PR diff를 받아 다국어 정적 분석과 보안 스캔을 수행하고, LLM(
 Dev1 Orchestrator
       │ POST /scan (TaskPayload)
       ▼
-┌─────────────────────────────────────────────┐
-│  Dev2 LangGraph StateGraph                  │
-│                                             │
-│  run_tools → vector_search → llm_judge      │
-│                                    │        │
-│                          Critical ≥ 1?      │
-│                          ├─ Yes → escalate  │
-│                          └─ No  ─┐          │
-│                                  ▼          │
-│                               store         │
-└─────────────────────────────────────────────┘
+┌─────────────────────────────────────────────────────────┐
+│  Dev2 LangGraph StateGraph                              │
+│                                                         │
+│  run_tools → vector_search → llm_judge                  │
+│                                    │                    │
+│                          Critical ≥ 1?                  │
+│                          ├─ Yes → escalate              │
+│                          └─ No  ─┐                      │
+│                                  ▼                      │
+│                               store                     │
+│                                  │                      │
+│                          comment_generate               │
+│                          (LLM 코멘트 정제)               │
+│                                  │                      │
+│                          github_comment                 │
+│                          (PR 코멘트 등록)                │
+│                                  │                      │
+│                          Critical ≥ 1?                  │
+│                          ├─ Yes → slack_notify → END    │
+│                          └─ No  → END                   │
+└─────────────────────────────────────────────────────────┘
       │ final_output (Output Contract §5-A)
       ▼
 Dev4 Aggregator (3-Way 판정: lgtm / rework / escalate)
@@ -81,6 +91,30 @@ Dev4 Aggregator (3-Way 판정: lgtm / rework / escalate)
 - BigQuery: analytics DW (실패 시 스킵)
 - `final_output` 반환 (Dev4로 전달되는 Output Contract)
 
+### 6. `comment_generate` — LLM 코멘트 정제
+
+- enriched 이슈 전체를 LLM에 전달해 마크다운 코멘트 생성
+- **모델 라우팅** (비용 최적화):
+  | 조건 | 모델 |
+  |---|---|
+  | Critical 이슈 있음 | claude-sonnet-4-6 |
+  | Critical 이슈 없음 | claude-haiku-4-5 |
+- `skill_level`에 맞춘 설명 톤 적용 (junior/mid/senior)
+- LLM 실패 시 fallback 코멘트로 계속 진행
+
+### 7. `github_comment` — GitHub PR 코멘트 등록
+
+- `comment_body` 마크다운을 GitHub PR에 코멘트로 등록
+- `GITHUB_TOKEN` / `GITHUB_REPO` 미설정 시 스킵 (개발 환경)
+- 자동 머지 없음 — 코멘트 등록만 수행 (CLAUDE.md §6)
+
+### 8. `slack_notify` (조건부) — 시니어 개발자 즉시 알림
+
+- Critical 이슈 ≥ 1건이면 실행
+- `SLACK_CHANNEL_SECURITY` 채널에 Slack Webhook 알림
+- PR 코멘트 URL 첨부
+- 알림 실패 시 로그만 남기고 파이프라인 종료
+
 ---
 
 ## 디렉토리 구조
@@ -98,11 +132,14 @@ dev2/
 │   └── issues.py         # PATCH /issues/{id}/dismiss
 │
 ├── nodes/
-│   ├── run_tools.py      # 노드 1: CLI 병렬 실행
-│   ├── vector_search.py  # 노드 2: pgVector RAG Retrieve
-│   ├── llm_judge.py      # 노드 3: LLM severity 재판단
-│   ├── escalate.py       # 노드 4: Critical 에스컬레이션 (조건부)
-│   └── store.py          # 노드 5: PostgreSQL + BigQuery 적재
+│   ├── run_tools.py         # 노드 1: CLI 병렬 실행
+│   ├── vector_search.py     # 노드 2: pgVector RAG Retrieve
+│   ├── llm_judge.py         # 노드 3: LLM severity 재판단
+│   ├── escalate.py          # 노드 4: Critical 에스컬레이션 (조건부)
+│   ├── store.py             # 노드 5: PostgreSQL + BigQuery 적재
+│   ├── comment_generate.py  # 노드 6: LLM 코멘트 정제
+│   ├── github_comment.py    # 노드 7: GitHub PR 코멘트 등록
+│   └── slack_notify.py      # 노드 8: Critical → Slack 알림 (조건부)
 │
 ├── tools/
 │   ├── router.py         # 확장자 → 언어 + 도구 라우팅
@@ -114,7 +151,8 @@ dev2/
 │   └── common/           # Semgrep, pip-audit
 │
 ├── prompts/
-│   └── severity_judge.py # LLM 프롬프트 생성 (단일 책임)
+│   ├── severity_judge.py    # LLM severity 재판단 프롬프트
+│   └── comment_builder.py   # LLM PR 코멘트 생성 프롬프트
 │
 ├── dags/
 │   ├── daily_etl.py      # Airflow DAG: 매일 스캔 결과 ETL
@@ -245,6 +283,14 @@ LANGCHAIN_PROJECT=dev2-{github_id}
 
 # Dev4 알림
 DEV4_WEBHOOK_URL=http://dev4-service:8004/escalate
+
+# GitHub PR 코멘트
+GITHUB_TOKEN=ghp_xxxx
+GITHUB_REPO=owner/repo          # "owner/repo" 형식
+
+# Slack 알림
+SLACK_WEBHOOK_URL=https://hooks.slack.com/services/xxx
+SLACK_CHANNEL_SECURITY=#team-security
 
 # BigQuery (선택)
 GOOGLE_APPLICATION_CREDENTIALS=/path/to/key.json
