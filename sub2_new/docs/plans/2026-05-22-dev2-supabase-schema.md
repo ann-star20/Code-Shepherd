@@ -75,7 +75,7 @@ CREATE TABLE scan_executions (
 CREATE TABLE scan_issues (
     id                   bigint   GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
     scan_id              bigint   NOT NULL REFERENCES scan_executions(id) ON DELETE CASCADE,
-    agent                text     NOT NULL,   -- 'static_analysis' | 'security_scan'
+    agent                text     NOT NULL,   -- 'static_analysis' | 'security  _scan'
     severity             text     NOT NULL,   -- 'Critical' | 'Major' | 'Minor'
     rule_id              text     NOT NULL,
     file                 text,
