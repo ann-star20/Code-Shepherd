@@ -659,7 +659,7 @@ fix/dev1-kms-empty-result               # 버그 수정
 ### PR 머지 규칙
 
 ```
-main ← feature/* (PR 통해서만)
+dev ← feature/* (PR 통해서만)
 
 PR 요건:
   □ 단위 테스트 통과 (Mock 기반, DB 없이)
@@ -668,7 +668,7 @@ PR 요건:
   □ 최소 1명 코드 리뷰 후 머지
 
 금지:
-  ✗ main 직접 push
+  ✗ dev 직접 push
   ✗ 다른 DEV 담당 파일 임의 수정
   ✗ --force push
 ```
@@ -676,11 +676,11 @@ PR 요건:
 ### 통합 주간 (Week 5) 브랜치 전략
 
 ```
-main
+dev
   └── integration/week5          # Week 5 통합 브랜치
         ├── feature/dev1-real-connect
         ├── feature/dev2-real-connect
         └── feature/dev3-real-connect
 ```
 
-Week 5에는 `integration/week5`에서 Mock → 실제 연결 작업 후 E2E 확인, 통과 시 main 머지.
+Week 5에는 `integration/week5`에서 Mock → 실제 연결 작업 후 E2E 확인, 통과 시 dev 머지.

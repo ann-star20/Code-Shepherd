@@ -6,14 +6,18 @@ graph.py — Dev2 LangGraph StateGraph 조립
 
 파이프라인 흐름:
     START
-     └─→ run_tools      (ESLint/Pylint/Bandit/pip-audit 병렬 실행)
-     └─→ vector_search  (pgVector RAG Retrieve — 유사 이슈 검색)
-     └─→ llm_judge      (RAG Generate — claude-sonnet-4-6 severity 판단)
+     └─→ run_tools        (ESLint/Pylint/Bandit/pip-audit 병렬 실행)
+     └─→ vector_search    (pgVector RAG Retrieve — 유사 이슈 검색)
+     └─→ llm_judge        (RAG Generate — claude-sonnet-4-6 severity 판단)
      └─→ [조건부 분기]
-           ├─ Critical ≥ 1 → escalate (Dev4 즉시 알림)  → store
+           ├─ Critical ≥ 1 → escalate (Dev4 즉시 알림) → store
            └─ Critical = 0 → store (escalate 건너뜀)
-     └─→ store          (PostgreSQL + BigQuery 이중 적재)
-     └─→ END
+     └─→ store            (PostgreSQL + BigQuery 이중 적재)
+     └─→ comment_generate (LLM 코멘트 정제 — 사용자 수준 맞춤 설명)
+     └─→ github_comment   (GitHub PR 코멘트 등록 + 관련 사내 문서 링크)
+     └─→ [조건부 분기]
+           ├─ Critical ≥ 1 → slack_notify (시니어 개발자 즉시 알림) → END
+           └─ Critical = 0 → END
 
 Agentic Workflow 설계:
     _route_after_judge() — Critical 유무에 따른 동적 경로 결정.
@@ -45,9 +49,12 @@ import os
 
 from langgraph.graph import END, StateGraph
 
+from dev2.nodes.comment_generate import comment_generate_node
 from dev2.nodes.escalate import escalate_node
+from dev2.nodes.github_comment import github_comment_node
 from dev2.nodes.llm_judge import llm_judge_node
 from dev2.nodes.run_tools import run_tools_node
+from dev2.nodes.slack_notify import slack_notify_node
 from dev2.nodes.store import store_node
 from dev2.nodes.vector_search import vector_search_node
 from dev2.schema import Dev2State
@@ -109,6 +116,25 @@ def _route_after_judge(state: Dev2State) -> str:
     return "store"
 
 
+def _route_after_comment(state: Dev2State) -> str:
+    """
+    github_comment 이후 조건부 분기:
+        Critical 이슈 ≥ 1 → "slack_notify" (시니어 즉시 알림)
+        Critical 이슈 = 0 → END
+
+    CLAUDE.md §6: HITL — Critical 보안 이슈 ≥ 1건 → 즉시 Slack 에스컬레이션.
+    """
+    enriched: list[dict] = state.get("enriched", [])
+    has_critical = any(i.get("severity") == "Critical" for i in enriched)
+
+    if has_critical:
+        logger.info("_route_after_comment: Critical 감지 → slack_notify 경로 선택")
+        return "slack_notify"
+
+    logger.debug("_route_after_comment: Critical 없음 → END")
+    return "__end__"
+
+
 # ── 그래프 빌더 ───────────────────────────────────────────────────────────────
 
 def build_graph():
@@ -131,11 +157,14 @@ def build_graph():
     g = StateGraph(Dev2State)
 
     # ── 노드 등록 ──────────────────────────────────────────────────────────────
-    g.add_node("run_tools", run_tools_node)         # CLI 도구 실행 (Pylint/Bandit 등)
-    g.add_node("vector_search", vector_search_node) # RAG Retrieve (pgVector)
-    g.add_node("llm_judge", llm_judge_node)         # RAG Generate (claude-sonnet-4-6)
-    g.add_node("escalate", escalate_node)           # Agentic 분기 (Critical 에스컬레이션)
-    g.add_node("store", store_node)                 # OLTP+OLAP 이중 저장
+    g.add_node("run_tools", run_tools_node)             # CLI 도구 실행 (Pylint/Bandit 등)
+    g.add_node("vector_search", vector_search_node)     # RAG Retrieve (pgVector)
+    g.add_node("llm_judge", llm_judge_node)             # RAG Generate (claude-sonnet-4-6)
+    g.add_node("escalate", escalate_node)               # Agentic 분기 (Critical 에스컬레이션)
+    g.add_node("store", store_node)                     # OLTP+OLAP 이중 저장
+    g.add_node("comment_generate", comment_generate_node)  # LLM 코멘트 정제
+    g.add_node("github_comment", github_comment_node)   # GitHub PR 코멘트 등록
+    g.add_node("slack_notify", slack_notify_node)        # Critical → Slack 알림 (조건부)
 
     # ── 엣지 정의 ──────────────────────────────────────────────────────────────
     g.set_entry_point("run_tools")
@@ -151,8 +180,20 @@ def build_graph():
             "store": "store",        # Critical = 0 → 바로 store
         },
     )
-    g.add_edge("escalate", "store")  # escalate 이후 항상 store
-    g.add_edge("store", END)         # 저장 완료 → 파이프라인 종료
+    g.add_edge("escalate", "store")             # escalate 이후 항상 store
+    g.add_edge("store", "comment_generate")     # 저장 완료 → 코멘트 생성
+    g.add_edge("comment_generate", "github_comment")  # 코멘트 생성 → GitHub 등록
+
+    # 조건부 엣지: Critical 유무에 따라 Slack 알림 여부 결정
+    g.add_conditional_edges(
+        "github_comment",
+        _route_after_comment,
+        {
+            "slack_notify": "slack_notify",  # Critical ≥ 1 → Slack 알림
+            "__end__": END,                  # Critical = 0 → 종료
+        },
+    )
+    g.add_edge("slack_notify", END)  # Slack 알림 완료 → 종료
 
     compiled = g.compile()
     logger.debug("Dev2 StateGraph 컴파일 완료 (5 nodes, conditional escalation edge)")

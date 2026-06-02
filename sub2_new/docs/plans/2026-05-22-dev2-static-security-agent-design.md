@@ -7,18 +7,16 @@
 
 ---
 
-## ⚠️ 팀 PRD M2 vs Dev2 실제 담당 범위
+## 팀 PRD M2 vs Dev2 실제 담당 범위
 
-팀 공통 PRD(prd.md)의 M2 명세에는 아래 기능이 기술되어 있으나, 팀 분업 구조(CLAUDE.md §4)상 **Dev2 담당이 아니다.**
-
-| 팀 PRD M2 명세 | 실제 담당 | 이유 |
+| 팀 PRD M2 명세 | 실제 담당 | 비고 |
 |---------------|----------|------|
-| GitHub PR 코멘트 등록 | **Dev4(M4)** | Dev4가 Dev2/3 결과를 취합해 GitHub PR에 코멘트 작성 |
-| Slack 즉시 알림 | **Dev4(M4)** | Dev4가 escalate 판정 시 Slack 발송. Dev2는 Dev4에 HTTP POST만 |
-| 관련 사내 문서 링크 제공 | **Dev4(M4)** | KMS 문서 링크는 Dev4가 PR 코멘트에 포함 |
+| GitHub PR 코멘트 등록 | **Dev2 + Dev3** | 각자 분석 결과로 직접 GitHub PR 코멘트 작성 |
+| Slack 즉시 알림 | **Dev2 + Dev3** | Critical 이슈 발생 시 각자 Slack 시니어 알림 |
+| 관련 사내 문서 링크 제공 | **Dev4(M4)** | KMS 링크는 Dev4가 3-Way 판정 후 포함 |
 | 반복 실수 감지 + 코딩 가이드 업데이트 제안 | **Dev5** | `mistake_patterns` 테이블 분석은 Dev5 담당 |
 
-**Dev2의 실제 책임**: PR Diff 분석(정적/보안) → 이슈 추출 → severity 판단 → Output Contract JSON 생성 → Dev4에 전달. "리뷰 결과 생성"만 담당. "리뷰 결과 전달·표시"는 Dev4 담당.
+**Dev2의 실제 책임**: PR Diff 분석(정적/보안) → 이슈 추출 → severity 판단 → LLM 코멘트 정제 → GitHub PR 코멘트 등록 → Critical 시 Slack 알림 → Output Contract JSON을 Dev4에 전달.
 
 ---
 
