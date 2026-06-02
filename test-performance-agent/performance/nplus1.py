@@ -54,6 +54,8 @@ def _detect_in_source(source: str, rel_path: str) -> list[Issue]:
                             suggestion=(
                                 "joinedload()/selectinload() 등으로 루프 밖에서 조회하세요."
                             ),
+                            keyword="N+1 쿼리",
+                            sub_keyword=f"{rel_path}:{child.lineno}",
                         )
                     )
     return issues

@@ -74,6 +74,8 @@ def _detect_in_source(source: str, rel_path: str) -> list[Issue]:
                     ),
                     rule_id="PERF-001",
                     suggestion="루프를 평탄화하거나 적절한 자료구조로 복잡도를 낮추세요.",
+                    keyword="시간복잡도",
+                    sub_keyword=f"O(n^{depth})",
                 )
             )
         elif depth >= COMPLEXITY_MINOR_DEPTH:
@@ -88,6 +90,8 @@ def _detect_in_source(source: str, rel_path: str) -> list[Issue]:
                     ),
                     rule_id="PERF-001",
                     suggestion="루프를 평탄화하거나 적절한 자료구조로 복잡도를 낮추세요.",
+                    keyword="시간복잡도",
+                    sub_keyword=f"O(n^{depth})",
                 )
             )
     return issues

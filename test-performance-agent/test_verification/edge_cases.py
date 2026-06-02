@@ -142,6 +142,8 @@ def _detect_in_source(source: str, rel_path: str) -> list[Issue]:
                         ),
                         rule_id="TEST-003",
                         suggestion="누락된 엣지케이스에 대한 단위 테스트를 추가하세요.",
+                        keyword="엣지케이스 누락",
+                        sub_keyword=node.name,
                     )
                 )
         else:
@@ -159,6 +161,8 @@ def _detect_in_source(source: str, rel_path: str) -> list[Issue]:
                         ),
                         rule_id="TEST-003",
                         suggestion="누락된 엣지케이스에 대한 단위 테스트를 추가하세요.",
+                        keyword="엣지케이스 누락",
+                        sub_keyword=node.name,
                     )
                 )
 

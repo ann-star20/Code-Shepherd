@@ -66,6 +66,8 @@ def detect(repo_path: str, changed: dict[str, set[int]]) -> list[Issue]:
                         message=f"함수 '{node.name}'에 대한 테스트 실행 흔적이 없습니다.",
                         rule_id="TEST-004",
                         suggestion=f"{node.name}()에 대한 단위 테스트를 추가하세요.",
+                        keyword="테스트 누락",
+                        sub_keyword=node.name,
                     )
                 )
 

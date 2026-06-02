@@ -35,7 +35,10 @@ CREATE TABLE IF NOT EXISTS scan_issues (
     file       TEXT,
     line       INTEGER,
     message    TEXT,
-    suggestion TEXT
+    suggestion TEXT,
+    keyword      TEXT,
+    sub_keyword  TEXT,
+    metric_value TEXT
 );
 CREATE TABLE IF NOT EXISTS scan_summaries (
     id       INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -70,10 +73,11 @@ def persist(scan_id: int, outputs, inp=None) -> None:
         for i in out.issues:
             conn.execute(
                 """INSERT INTO scan_issues
-                   (scan_id,agent,severity,rule_id,file,line,message,suggestion)
-                   VALUES(?,?,?,?,?,?,?,?)""",
+                   (scan_id,agent,severity,rule_id,file,line,message,suggestion,
+                    keyword,sub_keyword,metric_value)
+                   VALUES(?,?,?,?,?,?,?,?,?,?,?)""",
                 (scan_id, out.agent, i.severity, i.rule_id, i.file, i.line,
-                 i.message, i.suggestion),
+                 i.message, i.suggestion, i.keyword, i.sub_keyword, i.metric_value),
             )
         s = out.summary
         conn.execute(

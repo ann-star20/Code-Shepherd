@@ -173,6 +173,8 @@ def _detect_in_source(source: str, rel_path: str) -> list[Issue]:
                     message=f"메모리 누수 가능: {desc}",
                     rule_id="PERF-003",
                     suggestion="리소스를 명시적으로 닫거나 with 문을 사용하세요.",
+                    keyword="메모리 누수",
+                    sub_keyword=f"{rel_path}:{lineno}",
                 )
             )
         else:
@@ -184,6 +186,8 @@ def _detect_in_source(source: str, rel_path: str) -> list[Issue]:
                     message=f"[heuristic] 메모리 누수 가능: {desc}",
                     rule_id="PERF-003",
                     suggestion="리소스를 명시적으로 닫거나 with 문을 사용하세요.",
+                    keyword="메모리 누수",
+                    sub_keyword=f"{rel_path}:{lineno}",
                 )
             )
 

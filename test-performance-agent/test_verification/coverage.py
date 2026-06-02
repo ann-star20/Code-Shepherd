@@ -50,6 +50,9 @@ def measure(repo_path: str) -> tuple[list[Issue], Optional[dict]]:
                 ),
                 rule_id="TEST-001",
                 suggestion="테스트를 추가해 커버리지를 80% 이상으로 올리세요.",
+                keyword="커버리지 미충족",
+                sub_keyword="(전체)",
+                metric_value=f"{line_pct * 100:.1f}%",
             )
         )
 

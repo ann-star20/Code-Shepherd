@@ -12,6 +12,7 @@ from __future__ import annotations
 import os
 import subprocess
 import tempfile
+import time
 import urllib.request
 
 from registry import PRContext, registered_agents
@@ -92,8 +93,10 @@ def process_pr(ctx: PRContext, *, do_comment: bool = True) -> dict:
     if not ctx.pr_diff:
         ctx.pr_diff = fetch_pr_diff(ctx)
 
-    # 2. 등록된 에이전트 전부 호출
+    # 2. 등록된 에이전트 전부 호출 (분석 소요시간 측정)
+    t0 = time.perf_counter()
     results = run_all_agents(ctx)
+    execution_ms = int((time.perf_counter() - t0) * 1000)
     all_issues = [i for issues in results.values() for i in issues]
 
     out: dict = {
@@ -104,7 +107,7 @@ def process_pr(ctx: PRContext, *, do_comment: bool = True) -> dict:
 
     # 3. DB 적재 (Dev4가 scan_id로 읽어감) — scan_executions + scan_issues + scan_summaries
     try:
-        scan_id = _persist_to_db(ctx, results, all_issues)
+        scan_id = _persist_to_db(ctx, results, all_issues, execution_ms)
         out["scan_id"] = scan_id
         print(f"  [DB] scan_id={scan_id} 적재 완료 (Dev4가 읽을 수 있음)")
     except Exception as e:  # noqa: BLE001
@@ -136,25 +139,29 @@ def _pg_url() -> str:
     raise RuntimeError("POSTGRES_URL 없음")
 
 
-def _persist_to_db(ctx: PRContext, results: dict, all_issues: list[dict]) -> int:
+def _persist_to_db(ctx: PRContext, results: dict, all_issues: list[dict],
+                   execution_ms: int = 0, conn=None) -> int:
     """공유 DB에 적재. scan_executions 1행 생성 → scan_issues INSERT + scan_summaries UPSERT.
 
     user_id는 users 테이블에서 임의 1명을 서브쿼리로 자동 선택 (PII를 코드/로그에 노출 안 함).
+    execution_ms = 분석 전체 소요시간(ms). conn 주입 시 커밋·close는 호출자가 제어(테스트 격리).
     """
-    import json as _json
-    import psycopg2
-    from psycopg2.extras import Json
+    own = conn is None
+    if own:
+        import json as _json
+        import psycopg2
+        from psycopg2.extras import Json
 
-    conn = psycopg2.connect(_pg_url(), connect_timeout=10)
+        conn = psycopg2.connect(_pg_url(), connect_timeout=10)
     try:
         with conn.cursor() as cur:
             # (scan_summaries 테이블은 팀이 이미 생성함 — CREATE 안 함, INSERT만)
             # scan_executions 1행 (user_id는 데모 user 1명 자동 선택)
             cur.execute("""
-                INSERT INTO scan_executions (task_id, pr_id, user_id)
-                SELECT %s, %s, user_id FROM users LIMIT 1
+                INSERT INTO scan_executions (task_id, pr_id, user_id, execution_ms)
+                SELECT %s, %s, user_id, %s FROM users LIMIT 1
                 RETURNING id
-            """, (f"gw-{ctx.pr_number}", str(ctx.pr_number)))
+            """, (f"gw-{ctx.pr_number}", str(ctx.pr_number), execution_ms))
             row = cur.fetchone()
             if not row:
                 raise RuntimeError("users 테이블이 비어 scan_executions 생성 불가")
@@ -188,10 +195,12 @@ def _persist_to_db(ctx: PRContext, results: dict, all_issues: list[dict]) -> int
                           critical=excluded.critical, major=excluded.major,
                           minor=excluded.minor, metrics=excluded.metrics
                     """, (scan_id, ag, c["critical"], c["major"], c["minor"], None))
-        conn.commit()
+        if own:
+            conn.commit()
         return scan_id
     finally:
-        conn.close()
+        if own:
+            conn.close()
 
 
 def _normalize_agent(name: str) -> str:

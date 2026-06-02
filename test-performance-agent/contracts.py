@@ -40,6 +40,9 @@ class Issue(BaseModel):
     message: str
     rule_id: str
     suggestion: str = ""
+    keyword: str = ""        # 대분류 (고정 한글 라벨, Dev4 GROUP BY 통계 키) — §3.5
+    sub_keyword: str = ""    # 세부 대상 (함수명·위치 등)
+    metric_value: str = ""   # 수치 (있을 때만, 없으면 빈 문자열)
 
 
 class SummaryCount(BaseModel):
