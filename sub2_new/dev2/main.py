@@ -29,6 +29,7 @@ import logging
 
 from fastapi import FastAPI
 
+from dev2.api.aggregate import router as aggregate_router
 from dev2.api.insights import router as insights_router
 from dev2.api.issues import router as issues_router
 from dev2.api.scan import router as scan_router
@@ -52,6 +53,7 @@ app = FastAPI(
 # ── 라우터 등록 ───────────────────────────────────────────────────────────────
 
 app.include_router(scan_router)        # POST /scan
+app.include_router(aggregate_router)   # POST /aggregate  (파이프라인 2: 취합→코멘트→알림)
 app.include_router(insights_router)    # GET  /insights/*  (prefix="/insights")
 app.include_router(issues_router)      # PATCH /issues/*   (prefix="/issues")
 

@@ -131,3 +131,43 @@ class AgentOutput(BaseModel):
     summary: Summary = Summary()
     execution_ms: int
     metadata: dict[str, Any] = {}   # action_decision 등 부가 정보
+
+
+# ── 파이프라인 2 (취합 → 코멘트 → 알림) 계약 (CLAUDE.md §11, PRD 노드 I~O) ──────
+class AggregatePayload(BaseModel):
+    """POST /aggregate 입력 계약 (M0 → Dev2)
+
+    M0(Orchestrator)가 M2+M3의 AgentOutput을 모아 전달한다.
+    all_results: AgentOutput dict 리스트 (static_analysis, security_scan, ...).
+    """
+    task_id: str
+    pr_id: str
+    developer: Developer
+    context: TaskContext = TaskContext()
+    all_results: list[dict] = []    # AgentOutput × N (M2×2 + M3×2)
+
+
+class AggregateState(TypedDict, total=False):
+    """파이프라인 2 내부 처리 State.
+
+    흐름: aggregate → comment_refine → github_comment → [Critical?] → slack_notify
+    Dev2State와 별개 — M2+M3 취합 결과를 받아 코멘트/알림까지 담당한다.
+    """
+    # ── 입력 (M0가 채움) ──────────────────────────────────────────────────────
+    task_id: str
+    pr_id: str
+    developer_id: str
+    skill_level: Literal["junior", "mid", "senior"]
+    tech_stack: list[str]
+    architecture_docs: list[str]
+    coding_conventions: str
+    previous_pr_issues: list[str]
+    all_results: list[dict]
+    # ── aggregate_node 출력 ──────────────────────────────────────────────────
+    aggregated_issues: list[dict]      # severity 정렬된 전체 이슈
+    total_summary: dict                # {"critical": n, "major": n, "minor": n}
+    # ── comment_refine_node 출력 ─────────────────────────────────────────────
+    comment_body: str                  # LLM이 생성한 PR 코멘트 마크다운
+    # ── github_comment_node 출력 ─────────────────────────────────────────────
+    github_comment_id: Optional[int]
+    github_comment_url: Optional[str]

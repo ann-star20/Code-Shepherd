@@ -107,13 +107,17 @@ async def slack_notify_node(state: Dev2State) -> dict:
     이 노드는 _route_after_comment 함수가 Critical ≥ 1일 때만 호출한다.
 
     Args:
-        state: Dev2State — enriched, pr_id, developer_id, github_comment_url 사용
+        state: Dev2State 또는 AggregateState — Critical 이슈 소스로
+               aggregated_issues(파이프라인 2)를 우선 사용하고,
+               없으면 enriched(파이프라인 1)로 폴백한다.
+               pr_id, developer_id, github_comment_url 사용
 
     Returns:
         {} — state 변경 없음
     """
-    enriched: list[dict] = state.get("enriched", [])
-    critical_issues = [i for i in enriched if i.get("severity") == "Critical"]
+    # 파이프라인 2(aggregate)는 aggregated_issues, 파이프라인 1(scan)은 enriched 사용
+    issues: list[dict] = state.get("aggregated_issues") or state.get("enriched", [])
+    critical_issues = [i for i in issues if i.get("severity") == "Critical"]
     pr_id: str = state.get("pr_id", "")
     developer_id: str = state.get("developer_id", "")
     github_comment_url: str | None = state.get("github_comment_url")
