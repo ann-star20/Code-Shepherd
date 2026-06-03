@@ -1,0 +1,30 @@
+{
+  "module": "M3",
+  "dataset": "m3_custom_performance_cases",
+  "cases": [
+    {
+      "case_id": "m3_custom_low_coverage_001",
+      "expected_issue_ids": ["TEST-001"]
+    },
+    {
+      "case_id": "m3_custom_missing_test_function_001",
+      "expected_issue_ids": ["TEST-004"]
+    },
+    {
+      "case_id": "m3_custom_n_plus_one_001",
+      "expected_issue_ids": ["PERF-002"]
+    },
+    {
+      "case_id": "m3_custom_complexity_001",
+      "expected_issue_ids": ["PERF-001"]
+    },
+    {
+      "case_id": "m3_custom_edge_case_missing_001",
+      "expected_issue_ids": ["TEST-003"]
+    },
+    {
+      "case_id": "m3_custom_memory_leak_001",
+      "expected_issue_ids": ["PERF-003"]
+    }
+  ]
+}

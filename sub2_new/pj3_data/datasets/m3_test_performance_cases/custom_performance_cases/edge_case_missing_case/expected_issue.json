@@ -1,0 +1,16 @@
+{
+  "case_id": "m3_custom_edge_case_missing_001",
+  "module": "M3",
+  "source": "Task-Link Custom",
+  "expected_issues": [
+    {
+      "id": "TEST-003",
+      "title": "Missing edge case tests",
+      "severity": "Minor",
+      "target_file": "app/payment_service.py",
+      "target_function": "calculate_payment_amount",
+      "evidence": "Tests cover only a normal case and omit zero, negative, None, and boundary values.",
+      "recommendation": "Add tests for price=0, quantity=0, negative values, None inputs, and discount boundaries."
+    }
+  ]
+}
