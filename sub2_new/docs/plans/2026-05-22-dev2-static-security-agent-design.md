@@ -7,16 +7,23 @@
 
 ---
 
-## 팀 PRD M2 vs Dev2 실제 담당 범위
+## Dev2 실제 담당 범위 (2026-06-03 확장)
 
-| 팀 PRD M2 명세 | 실제 담당 | 비고 |
-|---------------|----------|------|
-| GitHub PR 코멘트 등록 | **Dev2 + Dev3** | 각자 분석 결과로 직접 GitHub PR 코멘트 작성 |
-| Slack 즉시 알림 | **Dev2 + Dev3** | Critical 이슈 발생 시 각자 Slack 시니어 알림 |
-| 관련 사내 문서 링크 제공 | **Dev4(M4)** | KMS 링크는 Dev4가 3-Way 판정 후 포함 |
-| 반복 실수 감지 + 코딩 가이드 업데이트 제안 | **Dev5** | `mistake_patterns` 테이블 분석은 Dev5 담당 |
+팀 PRD G(M2 분석) 외에 **I → M → N → O**도 Dev2가 담당한다.
 
-**Dev2의 실제 책임**: PR Diff 분석(정적/보안) → 이슈 추출 → severity 판단 → LLM 코멘트 정제 → GitHub PR 코멘트 등록 → Critical 시 Slack 알림 → Output Contract JSON을 Dev4에 전달.
+| PRD 노드 | 담당 | Dev2 역할 |
+|---------|------|-----------|
+| G: PR Diff 분석 | **Dev2** | 파이프라인 1 — 정적분석·보안스캔 → AgentOutput |
+| I: 이슈 취합 | **Dev2** | 파이프라인 2 — M2 결과(static+security) 합산 → DB 저장 → M4 push |
+| M: LLM 코멘트 정제 | **Dev2** | 파이프라인 2 — 사용자 수준 맞춤 PR 코멘트 생성 |
+| N: GitHub PR 코멘트 | **Dev2** | 파이프라인 2 — PyGitHub로 PR에 코멘트 등록 |
+| O: Slack 알림 | **Dev2** | 파이프라인 2 — Critical ≥ 1 시 시니어 즉시 알림 |
+| 반복 실수 감지 + 코딩 가이드 제안 | **Dev5** | `mistake_patterns` 분석은 Dev5 담당 |
+| M4 학습 커리큘럼 생성 | **Dev5** | Dev2는 이슈 데이터 push만, 커리큘럼 생성은 Dev5 |
+
+**Dev2 두 개의 파이프라인**:
+- **파이프라인 1** (`POST /scan`): PR Diff → 분석 → AgentOutput 생성
+- **파이프라인 2** (`POST /aggregate`): M2 결과 취합 → LLM 코멘트 → GitHub PR → Slack → M4 push
 
 ---
 
@@ -41,76 +48,63 @@
 
 ## 1. 전체 아키텍처
 
+### 파이프라인 1 — 분석 (POST /scan)
+
 ```
-[GitHub PR 제출]
-        │ Webhook
-        ▼
-[Dev1 Orchestrator]  ← CLAUDE.md §4: Webhook 수신은 Dev1 담당
-  HMAC-SHA256 서명 검증 → 의도 분류 → Dev2/Dev3 병렬 라우팅
-  (run_parallel_agents() 호출 — CLAUDE.md §6)
+[Dev1 Orchestrator]
+  HMAC-SHA256 서명 검증 → Dev2/Dev3 병렬 라우팅
         │ PRReviewState (task_id, pr_id, pr_diff, developer_id, ...)
         ▼
-[Dev2 LangGraph StateGraph]
-  State: Dev2State (PRReviewState 확장 — CLAUDE.md §11)
-  { task_id, pr_id, pr_diff, skill_level, ...  ← Dev1이 채움
-    static_raw, security_raw, enriched, final_output  ← Dev2가 채움 }
+[Dev2 파이프라인 1 — LangGraph StateGraph]
 
-  ┌──────────────────────────────────────────────┐
-  │  Node: run_tools (asyncio.gather 병렬 실행)   │
-  │  ┌─────────────────────┬────────────────────┐ │
-  │  ▼                     ▼                    │ │
-  │ [StaticAnalysis Tools] [SecurityScan Tools] │ │
-  │  - Pylint (subprocess)  - Bandit (subprocess)│ │
-  │  - radon (subprocess)   - Semgrep (subprocess│ │
-  │  - CPD (subprocess)     - pip-audit (subproc)│ │
-  │  결과: raw_issues        결과: raw_issues     │ │
-  └──────────────────────────────────────────────┘
-        │ raw 결과 (CLI 출력)
+  run_tools        CLI 도구 병렬 실행 (Pylint/Bandit/Semgrep 등)
+      ↓
+  vector_search    pgVector 유사 이슈 코사인 검색 (RAG: Retrieve)
+      ↓
+  llm_judge        claude-sonnet-4-6 severity 재판단 (RAG: Generate)
+                   + concept_mapper: M4용 개념 매핑 자동 부여
+      ↓ (조건부)
+  escalate(선택)   Critical ≥ 1 시 → [파이프라인 2에서 처리]
+      ↓
+  store            PostgreSQL + BigQuery 이중 적재
+      ↓
+  final_output     AgentOutput × 2 (static_analysis, security_scan)
+                   각 이슈에 concept/mistake_type/learning_context 포함
+```
+
+### 파이프라인 2 — 취합·코멘트·알림 (POST /aggregate)
+
+```
+[Dev1 Orchestrator]
+  M2 + M3 분석 완료 → Dev2에 M2 결과만 전달
+        │ AggregatePayload (all_results: M2 결과 2개)
         ▼
-  ┌──────────────────────────────────────────────┐
-  │  Node: vector_search (pgVector) — RAG: Retrieve│
-  │  - 이슈 메시지 임베딩 → pgVector 코사인 검색  │
-  │    (CLAUDE.md §9: pgVector 팀 표준)           │
-  │  - retrieved_context → 다음 노드(llm_judge)에│
-  │    RAG 컨텍스트로 주입                       │
-  └──────────────────────────────────────────────┘
-        │ raw_issues + retrieved_context
-        ▼
-  ┌──────────────────────────────────────────────┐
-  │  Node: llm_judge (LangChain + claude-sonnet-4-6)│
-  │  — RAG: Augment + Generate (CLAUDE.md §9)    │
-  │  - Few-shot + CoT 프롬프트 + 유사 사례 주입  │
-  │  - 모델 라우팅: Critical/Major→claude-sonnet │
-  │  - Minor 이슈는 LLM 스킵 (비용 최소화)       │
-  │  - USE_MOCK_LLM=true: 개발 중 Mock 사용       │
-  └──────────────────────────────────────────────┘
-        │ enriched_issues
-        ▼ (조건부 엣지)
-  ┌──────────────┐     ┌──────────────────────────┐
-  │ Critical 있음│─Yes→│ Node: escalate            │
-  │              │     │ - Dev4에 즉시 알림        │
-  └──────────────┘     └──────────────────────────┘
-        │ No
-        ▼
-  ┌──────────────────────────────────────────────┐
-  │  Node: store (pipeline.py)                   │
-  │  - PostgreSQL 실시간 적재 (trace_id 포함)    │
-  │  - BigQuery 분석용 적재                      │
-  └──────────────────────────────────────────────┘
-        │
-  ┌─────┴──────┐
-  ▼            ▼
-[Dev4 전달]  [FastAPI Insights API]
-(Output       /insights/developer/{id}  ← PostgreSQL
-Contract A)   /insights/team            ← BigQuery
-              /insights/trends          ← BigQuery
+[Dev2 파이프라인 2 — aggregate_graph]
+
+  aggregate_node      M2 static+security 취합 → severity 정렬
+                      → pr_aggregated_results DB 저장
+                      → M4에 자동 push (POST /curriculum/trigger)
+      ↓
+  comment_refine      LLM으로 사용자 수준(junior/mid/senior) 맞춤 코멘트 생성
+                      + KMS 문서 링크 삽입
+      ↓ (조건부)
+  Critical ≥ 1 → slack_notify  → github_comment
+  Critical = 0 →                 github_comment
+      ↓
+  slack_notify        Slack 시니어 개발자 즉시 알림 (Critical 시)
+      ↓
+  github_comment      GitHub PR에 코멘트 등록 (PyGitHub)
+
+[M4 수신] ← Dev2가 aggregate 완료 후 자동 push (M4가 pull 요청 안 함)
+
+[FastAPI Insights API]
+  GET /insights/developer/{id}
+  GET /insights/team
+  GET /insights/trends
 
 [Apache Airflow]
-  - 일별 DAG: PostgreSQL → BigQuery ETL
-  - 주간 DAG: 인사이트 집계 리포트
-
-[Docker Compose]
-  dev2 + postgres(pgvector) + airflow  ← Milvus 없음 (CLAUDE.md §9)
+  일별 DAG: PostgreSQL → BigQuery ETL
+  주간 DAG: 오탐률 집계 + 룰셋 버전 체크
 ```
 
 ---
@@ -180,13 +174,27 @@ graph.add_edge("store", END)
 
 ## 3. 각 노드 역할
 
+### 파이프라인 1 노드
+
 | 노드 | 역할 | 기술 | AI Native 개념 |
 |------|------|------|----------------|
-| `run_tools` | 확장자 감지 → 언어별 도구 자동 선택 → asyncio.gather 병렬 실행 | Python, subprocess, asyncio | Agentic Workflow |
-| `vector_search` | 이슈 임베딩 → **pgVector 코사인 유사도** 검색 → retrieved_context 반환 | **pgVector**, asyncpg | **RAG: Retrieve** (CLAUDE.md §9) |
-| `llm_judge` | retrieved_context 주입 → severity 판단 + 개선 제안 | LangChain, **claude-sonnet-4-6** | **RAG: Augment+Generate**, 프롬프트 엔지니어링 (CLAUDE.md §9) |
-| `escalate` | Critical 이슈 발견 시 Dev4에 즉시 알림 (CLAUDE.md §6) | FastAPI, httpx | **Agentic Workflow (조건부 분기)** |
-| `store` | PostgreSQL 실시간 적재 (trace_id 포함) + BigQuery 분석용 적재 | PostgreSQL, BigQuery | AI Native (자동화) |
+| `tool_router_agent` | PR 맥락(diff/stack/이력) → 필요 도구 목록 결정 (tool_plan) | Python 규칙 기반 | Agentic Workflow (도구 선택) |
+| `run_tools` | tool_plan.selected_tools 기반 도구만 실행 (없으면 전체 fallback) | subprocess, asyncio | Agentic Workflow |
+| `vector_search` | 이슈 임베딩 → pgVector 코사인 유사도 검색 → retrieved_context | pgVector, asyncpg | RAG: Retrieve |
+| `llm_judge` | retrieved_context 주입 → severity 판단 + concept_mapper 호출 | LangChain, claude-sonnet-4-6 | RAG: Augment+Generate |
+| `concept_mapper` | rule_id/message 패턴 → concept/mistake_type/code_snippet 자동 부여 | Python 규칙 기반 | Ontology 매핑 (M4 연동) |
+| `action_decider_agent` | 이슈 목록 분석 → recommended_action 추천 (M2가 직접 실행 안 함) | Python 규칙 기반 | Agentic Workflow (액션 추천) |
+| `escalate` | early_escalation 시만 진입 → Dev4/Slack 알림 | httpx | Agentic Workflow (조건부) |
+| `store` | Pydantic 검증 + PostgreSQL + BigQuery 이중 적재 + action_decision 포함 | PostgreSQL, BigQuery | AI Native |
+
+### 파이프라인 2 노드
+
+| 노드 | 역할 | 기술 | AI Native 개념 |
+|------|------|------|----------------|
+| `aggregate_node` | M2 결과 취합 → severity 정렬 → DB 저장 → M4 push | PostgreSQL, httpx | Aggregator |
+| `comment_refine_node` | LLM으로 수준별 PR 코멘트 생성 + KMS 링크 삽입 | claude-sonnet-4-6 | RAG: Generate |
+| `slack_notify_node` | Critical ≥ 1 시 시니어 Slack 즉시 알림 | Slack Webhook, httpx | Agentic Workflow (조건부) |
+| `github_comment_node` | GitHub PR에 코멘트 등록 | PyGitHub | 외부 API 연동 |
 
 ---
 
@@ -194,55 +202,62 @@ graph.add_edge("store", END)
 
 ```
 dev2/
-├── graph.py                  # LangGraph StateGraph 정의
+├── graph.py                  # 파이프라인 1: 분석 LangGraph StateGraph
+├── aggregate_graph.py        # 파이프라인 2: 취합·코멘트·알림 StateGraph
+├── main.py                   # FastAPI 앱 (POST /scan, /aggregate, /insights/*)
+├── schema.py                 # Pydantic 모델 (Issue + LearningContext + AggregateState 등)
+├── db.py                     # PostgreSQL 연결 + insert_* 함수
 ├── nodes/
-│   ├── run_tools.py          # CLI 도구 병렬 실행 노드
-│   ├── vector_search.py      # RAG Retrieve: pgVector 유사 이슈 코사인 검색 노드
-│   ├── llm_judge.py          # RAG Generate: LangChain severity 판단 노드
-│   ├── escalate.py           # Agentic 분기: Critical 자동 에스컬레이션
-│   └── store.py              # DB 이중 적재 노드
+│   ├── tool_router_agent.py  # PR 맥락 기반 도구 선택 (tool_plan 생성)
+│   ├── run_tools.py          # tool_plan 기반 도구 병렬 실행 (없으면 전체 fallback)
+│   ├── vector_search.py      # RAG Retrieve: pgVector 유사 이슈 검색
+│   ├── llm_judge.py          # RAG Generate: severity 판단 + concept_mapper 호출
+│   ├── concept_mapper.py     # M4용 개념 매핑 (rule_id/message → concept/mistake_type)
+│   ├── action_decider_agent.py  # 분석 결과 기반 후속 액션 추천 (action_decision 생성)
+│   ├── escalate.py           # early_escalation 시만 진입하는 조건부 노드
+│   ├── store.py              # PostgreSQL + BigQuery 이중 적재 + action_decision 포함
+│   ├── aggregate.py          # 파이프라인 2: M2 결과 취합 + M4 push
+│   ├── comment_refine.py     # 파이프라인 2: LLM 수준별 코멘트 생성
+│   ├── github_comment.py     # 파이프라인 2: GitHub PR 코멘트 등록
+│   └── slack_notify.py       # 파이프라인 2: Critical Slack 알림
 ├── prompts/
-│   ├── severity_judge.py     # Few-shot + CoT 프롬프트 (프롬프트 엔지니어링)
-│   └── suggestion.py         # 수준별(junior/mid/senior) 제안 프롬프트
+│   ├── severity_judge.py     # Few-shot + CoT 프롬프트
+│   └── comment_refine.py     # 수준별(junior/mid/senior) PR 코멘트 프롬프트
 ├── tools/
-│   ├── router.py             # 확장자 감지 → 언어별 도구 선택 (핵심)
-│   ├── python/
-│   │   ├── pylint_tool.py    # Pylint 코드 품질
-│   │   ├── radon_tool.py     # radon 순환복잡도
-│   │   └── bandit_tool.py    # Bandit 보안 취약점
-│   ├── javascript/
-│   │   ├── eslint_tool.py    # ESLint 코드 품질 (.js/.ts/.jsx/.tsx)
-│   │   └── npm_audit_tool.py # npm audit CVE 스캔
-│   ├── csharp/
-│   │   └── roslyn_tool.py    # dotnet-format + Security Code Scan
-│   ├── html/
-│   │   └── htmlhint_tool.py  # HTMLHint 품질 + 인라인 스크립트 검사
-│   ├── css/
-│   │   └── stylelint_tool.py # Stylelint 품질
-│   └── common/
-│       ├── semgrep_tool.py   # Semgrep OWASP (전 언어 공통 보안)
-│       └── pipit_tool.py     # pip-audit / npm audit CVE (언어별 분기)
-├── pipeline.py               # PostgreSQL + BigQuery 이중 적재
-├── db.py                     # PostgreSQL 연결 + 쿼리
-├── vector_store/
-│   └── similarity.py         # pgVector 유사 이슈 코사인 검색 (asyncpg)
+│   ├── router.py             # 확장자 감지 → 언어별 도구 선택
+│   ├── python/               # pylint, bandit, radon
+│   ├── javascript/           # eslint, npm_audit
+│   ├── csharp/               # roslyn
+│   ├── html/                 # htmlhint
+│   ├── css/                  # stylelint
+│   └── common/               # semgrep, pipit
 ├── api/
-│   ├── scan.py               # POST /scan (Dev1 Orchestrator → Dev2 수신)
-│   └── insights.py           # FastAPI 인사이트 엔드포인트 3종
+│   ├── scan.py               # POST /scan, POST /scan/mock-bandit
+│   ├── aggregate.py          # POST /aggregate
+│   ├── insights.py           # GET /insights/*
+│   └── issues.py             # PATCH /issues/{id}/dismiss
+├── migrations/
+│   ├── 001_extensions.sql
+│   ├── 002_tables.sql
+│   ├── 003_indexes.sql
+│   └── 004_aggregate_table.sql
 ├── dags/
 │   ├── daily_etl.py          # Airflow 일별 PostgreSQL→BigQuery ETL
-│   └── weekly_report.py      # Airflow 주간 인사이트 집계
-├── schema.py                 # Pydantic 입출력 모델
+│   └── weekly_report.py      # Airflow 주간 오탐률 + 룰셋 버전 체크
+├── mock_vulnerable/
+│   └── auth.py               # 데모용 취약 코드 (SQL Injection)
 ├── Dockerfile
 ├── docker-compose.yml
 └── tests/
-    ├── test_tools.py         # CLI 도구 단위 테스트
-    ├── test_nodes.py         # LangGraph 노드 단위 테스트
-    ├── test_graph.py         # StateGraph E2E 테스트
-    ├── test_insights.py      # FastAPI 엔드포인트 테스트
+    ├── test_tools.py
+    ├── test_nodes.py
+    ├── test_graph.py
+    ├── test_insights.py
+    ├── test_concept_mapper.py  # M4 개념 매핑 30개 테스트 ✅
+    ├── test_aggregate.py       # 파이프라인 2 테스트
     └── eval/
-        ├── golden_dataset.py # LLM 평가용 골든 데이터셋 (정답 있는 이슈 10개)
-        └── test_severity_eval.py  # LangSmith evaluate() 정확도 측정
+        ├── golden_dataset.py
+        └── test_severity_eval.py
 ```
 
 ---
@@ -788,11 +803,13 @@ CLUSTER BY developer_id, severity;
 }
 ```
 
-### 출력: Dev2 → Dev4
+### 출력: Dev2 → M0 (AgentOutput × 2)
+
+M4 개념 매핑 필드 포함 (concept_mapper 자동 부여):
 
 ```json
 {
-  "agent": "static_analysis | security_scan",
+  "agent": "security_scan",
   "task_id": "uuid",
   "issues": [
     {
@@ -801,18 +818,29 @@ CLUSTER BY developer_id, severity;
       "line": 42,
       "file": "src/auth.py",
       "message": "SQL 인젝션 가능성",
-      "rule_id": "SEC-001",
-      "suggestion": "파라미터화된 쿼리 사용 권장 (예시 코드 포함)",
+      "rule_id": "B608",
+      "suggestion": "파라미터화된 쿼리 사용 권장",
       "resolution_example": "f-string SQL 조합 금지. asyncpg :param 사용",
-      "similar_issues": [
-        { "pr_id": "98", "date": "2026-04-10", "similarity": 0.94 }
-      ]
+      "similar_issues": [{ "pr_id": "98", "similarity": 0.94 }],
+      "concept": "SQL Injection",
+      "mistake_type": "raw_query",
+      "concept_id": "sql_injection",
+      "mistake_type_concept_id": "sql_injection.raw_query",
+      "confidence_score": 0.92,
+      "code_snippet": "query = \"SELECT * FROM users WHERE name = '\" + username + \"'\"",
+      "learning_context": {
+        "framework": "django",
+        "language": "python",
+        "domain_context": "ecommerce"
+      }
     }
   ],
   "summary": { "critical": 1, "major": 3, "minor": 7 },
   "execution_ms": 1200
 }
 ```
+
+> `concept == ""` → 매핑 미지원 이슈 (lint 등). M4에서 무시 처리 권장.
 
 ---
 

@@ -1,5 +1,5 @@
 from pydantic import BaseModel
-from typing import Literal, Optional, TypedDict
+from typing import Any, Literal, Optional, TypedDict
 
 # ── 팀 공통 State (CLAUDE.md §11) ──────────────────────────────────────────
 # 실제 통합 시: from common.state import PRReviewState
@@ -37,8 +37,10 @@ class Dev2State(PRReviewState, total=False):
     security_raw: list[dict]           # 보안 도구 원본 결과 (run_tools 노드 출력)
     enriched: list[dict]               # pgVector 유사 이슈 + LLM 판단 결과
     final_output: list[dict]           # Output Contract A 형식 최종 결과
-    comment_body: str                  # LLM이 생성한 PR 코멘트 마크다운 (comment_generate 출력)
-    github_comment_url: Optional[str]  # 등록된 GitHub 코멘트 URL (github_comment 출력)
+    tool_plan: Optional[dict]          # tool_router_agent 출력 (도구 선택 계획)
+    action_decision: Optional[dict]    # action_decider_agent 출력 (후속 액션 추천)
+    comment_body: str                  # LLM이 생성한 PR 코멘트 마크다운 (aggregate 파이프라인)
+    github_comment_url: Optional[str]  # 등록된 GitHub 코멘트 URL (aggregate 파이프라인)
 
 
 # ── Pydantic 모델 (Dev1 → Dev2 입력 계약 검증, CLAUDE.md §5-B) ─────────────
@@ -64,7 +66,15 @@ class TaskPayload(BaseModel):
     context: TaskContext = TaskContext()    # ← context 필드 추가 (팀 계약 준수)
 
 
+class LearningContext(BaseModel):
+    """M4 학습자료 생성용 컨텍스트 — 프레임워크/언어/도메인 정보"""
+    framework: str = "none"
+    language: str = "python"
+    domain_context: str = "ecommerce"
+
+
 class Issue(BaseModel):
+    # ── 기존 필드 (변경 없음) ────────────────────────────────────────────────────
     severity: Literal["Critical", "Major", "Minor"]
     issue_type: Literal["Bug", "Vulnerability", "Code Smell"] = "Bug"
     line: int
@@ -72,15 +82,45 @@ class Issue(BaseModel):
     message: str
     rule_id: str
     suggestion: str
-    resolution_example: str = ""    # 직관적인 숏코드 해결안 (예: "== None 말고 is None 써라")
+    resolution_example: str = ""
     status: Literal["Open", "Accepted", "False Positive"] = "Open"
     similar_issues: list[dict] = []
+    # ── M4 매핑 필드 (신규, 모두 optional) ──────────────────────────────────────
+    concept: str = ""                        # 상위 보안 개념명. 예: "SQL Injection"
+    mistake_type: str = ""                   # 하위 실수 유형. 예: "raw_query"
+    concept_id: str = ""                     # 그래프 DB Concept ID. 예: "sql_injection"
+    mistake_type_concept_id: str = ""        # 하위 ID. 예: "sql_injection.raw_query"
+    confidence_score: float = 0.0            # 분류 신뢰도 0.0~1.0
+    code_snippet: str = ""                   # 문제 코드 조각 (없으면 "snippet_unavailable")
+    learning_context: LearningContext = LearningContext()
+
+
+class ToolPlan(BaseModel):
+    """tool_router_agent 출력 — run_tools가 실행할 도구 목록"""
+    changed_files: list[str] = []
+    detected_languages: list[str] = []
+    risk_keywords: list[str] = []
+    dependency_changed: bool = False
+    selected_tools: list[str] = []
+    llm_required: bool = True
+    reason: list[str] = []
+
+
+class ActionDecision(BaseModel):
+    """action_decider_agent 출력 — M0/Dev4 참고용 후속 액션 추천"""
+    recommended_action: Literal[
+        "early_escalation", "request_rework", "needs_human_review", "store_only"
+    ]
+    reason: str
+    confidence: float
+    signals: dict[str, Any] = {}
 
 
 class Summary(BaseModel):
     critical: int = 0
     major: int = 0
     minor: int = 0
+    recommended_action: str = ""     # action_decider_agent 추천값 (M0/Dev4 참고용)
 
 
 class AgentOutput(BaseModel):
@@ -90,3 +130,44 @@ class AgentOutput(BaseModel):
     issues: list[Issue] = []
     summary: Summary = Summary()
     execution_ms: int
+    metadata: dict[str, Any] = {}   # action_decision 등 부가 정보
+
+
+# ── 파이프라인 2 (취합 → 코멘트 → 알림) 계약 (CLAUDE.md §11, PRD 노드 I~O) ──────
+class AggregatePayload(BaseModel):
+    """POST /aggregate 입력 계약 (M0 → Dev2)
+
+    M0(Orchestrator)가 M2+M3의 AgentOutput을 모아 전달한다.
+    all_results: AgentOutput dict 리스트 (static_analysis, security_scan, ...).
+    """
+    task_id: str
+    pr_id: str
+    developer: Developer
+    context: TaskContext = TaskContext()
+    all_results: list[dict] = []    # AgentOutput × N (M2×2 + M3×2)
+
+
+class AggregateState(TypedDict, total=False):
+    """파이프라인 2 내부 처리 State.
+
+    흐름: aggregate → comment_refine → github_comment → [Critical?] → slack_notify
+    Dev2State와 별개 — M2+M3 취합 결과를 받아 코멘트/알림까지 담당한다.
+    """
+    # ── 입력 (M0가 채움) ──────────────────────────────────────────────────────
+    task_id: str
+    pr_id: str
+    developer_id: str
+    skill_level: Literal["junior", "mid", "senior"]
+    tech_stack: list[str]
+    architecture_docs: list[str]
+    coding_conventions: str
+    previous_pr_issues: list[str]
+    all_results: list[dict]
+    # ── aggregate_node 출력 ──────────────────────────────────────────────────
+    aggregated_issues: list[dict]      # severity 정렬된 전체 이슈
+    total_summary: dict                # {"critical": n, "major": n, "minor": n}
+    # ── comment_refine_node 출력 ─────────────────────────────────────────────
+    comment_body: str                  # LLM이 생성한 PR 코멘트 마크다운
+    # ── github_comment_node 출력 ─────────────────────────────────────────────
+    github_comment_id: Optional[int]
+    github_comment_url: Optional[str]

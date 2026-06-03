@@ -1705,6 +1705,457 @@ git commit -m "feat: store 노드 — PostgreSQL + BigQuery 이중 적재"
 
 ---
 
+## Task 4-g: M4 개념 매핑 — concept_mapper + Issue 스키마 확장 ✅ 완료
+
+> **AI Native 개념**: Ontology 기반 이슈 구조화 — rule_id/message 패턴 → M4 학습 커리큘럼용 개념 매핑
+> **상태**: 구현 완료 + 테스트 30/30 PASS (2026-06-03)
+
+**목표**: M4 학습 커리큘럼 모듈이 학습자료를 생성할 수 있도록,
+각 이슈에 보안 개념(concept) / 실수 유형(mistake_type) / 코드 스니펫 / 학습 컨텍스트를 자동으로 부여.
+
+> ⚠️ **M2 역할 경계**
+> - M2가 하는 것: 이슈를 Concept/mistake_type으로 분류한 구조화 데이터 생성
+> - M2가 하지 않는 것: 학습자료 생성, GitHub 코멘트 생성 (M4 담당)
+
+**Files:**
+- Modify: `dev2/schema.py` — `LearningContext` 모델 추가, `Issue`에 M4 필드 7개 추가
+- Create: `dev2/nodes/concept_mapper.py` — 룰 기반 개념 매핑 + snippet 추출
+- Modify: `dev2/nodes/llm_judge.py` — `llm_judge_node` 끝에 매핑 호출 추가
+- Modify: `dev2/nodes/store.py` — `_ISSUE_FIELDS` 확장
+- Create: `dev2/tests/test_concept_mapper.py` — 테스트 30개
+
+---
+
+**Step 1: schema.py — LearningContext 추가 + Issue 필드 확장**
+
+```python
+# dev2/schema.py
+
+class LearningContext(BaseModel):
+    """M4 학습자료 생성용 컨텍스트 — 프레임워크/언어/도메인 정보"""
+    framework: str = "none"          # "django" | "fastapi" | "flask" | "none"
+    language: str = "python"         # "python" | "javascript" | "typescript" | ...
+    domain_context: str = "ecommerce"  # MVP 기본값
+
+class Issue(BaseModel):
+    # ── 기존 필드 (변경 없음) ──────────────────────────────────────────────────
+    severity: Literal["Critical", "Major", "Minor"]
+    issue_type: Literal["Bug", "Vulnerability", "Code Smell"] = "Bug"
+    line: int
+    file: str
+    message: str
+    rule_id: str
+    suggestion: str
+    resolution_example: str = ""
+    status: Literal["Open", "Accepted", "False Positive"] = "Open"
+    similar_issues: list[dict] = []
+    # ── M4 매핑 필드 (신규, 모두 optional) ────────────────────────────────────
+    concept: str = ""                        # "SQL Injection" | "XSS" | "CSRF" | "AUTH_VULNERABILITY"
+    mistake_type: str = ""                   # "raw_query" | "mark_safe_misuse" | ...
+    concept_id: str = ""                     # "sql_injection" | "xss" | ...
+    mistake_type_concept_id: str = ""        # "sql_injection.raw_query" | ...
+    confidence_score: float = 0.0            # 분류 신뢰도 0.0~1.0
+    code_snippet: str = ""                   # 문제 코드 조각 (없으면 "snippet_unavailable")
+    learning_context: LearningContext = LearningContext()
+```
+
+**하위 호환성**: 모든 신규 필드에 기본값이 있으므로 기존 코드 변경 불필요.
+
+---
+
+**Step 2: concept_mapper.py 구현**
+
+**매핑 우선순위**:
+```
+1. rule_id 직접 매핑  → confidence 높음 (0.85~0.95)
+2. message 패턴 매핑  → confidence 중간 (0.60~0.82)
+3. 미매핑              → concept="" confidence=0.0
+```
+
+**confidence 기준**:
+```
+>= 0.8 → mistake_type 명확 매핑 (mistake_type_concept_id 채워짐)
+<  0.8 → mistake_type = "general", mistake_type_concept_id = "{concept_id}.general"
+```
+
+**지원 rule_id 매핑**:
+
+| rule_id | concept | mistake_type | confidence |
+|---------|---------|--------------|------------|
+| B608 | SQL Injection | raw_query | 0.92 |
+| SEC-B608 | SQL Injection | raw_query | 0.92 |
+| B703 | XSS | mark_safe_misuse | 0.90 |
+| B308 | XSS | mark_safe_misuse | 0.88 |
+| B506 | CSRF | csrf_exempt_misuse | 0.88 |
+| B105 | AUTH_VULNERABILITY | hardcoded_credential | 0.95 |
+| B106 | AUTH_VULNERABILITY | hardcoded_credential | 0.95 |
+
+**message 패턴 매핑 (rule_id 미매핑 시)**:
+
+| 패턴 | concept | confidence |
+|------|---------|------------|
+| `sql inject`, `parameteriz`, `raw.query` | SQL Injection | 0.75 |
+| `mark_safe`, `innerHTML` | XSS | 0.78 |
+| `xss`, `cross.site.script` | XSS | 0.65 |
+| `csrf_exempt`, `csrf.token` | CSRF | 0.80 |
+| `login_required`, `is_authenticated` | AUTH_VULNERABILITY | 0.82 |
+| `hardcoded.password` | AUTH_VULNERABILITY | 0.85 |
+
+**code_snippet 추출 로직**:
+```
+pr_diff (unified diff) 파싱
+  → "+++ b/{file}" 로 파일 섹션 탐색
+  → "@@ -a,b +c,d @@" 로 현재 라인 번호 추적
+  → "+" 로 시작하는 추가 라인 중 target_line 번호 매칭
+  → 찾으면: 코드 문자열 반환 (앞 "+" 제거)
+  → 못 찾으면: "snippet_unavailable" (빈 문자열 아님)
+```
+
+**learning_context 추론 로직**:
+```
+파일 확장자 → language (.py→python, .js/.jsx→javascript, .ts/.tsx→typescript ...)
+tech_stack / 파일 경로 → framework (django > fastapi > flask > none)
+domain_context → "ecommerce" (MVP 고정값)
+```
+
+**핵심 함수 시그니처**:
+```python
+def enrich_with_concept_mapping(issue: dict, pr_diff: str, tech_stack: list[str]) -> dict:
+    """
+    단일 이슈 dict에 M4 매핑 필드를 추가하여 반환.
+    이미 concept이 채워져 있으면 덮어쓰지 않음 (LLM이 먼저 채운 경우 보존).
+    """
+
+def extract_snippet(pr_diff: str, target_file: str, target_line: int) -> str:
+    """unified diff → target 라인 코드 추출. 실패 시 "snippet_unavailable"."""
+
+def infer_learning_context(file: str, tech_stack: list[str]) -> LearningContext:
+    """파일 확장자 + tech_stack → LearningContext 추론."""
+```
+
+---
+
+**Step 3: llm_judge.py 수정 — 매핑 호출 추가**
+
+```python
+# llm_judge_node() 함수 끝, return 직전에 추가
+from dev2.nodes.concept_mapper import enrich_with_concept_mapping
+
+# severity 재판단 완료 후 M4 개념 매핑 적용
+pr_diff: str = state.get("pr_diff", "")
+judged = [
+    enrich_with_concept_mapping(j, pr_diff, tech_stack)
+    for j in judged
+]
+```
+
+**파이프라인 내 위치**:
+```
+run_tools → vector_search → llm_judge → [concept mapping] → escalate → store
+```
+
+---
+
+**Step 4: store.py 수정 — _ISSUE_FIELDS 확장**
+
+```python
+# 변경 전
+_ISSUE_FIELDS = frozenset({
+    "severity", "line", "file", "message", "rule_id", "suggestion", "similar_issues",
+})
+
+# 변경 후
+_ISSUE_FIELDS = frozenset({
+    # 기존 필드 (issue_type, resolution_example, status 누락 버그도 수정)
+    "severity", "issue_type", "line", "file", "message", "rule_id",
+    "suggestion", "resolution_example", "status", "similar_issues",
+    # M4 매핑 필드
+    "concept", "mistake_type", "concept_id", "mistake_type_concept_id",
+    "confidence_score", "code_snippet", "learning_context",
+})
+```
+
+> **부가 수정**: `issue_type`, `resolution_example`, `status`가 기존에도 `Issue` 모델에 있었지만
+> `_ISSUE_FIELDS` 누락으로 AgentOutput 출력에서 걸러지던 버그도 함께 수정.
+
+---
+
+**Step 5: 테스트 실행 확인**
+
+```bash
+pytest dev2/tests/test_concept_mapper.py -v
+```
+
+```
+30 passed in 0.11s
+
+TestLookupConcept         (7)  rule_id / message 패턴 매핑
+TestConfidenceThreshold   (2)  confidence 0.8 기준 분기
+TestExtractSnippet        (4)  snippet 추출 + "snippet_unavailable" fallback
+TestInferLearningContext  (6)  언어/프레임워크 추론
+TestEnrichWithConceptMapping (8)  통합 + 기존 필드 보존 확인
+TestAgentOutputPydantic   (3)  Pydantic 검증 통과
+```
+
+---
+
+**Step 6: 최종 출력 예시 (AgentOutput 내 issue 1개)**
+
+```json
+{
+  "severity": "Critical",
+  "issue_type": "Vulnerability",
+  "line": 42,
+  "file": "src/auth.py",
+  "message": "SQL 인젝션 가능성",
+  "rule_id": "B608",
+  "suggestion": "파라미터화된 쿼리 사용",
+  "resolution_example": "",
+  "similar_issues": [],
+  "concept": "SQL Injection",
+  "mistake_type": "raw_query",
+  "concept_id": "sql_injection",
+  "mistake_type_concept_id": "sql_injection.raw_query",
+  "confidence_score": 0.92,
+  "code_snippet": "query = \"SELECT * FROM users WHERE name = '\" + username + \"'\"",
+  "learning_context": {
+    "framework": "django",
+    "language": "python",
+    "domain_context": "ecommerce"
+  }
+}
+```
+
+**Step 7: 커밋**
+
+```bash
+git add dev2/schema.py dev2/nodes/concept_mapper.py dev2/nodes/llm_judge.py \
+        dev2/nodes/store.py dev2/tests/test_concept_mapper.py
+git commit -m "feat: M4 개념 매핑 — concept_mapper + Issue 스키마 확장 (30 tests PASS)"
+```
+
+---
+
+## Task 4-h: tool_router_agent + action_decider_agent — Agentic 노드 추가 ✅ 완료
+
+> **AI Native 개념**: Agentic Workflow — PR 맥락 기반 도구 선택 + 분석 결과 기반 액션 추천
+> **상태**: 구현 완료 + 테스트 47/47 PASS (2026-06-03)
+
+**목표**: 기존 5노드 파이프라인을 7노드로 확장.
+- `tool_router_agent`: 매번 모든 도구를 실행하지 않고 PR 맥락에 맞는 도구만 선택 (비용 절감)
+- `action_decider_agent`: LLM 없이 규칙 기반으로 후속 액션 추천 (M2는 추천만, 실행은 M0/Dev4)
+
+**Files:**
+- Create: `dev2/nodes/tool_router_agent.py`
+- Create: `dev2/nodes/action_decider_agent.py`
+- Modify: `dev2/schema.py` — ToolPlan, ActionDecision 모델 추가; Dev2State, Summary, AgentOutput 확장
+- Modify: `dev2/nodes/run_tools.py` — tool_plan.selected_tools 지원 (없으면 기존 동작 fallback)
+- Modify: `dev2/nodes/store.py` — action_decision → summary.recommended_action + metadata.action_decision 포함
+- Modify: `dev2/graph.py` — 7노드 구조, route_after_action_decider 라우터
+- Create: `dev2/tests/test_tool_router_agent.py` — 22개 테스트
+- Create: `dev2/tests/test_action_decider_agent.py` — 19개 테스트
+- Modify: `dev2/tests/test_graph.py` — 5개 테스트 (새 노드 구조 반영)
+
+---
+
+**Step 1: schema.py — ToolPlan, ActionDecision 모델 추가**
+
+```python
+class ToolPlan(BaseModel):
+    changed_files: list[str] = []
+    detected_languages: list[str] = []
+    risk_keywords: list[str] = []
+    dependency_changed: bool = False
+    selected_tools: list[str] = []   # ALLOWED_TOOLS 중 선택된 것만
+    llm_required: bool = True
+    reason: list[str] = []
+
+class ActionDecision(BaseModel):
+    recommended_action: Literal[
+        "early_escalation", "request_rework", "needs_human_review", "store_only"
+    ]
+    reason: str
+    confidence: float
+    signals: dict[str, Any] = {}
+
+# Summary에 recommended_action 추가 (기본값 "" — 기존 코드 변경 불필요)
+class Summary(BaseModel):
+    critical: int = 0
+    major: int = 0
+    minor: int = 0
+    recommended_action: str = ""   # action_decider_agent 추천값
+
+# AgentOutput에 metadata 추가 (기본값 {} — 기존 코드 변경 불필요)
+class AgentOutput(BaseModel):
+    ...
+    metadata: dict[str, Any] = {}  # action_decision 등 부가 정보
+
+# Dev2State에 신규 필드
+class Dev2State(PRReviewState, total=False):
+    ...
+    tool_plan: Optional[dict]        # tool_router_agent 출력
+    action_decision: Optional[dict]  # action_decider_agent 출력
+```
+
+---
+
+**Step 2: tool_router_agent.py — 규칙 기반 도구 선택**
+
+**선택 가능 도구 (ALLOWED_TOOLS):**
+```python
+{"pylint", "radon", "bandit", "semgrep", "eslint", "npm_audit",
+ "pip_audit", "roslyn", "htmlhint", "stylelint"}
+```
+
+**선택 규칙 요약:**
+
+| 조건 | 선택 도구 |
+|------|-----------|
+| `.py` 파일 변경 | pylint, radon |
+| `.py` + 보안 키워드 감지 | + bandit, semgrep |
+| `requirements.txt` / `pyproject.toml` | pip_audit |
+| `.js/.jsx/.ts/.tsx` 파일 | eslint |
+| JS/TS + 보안 키워드 | + semgrep |
+| `package.json` / `package-lock.json` | npm_audit |
+| `.cs` 파일 | roslyn, semgrep |
+| `.html/.htm` 파일 | htmlhint |
+| HTML + XSS 키워드 | + semgrep |
+| `.css/.scss` 파일 | stylelint |
+| 알 수 없는 확장자 + 보안 키워드 | semgrep |
+| previous_pr_issues에 보안 이력 | 보안 도구 강화 + llm_required=True |
+
+**핵심 함수:**
+```python
+def build_tool_plan(diff: str, tech_stack: list[str], previous_pr_issues: list[str]) -> ToolPlan:
+    # 1. _extract_all_files(diff): +++ b/ 라인 추출
+    # 2. _detect_risk_keywords(diff): + 라인 기준 보안 키워드 탐지
+    # 3. _has_security_pr_history(previous_pr_issues): 보안 이슈 이력 확인
+    # 4. 파일별 규칙 적용 → selected 집합 구성
+    # 5. ALLOWED_TOOLS 필터 적용
+    # 6. ToolPlan 반환
+```
+
+---
+
+**Step 3: action_decider_agent.py — 규칙 기반 액션 추천**
+
+**판단 우선순위:**
+
+```
+1. Critical ≥ 1           → "early_escalation"  (실제 escalate 노드 진입)
+2. Major ≥ 3              → "request_rework"     (store로 이동, M0/Dev4가 판단)
+3. 중요 파일 Major 이상    → "needs_human_review" (store로 이동)
+4. confidence < 0.6        → "needs_human_review" (store로 이동)
+5. 그 외                  → "store_only"
+```
+
+**중요 파일 키워드:** auth, login, password, token, session, permission, admin, payment, billing, order, checkout
+
+**주의**: `request_rework`, `needs_human_review`는 M2가 직접 실행하지 않음. store에 기록만 하고 M0/Dev4가 참고.
+
+---
+
+**Step 4: run_tools.py 수정 — tool_plan 지원**
+
+```python
+async def run_tools_node(state: Dev2State) -> dict:
+    tool_plan = state.get("tool_plan")
+
+    if tool_plan and tool_plan.get("selected_tools"):
+        # tool_plan 기반 실행 (선택된 도구만)
+        selected_tools = set(tool_plan["selected_tools"])
+        all_files = tool_plan.get("changed_files") or _extract_changed_files(diff)
+        ...
+    else:
+        # fallback: 기존 전체 도구 실행
+        ...
+
+    # _run_for_language(lang, files, selected_tools=None) 시그니처로 변경
+    # selected_tools=None이면 기존처럼 전체 도구 실행
+```
+
+---
+
+**Step 5: store.py 수정 — action_decision 포함**
+
+```python
+def _build_output(issues, agent, task_id, exec_ms, action_decision=None) -> dict:
+    ...
+    # Summary에 recommended_action 추가
+    summary = Summary(
+        ...,
+        recommended_action=action_decision.get("recommended_action", "") if action_decision else "",
+    )
+    # metadata에 action_decision 포함
+    metadata = {"action_decision": {...}} if action_decision else {}
+
+    return AgentOutput(..., summary=summary, metadata=metadata).model_dump()
+```
+
+---
+
+**Step 6: graph.py 수정 — 7노드 구조**
+
+```python
+# 새 구조
+g.add_node("tool_router_agent",    tool_router_agent_node)
+g.add_node("run_tools",            run_tools_node)
+g.add_node("vector_search",        vector_search_node)
+g.add_node("llm_judge",            llm_judge_node)
+g.add_node("action_decider_agent", action_decider_agent_node)
+g.add_node("escalate",             escalate_node)
+g.add_node("store",                store_node)
+
+g.set_entry_point("tool_router_agent")
+g.add_edge("tool_router_agent",    "run_tools")
+g.add_edge("run_tools",            "vector_search")
+g.add_edge("vector_search",        "llm_judge")
+g.add_edge("llm_judge",            "action_decider_agent")
+g.add_conditional_edges(
+    "action_decider_agent",
+    route_after_action_decider,   # early_escalation → escalate, 그 외 → store
+    {"escalate": "escalate", "store": "store"},
+)
+g.add_edge("escalate", "store")
+g.add_edge("store",    END)
+
+# backward compatibility alias
+_route_after_judge = route_after_action_decider
+```
+
+---
+
+**Step 7: 테스트 결과**
+
+```bash
+pytest dev2/tests/test_tool_router_agent.py \
+       dev2/tests/test_action_decider_agent.py \
+       dev2/tests/test_graph.py -v
+```
+```
+47 passed in 1.16s
+
+test_tool_router_agent.py   (22): 도구 선택 규칙, 보안 키워드, 의존성 파일, previous_pr_issues
+test_action_decider_agent.py (19): 4가지 판정 규칙, route 분기, signals 확인
+test_graph.py                (5):  7노드 순서, Critical escalate, store_only 흐름, output 포함
+```
+
+---
+
+**Step 8: 커밋**
+
+```bash
+git add dev2/schema.py dev2/graph.py \
+        dev2/nodes/tool_router_agent.py dev2/nodes/action_decider_agent.py \
+        dev2/nodes/run_tools.py dev2/nodes/store.py \
+        dev2/tests/test_tool_router_agent.py \
+        dev2/tests/test_action_decider_agent.py \
+        dev2/tests/test_graph.py
+git commit -m "feat: tool_router_agent + action_decider_agent — 7노드 Agentic 파이프라인 (47 tests PASS)"
+```
+
+---
+
 ## Task 5: LangGraph StateGraph 조립
 
 > **AI Native 개념**: Agentic Workflow — 조건부 엣지로 Critical 자동 에스컬레이션
@@ -2378,10 +2829,965 @@ git commit -m "feat: Dev2 전체 구현 완료 — LangGraph 하이브리드 에
 | 2 | Pydantic 스키마 + DB | Python, SQL, PostgreSQL | 필수 선행 |
 | 3 | CLI 도구 | Pylint, Bandit, radon, pip-audit | P0 |
 | 4-a | run_tools 노드 — CLI 병렬 실행 | asyncio.gather, Python | P0 |
-| 4-b | llm_judge 노드 — severity 판단 | LangChain, OpenAI API | P0 |
-| 4-c | vector_search 노드 — 유사 이슈 검색 | Milvus, OpenAI Embeddings | P0 |
+| 4-b | llm_judge 노드 — severity 판단 | LangChain, Claude API | P0 |
+| 4-c | vector_search 노드 — 유사 이슈 검색 | pgVector | P0 |
 | 4-d | store 노드 — 이중 적재 | PostgreSQL, BigQuery, SQL | P0 |
-| 5 | StateGraph 조립 | LangGraph, LangSmith | P0 |
-| 6 | FastAPI 엔드포인트 | FastAPI, SQL | P0 |
+| 5 | StateGraph 조립 (파이프라인 1) | LangGraph, LangSmith | P0 |
+| 6 | FastAPI 엔드포인트 (POST /scan) | FastAPI, SQL | P0 |
 | 7 | Airflow DAG + n8n | Airflow, BigQuery, n8n | P1 |
-| 8 | 전체 테스트 + E2E | pytest, docker-compose | 마무리 |
+| 8 | 전체 테스트 + E2E (파이프라인 1) | pytest, docker-compose | 마무리 |
+| **4-g** | **M4 개념 매핑 — concept_mapper + Issue 스키마 확장** | **Python, Pydantic** | **P0 ✅ 완료** |
+| **4-h** | **tool_router_agent + action_decider_agent — Agentic 노드 추가** | **Python, LangGraph** | **P0 ✅ 완료** |
+| 9 | aggregate 노드 + DB 스키마 추가 | PostgreSQL, Python | P0 |
+| 10 | comment_refine 노드 (LLM 코멘트 + KMS 링크) | Claude API, LangChain | P0 |
+| 11 | github_comment + slack_notify 노드 | PyGitHub, Slack API | P0 |
+| 12 | aggregate_graph 조립 + POST /aggregate API | LangGraph, FastAPI | P0 |
+| 13 | 파이프라인 2 전체 테스트 + E2E | pytest, GitHub API Mock | 마무리 |
+
+---
+
+## Task 9: aggregate 노드 + DB 스키마 추가 (I)
+
+> **PRD 노드 I**: M2+M3 결과 취합 → PostgreSQL 저장
+
+**Files:**
+- Create: `dev2/nodes/aggregate.py`
+- Create: `dev2/migrations/004_aggregate_table.sql`
+- Modify: `dev2/db.py` (insert_aggregated_result 추가)
+- Modify: `dev2/tests/test_nodes.py`
+
+**Step 1: 마이그레이션 작성**
+
+```sql
+-- dev2/migrations/004_aggregate_table.sql
+CREATE TABLE pr_aggregated_results (
+    id           bigint GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+    task_id      text        NOT NULL,
+    pr_id        text        NOT NULL,
+    developer_id text        NOT NULL,
+    issues       jsonb       NOT NULL DEFAULT '[]',
+    summary      jsonb       NOT NULL DEFAULT '{}',
+    created_at   timestamptz NOT NULL DEFAULT now()
+);
+
+CREATE INDEX idx_pr_agg_task       ON pr_aggregated_results (task_id);
+CREATE INDEX idx_pr_agg_developer  ON pr_aggregated_results (developer_id, created_at DESC);
+CREATE INDEX idx_pr_agg_issues     ON pr_aggregated_results USING gin (issues);
+```
+
+**Step 2: db.py에 insert 함수 추가**
+
+```python
+# dev2/db.py 에 추가
+import json
+
+async def insert_aggregated_result(
+    task_id: str, pr_id: str, developer_id: str,
+    issues: list[dict], summary: dict
+) -> int:
+    async with AsyncSessionLocal() as s:
+        r = await s.execute(text("""
+            INSERT INTO pr_aggregated_results
+              (task_id, pr_id, developer_id, issues, summary)
+            VALUES (:task_id, :pr_id, :developer_id, :issues, :summary)
+            RETURNING id
+        """), {
+            "task_id": task_id,
+            "pr_id": pr_id,
+            "developer_id": developer_id,
+            "issues": json.dumps(issues),
+            "summary": json.dumps(summary),
+        })
+        await s.commit()
+        return r.scalar()
+```
+
+**Step 3: 실패하는 테스트 작성**
+
+```python
+# dev2/tests/test_nodes.py 에 추가
+@pytest.mark.asyncio
+async def test_aggregate_node_combines_results():
+    from dev2.nodes.aggregate import aggregate_node
+    from dev2.schema import AggregateState
+
+    all_results = [
+        {"agent": "static_analysis",   "task_id": "u1", "issues": [
+            {"severity": "Major", "line": 10, "file": "a.py", "message": "복잡도",
+             "rule_id": "SA-001", "suggestion": "분리", "similar_issues": []}
+        ], "summary": {"critical": 0, "major": 1, "minor": 0}, "execution_ms": 100},
+        {"agent": "test_verification", "task_id": "u1", "issues": [
+            {"severity": "Critical", "line": 5, "file": "b.py", "message": "커버리지 부족",
+             "rule_id": "TEST-001", "suggestion": "테스트 추가", "similar_issues": []}
+        ], "summary": {"critical": 1, "major": 0, "minor": 0}, "execution_ms": 200},
+    ]
+    state = AggregateState(
+        task_id="u1", pr_id="1", developer_id="dev-001",
+        skill_level="junior", tech_stack=["python"],
+        architecture_docs=[], coding_conventions="", previous_pr_issues=[],
+        all_results=all_results, aggregated_issues=[], total_summary={},
+        comment_body="",
+    )
+    with patch("dev2.nodes.aggregate.insert_aggregated_result", new_callable=AsyncMock):
+        result = await aggregate_node(state)
+        assert result["total_summary"]["critical"] == 1
+        assert result["total_summary"]["major"] == 1
+        # Critical이 먼저 정렬돼야 함
+        assert result["aggregated_issues"][0]["severity"] == "Critical"
+
+@pytest.mark.asyncio
+async def test_aggregate_node_empty_results():
+    from dev2.nodes.aggregate import aggregate_node
+    from dev2.schema import AggregateState
+    state = AggregateState(
+        task_id="u2", pr_id="2", developer_id="dev-001",
+        skill_level="junior", tech_stack=[], architecture_docs=[],
+        coding_conventions="", previous_pr_issues=[], all_results=[],
+        aggregated_issues=[], total_summary={}, comment_body="",
+    )
+    with patch("dev2.nodes.aggregate.insert_aggregated_result", new_callable=AsyncMock):
+        result = await aggregate_node(state)
+        assert result["aggregated_issues"] == []
+        assert result["total_summary"] == {"critical": 0, "major": 0, "minor": 0}
+```
+
+**Step 4: aggregate.py 구현**
+
+```python
+# dev2/nodes/aggregate.py
+import os, logging
+import httpx
+from dev2.schema import AggregateState
+from dev2.db import insert_aggregated_result
+
+logger = logging.getLogger(__name__)
+
+_SEVERITY_ORDER = {"Critical": 0, "Major": 1, "Minor": 2}
+
+
+async def _notify_m4(state: AggregateState, sorted_issues: list[dict], total: dict) -> None:
+    """
+    M4 커리큘럼 모듈에 결과 push.
+    M4가 pull 요청을 보내는 것이 아니라 Dev2 과정이 끝나면 자동으로 전송.
+    Critical 여부와 무관하게 항상 호출.
+    실패 시 로그만 남기고 파이프라인 계속 진행 (CLAUDE.md §12).
+    """
+    m4_url = os.getenv("M4_WEBHOOK_URL", "")
+    if not m4_url:
+        logger.warning("aggregate_node: M4_WEBHOOK_URL 미설정 — M4 push 스킵 (개발 환경 정상)")
+        return
+
+    payload = {
+        "task_id":           state["task_id"],
+        "pr_id":             state["pr_id"],
+        "developer_id":      state["developer_id"],
+        "skill_level":       state.get("skill_level", "junior"),
+        "tech_stack":        state.get("tech_stack", []),
+        "aggregated_issues": sorted_issues,
+        "summary":           total,
+    }
+
+    try:
+        async with httpx.AsyncClient() as client:
+            resp = await client.post(m4_url, json=payload, timeout=5.0)
+            logger.info(
+                "aggregate_node: M4 push 완료 (task_id=%s, status=%d)",
+                state["task_id"], resp.status_code,
+            )
+    except Exception as exc:
+        # M4 알림 실패 → 로그만 남기고 파이프라인 계속 (CLAUDE.md §12)
+        logger.error("aggregate_node: M4 push 실패 (non-fatal) — %s", exc)
+
+
+async def aggregate_node(state: AggregateState) -> dict:
+    """
+    PRD 노드 I: M2+M3 AgentOutput 전체 취합 → severity 정렬 → PostgreSQL 저장 → M4 push.
+    판정(lgtm/rework/escalate)은 하지 않는다 — 이슈 데이터 정리 + 전달만 담당.
+    """
+    all_issues: list[dict] = []
+    total = {"critical": 0, "major": 0, "minor": 0}
+
+    for result in state.get("all_results", []):
+        agent = result.get("agent", "unknown")
+        for issue in result.get("issues", []):
+            all_issues.append({**issue, "agent": agent})
+        s = result.get("summary", {})
+        for k in total:
+            total[k] += s.get(k, 0)
+
+    # Critical → Major → Minor 순 정렬
+    sorted_issues = sorted(
+        all_issues,
+        key=lambda x: _SEVERITY_ORDER.get(x.get("severity", "Minor"), 3)
+    )
+
+    try:
+        await insert_aggregated_result(
+            task_id=state["task_id"],
+            pr_id=state["pr_id"],
+            developer_id=state["developer_id"],
+            issues=sorted_issues,
+            summary=total,
+        )
+    except Exception as exc:
+        logger.error("aggregate_node: DB 저장 실패 — %s", exc)
+        raise  # 핵심 기능 — re-raise
+
+    logger.info(
+        "aggregate_node: PR #%s 취합 완료 (critical=%d, major=%d, minor=%d)",
+        state["pr_id"], total["critical"], total["major"], total["minor"],
+    )
+
+    # DB 저장 완료 후 M4에 자동 push (pull 방식 아님)
+    await _notify_m4(state, sorted_issues, total)
+
+    return {"aggregated_issues": sorted_issues, "total_summary": total}
+```
+
+**Step 5: 마이그레이션 실행**
+
+```bash
+psql $DATABASE_URL -f dev2/migrations/004_aggregate_table.sql
+```
+Expected: CREATE TABLE, CREATE INDEX 3개
+
+**Step 6: 테스트 통과 확인**
+
+```bash
+pytest dev2/tests/test_nodes.py::test_aggregate_node_combines_results -v
+pytest dev2/tests/test_nodes.py::test_aggregate_node_empty_results -v
+```
+Expected: PASS 2 tests
+
+**Step 7: 커밋**
+
+```bash
+git add dev2/nodes/aggregate.py dev2/migrations/004_aggregate_table.sql dev2/db.py dev2/tests/test_nodes.py
+git commit -m "feat: aggregate 노드 — M2+M3 결과 취합 + PostgreSQL 저장 (PRD 노드 I)"
+```
+
+---
+
+## Task 10: comment_refine 노드 (M)
+
+> **PRD 노드 M**: LLM으로 사용자 수준 맞춤 코멘트 생성 + KMS 문서 링크 삽입
+
+**Files:**
+- Create: `dev2/nodes/comment_refine.py`
+- Create: `dev2/prompts/comment_refine.py`
+- Modify: `dev2/tests/test_nodes.py`
+
+**Step 1: 실패하는 테스트 작성**
+
+```python
+# dev2/tests/test_nodes.py 에 추가
+@pytest.mark.asyncio
+async def test_comment_refine_junior_includes_example():
+    from dev2.nodes.comment_refine import comment_refine_node
+    from dev2.schema import AggregateState
+
+    state = AggregateState(
+        task_id="u1", pr_id="1", developer_id="dev-001",
+        skill_level="junior", tech_stack=["python"],
+        architecture_docs=[], coding_conventions="", previous_pr_issues=[],
+        all_results=[],
+        aggregated_issues=[
+            {"severity": "Critical", "file": "auth.py", "line": 12,
+             "message": "SQL 인젝션", "rule_id": "B608",
+             "suggestion": "파라미터화된 쿼리 사용", "agent": "security_scan",
+             "similar_issues": []}
+        ],
+        total_summary={"critical": 1, "major": 0, "minor": 0},
+        comment_body="",
+    )
+    with patch.dict("os.environ", {"USE_MOCK_LLM": "true"}):
+        result = await comment_refine_node(state)
+        assert "comment_body" in result
+        assert len(result["comment_body"]) > 0
+        assert "Critical" in result["comment_body"]
+
+@pytest.mark.asyncio
+async def test_comment_refine_fallback_on_llm_failure():
+    from dev2.nodes.comment_refine import comment_refine_node
+    from dev2.schema import AggregateState
+
+    state = AggregateState(
+        task_id="u2", pr_id="2", developer_id="dev-001",
+        skill_level="senior", tech_stack=["python"],
+        architecture_docs=[], coding_conventions="", previous_pr_issues=[],
+        all_results=[], aggregated_issues=[], total_summary={"critical": 0, "major": 0, "minor": 0},
+        comment_body="",
+    )
+    with patch.dict("os.environ", {"USE_MOCK_LLM": "false"}), \
+         patch("dev2.nodes.comment_refine.ChatAnthropic") as mock_llm:
+        mock_llm.return_value.ainvoke = AsyncMock(side_effect=Exception("LLM 오류"))
+        result = await comment_refine_node(state)
+        # 폴백: 이슈 없음 메시지
+        assert "comment_body" in result
+        assert len(result["comment_body"]) > 0
+```
+
+**Step 2: prompts/comment_refine.py 구현**
+
+```python
+# dev2/prompts/comment_refine.py
+
+LEVEL_GUIDE = {
+    "junior": "왜 문제인지 이유와 수정 예시 코드를 반드시 포함하세요.",
+    "mid":    "문제 원인과 관련 패턴을 설명하세요. 코드 예시는 선택.",
+    "senior": "이슈 목록과 핵심 포인트만 간결하게 작성하세요.",
+}
+
+def build_comment_prompt(
+    issues: list[dict],
+    summary: dict,
+    skill_level: str,
+    tech_stack: list[str],
+    architecture_docs: list[str],
+    previous_pr_issues: list[str],
+) -> str:
+    level_guide = LEVEL_GUIDE.get(skill_level, LEVEL_GUIDE["junior"])
+    issue_lines = "\n".join(
+        f"- [{i['severity']}] {i['file']}:{i['line']} ({i['agent']}) — {i['message']} / 제안: {i['suggestion']}"
+        for i in issues
+    )
+    prev = ", ".join(previous_pr_issues) if previous_pr_issues else "없음"
+    docs = ", ".join(architecture_docs) if architecture_docs else "없음"
+
+    return f"""당신은 신입 개발자 코드 리뷰 전문가입니다.
+
+[개발자 수준]: {skill_level}
+[작성 지침]: {level_guide}
+[기술 스택]: {", ".join(tech_stack)}
+[과거 반복 이슈]: {prev}
+[참조 가능 KMS chunk_id]: {docs}
+
+[분석 결과]
+Critical: {summary.get("critical", 0)}건 | Major: {summary.get("major", 0)}건 | Minor: {summary.get("minor", 0)}건
+
+[이슈 목록]
+{issue_lines if issue_lines else "이슈 없음"}
+
+위 정보를 바탕으로 GitHub PR 코멘트를 마크다운으로 작성하세요.
+구조: ## 자동 코드 리뷰 결과 → Critical 섹션 → Major 섹션 → Minor 섹션 → 관련 문서 링크
+"""
+```
+
+**Step 3: comment_refine.py 구현**
+
+```python
+# dev2/nodes/comment_refine.py
+import os, logging
+from langchain_anthropic import ChatAnthropic
+from dev2.schema import AggregateState
+from dev2.prompts.comment_refine import build_comment_prompt
+
+logger = logging.getLogger(__name__)
+USE_MOCK_LLM = os.getenv("USE_MOCK_LLM", "true").lower() == "true"
+
+
+def _build_mock_comment(state: AggregateState) -> str:
+    """USE_MOCK_LLM=true 시 결정적 폴백 코멘트 생성"""
+    s = state.get("total_summary", {})
+    issues = state.get("aggregated_issues", [])
+    lines = [
+        f"| {i.get('file','')} | {i.get('line','')} | {i.get('severity','')} | {i.get('message','')} |"
+        for i in issues[:10]
+    ]
+    table = "\n".join(lines) if lines else "이슈 없음"
+    return (
+        f"## 자동 코드 리뷰 결과 [MOCK]\n\n"
+        f"**Critical**: {s.get('critical', 0)}건 | **Major**: {s.get('major', 0)}건 | **Minor**: {s.get('minor', 0)}건\n\n"
+        f"| 파일 | 라인 | Severity | 이슈 |\n|---|---|---|---|\n{table}"
+    )
+
+
+async def comment_refine_node(state: AggregateState) -> dict:
+    """
+    PRD 노드 M: LLM으로 사용자 수준 맞춤 PR 코멘트 생성.
+    USE_MOCK_LLM=true → 결정적 Mock 코멘트 반환 (실제 API 없음).
+    LLM 실패 → 폴백 코멘트 생성 (파이프라인 중단 없음).
+    """
+    if USE_MOCK_LLM or os.getenv("USE_MOCK_LLM", "true").lower() == "true":
+        return {"comment_body": _build_mock_comment(state)}
+
+    try:
+        prompt = build_comment_prompt(
+            issues=state.get("aggregated_issues", []),
+            summary=state.get("total_summary", {}),
+            skill_level=state.get("skill_level", "junior"),
+            tech_stack=state.get("tech_stack", []),
+            architecture_docs=state.get("architecture_docs", []),
+            previous_pr_issues=state.get("previous_pr_issues", []),
+        )
+        llm = ChatAnthropic(model="claude-sonnet-4-6", temperature=0)
+        response = await llm.ainvoke(prompt)
+        return {"comment_body": response.content}
+
+    except Exception as exc:
+        logger.error("comment_refine_node: LLM 실패, 폴백 코멘트 사용 — %s", exc)
+        return {"comment_body": _build_mock_comment(state)}
+```
+
+**Step 4: 테스트 통과 확인**
+
+```bash
+pytest dev2/tests/test_nodes.py::test_comment_refine_junior_includes_example -v
+pytest dev2/tests/test_nodes.py::test_comment_refine_fallback_on_llm_failure -v
+```
+Expected: PASS 2 tests
+
+**Step 5: 커밋**
+
+```bash
+git add dev2/nodes/comment_refine.py dev2/prompts/comment_refine.py dev2/tests/test_nodes.py
+git commit -m "feat: comment_refine 노드 — LLM 수준별 PR 코멘트 생성 + 폴백 (PRD 노드 M)"
+```
+
+---
+
+## Task 11: github_comment + slack_notify 노드 (N, O)
+
+> **PRD 노드 N**: GitHub PR 코멘트 등록  
+> **PRD 노드 O**: Critical 시 Slack 시니어 알림
+
+**Files:**
+- Create: `dev2/nodes/github_comment.py`
+- Create: `dev2/nodes/slack_notify.py`
+- Modify: `dev2/tests/test_nodes.py`
+
+**Step 1: 실패하는 테스트 작성**
+
+```python
+# dev2/tests/test_nodes.py 에 추가
+@pytest.mark.asyncio
+async def test_github_comment_posts_comment():
+    from dev2.nodes.github_comment import github_comment_node
+    from dev2.schema import AggregateState
+
+    state = AggregateState(
+        task_id="u1", pr_id="42", developer_id="dev-001",
+        skill_level="junior", tech_stack=[], architecture_docs=[],
+        coding_conventions="", previous_pr_issues=[], all_results=[],
+        aggregated_issues=[], total_summary={},
+        comment_body="## 자동 리뷰\nCritical 1건 발견",
+    )
+    mock_comment = MagicMock()
+    mock_comment.id = 999
+    mock_comment.html_url = "https://github.com/org/repo/pull/42#issuecomment-999"
+
+    with patch.dict("os.environ", {"GITHUB_TOKEN": "ghp_test", "GITHUB_REPO": "org/repo"}), \
+         patch("dev2.nodes.github_comment.Github") as mock_gh:
+        mock_repo = MagicMock()
+        mock_pr = MagicMock()
+        mock_pr.create_issue_comment.return_value = mock_comment
+        mock_gh.return_value.get_repo.return_value = mock_repo
+        mock_repo.get_pull.return_value = mock_pr
+
+        result = await github_comment_node(state)
+        assert result["github_comment_id"] == 999
+
+@pytest.mark.asyncio
+async def test_github_comment_skips_without_token():
+    from dev2.nodes.github_comment import github_comment_node
+    from dev2.schema import AggregateState
+
+    state = AggregateState(
+        task_id="u1", pr_id="1", developer_id="dev-001",
+        skill_level="junior", tech_stack=[], architecture_docs=[],
+        coding_conventions="", previous_pr_issues=[], all_results=[],
+        aggregated_issues=[], total_summary={}, comment_body="test",
+    )
+    with patch.dict("os.environ", {"GITHUB_TOKEN": ""}):
+        result = await github_comment_node(state)
+        assert result == {}  # 토큰 없으면 스킵
+
+@pytest.mark.asyncio
+async def test_slack_notify_sends_on_critical():
+    from dev2.nodes.slack_notify import slack_notify_node
+    from dev2.schema import AggregateState
+
+    state = AggregateState(
+        task_id="u1", pr_id="42", developer_id="dev-001",
+        skill_level="junior", tech_stack=[], architecture_docs=[],
+        coding_conventions="", previous_pr_issues=[], all_results=[],
+        aggregated_issues=[
+            {"severity": "Critical", "file": "auth.py", "line": 12,
+             "message": "SQL 인젝션", "rule_id": "B608",
+             "suggestion": "fix", "agent": "security_scan", "similar_issues": []}
+        ],
+        total_summary={"critical": 1, "major": 0, "minor": 0},
+        comment_body="",
+    )
+    with patch.dict("os.environ", {"SLACK_WEBHOOK_URL": "https://hooks.slack.com/test"}), \
+         patch("dev2.nodes.slack_notify.httpx") as mock_httpx:
+        mock_client = AsyncMock()
+        mock_httpx.AsyncClient.return_value.__aenter__ = AsyncMock(return_value=mock_client)
+        mock_httpx.AsyncClient.return_value.__aexit__ = AsyncMock(return_value=False)
+
+        result = await slack_notify_node(state)
+        mock_client.post.assert_called_once()
+
+@pytest.mark.asyncio
+async def test_slack_notify_skips_without_url():
+    from dev2.nodes.slack_notify import slack_notify_node
+    from dev2.schema import AggregateState
+
+    state = AggregateState(
+        task_id="u1", pr_id="1", developer_id="dev-001",
+        skill_level="junior", tech_stack=[], architecture_docs=[],
+        coding_conventions="", previous_pr_issues=[], all_results=[],
+        aggregated_issues=[], total_summary={"critical": 0, "major": 0, "minor": 0},
+        comment_body="",
+    )
+    with patch.dict("os.environ", {"SLACK_WEBHOOK_URL": ""}):
+        result = await slack_notify_node(state)
+        assert result == {}  # URL 없으면 스킵
+```
+
+**Step 2: github_comment.py 구현**
+
+```python
+# dev2/nodes/github_comment.py
+import os, asyncio, logging
+
+logger = logging.getLogger(__name__)
+
+
+async def github_comment_node(state) -> dict:
+    """
+    PRD 노드 N: PyGitHub로 PR 코멘트 등록.
+    GITHUB_TOKEN 미설정 → 경고 후 스킵 (개발 환경 정상 동작).
+    GitHub API 실패 → 로그 후 스킵 (파이프라인 중단 금지).
+    """
+    token = os.getenv("GITHUB_TOKEN", "")
+    repo_name = os.getenv("GITHUB_REPO", "")
+    comment_body = state.get("comment_body", "")
+
+    if not token:
+        logger.warning("github_comment_node: GITHUB_TOKEN 미설정 — 스킵")
+        return {}
+    if not repo_name:
+        logger.warning("github_comment_node: GITHUB_REPO 미설정 — 스킵")
+        return {}
+    if not comment_body:
+        logger.warning("github_comment_node: comment_body 비어 있음 — 스킵")
+        return {}
+
+    try:
+        from github import Github  # PyGitHub — lazy import
+
+        g = Github(token)
+        repo = await asyncio.to_thread(g.get_repo, repo_name)
+        pr = await asyncio.to_thread(repo.get_pull, int(state["pr_id"]))
+        comment = await asyncio.to_thread(pr.create_issue_comment, comment_body)
+
+        logger.info(
+            "github_comment_node: PR #%s 코멘트 등록 완료 (id=%d)",
+            state["pr_id"], comment.id,
+        )
+        return {"github_comment_id": comment.id, "github_comment_url": comment.html_url}
+
+    except Exception as exc:
+        logger.error("github_comment_node: 실패 (non-fatal) — %s", exc)
+        return {}
+```
+
+**Step 3: slack_notify.py 구현**
+
+```python
+# dev2/nodes/slack_notify.py
+import os, logging
+import httpx
+
+logger = logging.getLogger(__name__)
+
+
+async def slack_notify_node(state) -> dict:
+    """
+    PRD 노드 O: Critical ≥ 1 시 Slack 시니어 알림.
+    SLACK_WEBHOOK_URL 미설정 → 경고 후 스킵.
+    Slack 실패 → 로그만 남기고 스킵 (파이프라인 중단 금지 — CLAUDE.md §12).
+    """
+    slack_url = os.getenv("SLACK_WEBHOOK_URL", "")
+    if not slack_url:
+        logger.warning("slack_notify_node: SLACK_WEBHOOK_URL 미설정 — 스킵")
+        return {}
+
+    summary = state.get("total_summary", {})
+    critical_issues = [
+        i for i in state.get("aggregated_issues", [])
+        if i.get("severity") == "Critical"
+    ]
+
+    lines = [
+        f"• `{i.get('file', '')}:{i.get('line', '')}` — {i.get('message', '')}"
+        for i in critical_issues[:5]
+    ]
+    message = {
+        "text": (
+            f"🚨 *PR #{state.get('pr_id', '?')} Critical 이슈 "
+            f"{summary.get('critical', 0)}건 감지*\n"
+            f"개발자: `{state.get('developer_id', '?')}` | "
+            f"Major: {summary.get('major', 0)} | Minor: {summary.get('minor', 0)}\n"
+            + "\n".join(lines)
+        )
+    }
+
+    try:
+        async with httpx.AsyncClient() as client:
+            await client.post(slack_url, json=message, timeout=5.0)
+        logger.info("slack_notify_node: Slack 알림 전송 완료 (PR #%s)", state.get("pr_id"))
+    except Exception as exc:
+        logger.error("slack_notify_node: Slack 알림 실패 (non-fatal) — %s", exc)
+
+    return {}
+```
+
+**Step 4: 테스트 통과 확인**
+
+```bash
+pytest dev2/tests/test_nodes.py -k "github_comment or slack_notify" -v
+```
+Expected: PASS 4 tests
+
+**Step 5: requirements.txt에 PyGitHub 추가**
+
+```
+PyGitHub==2.3.0
+```
+
+**Step 6: 커밋**
+
+```bash
+git add dev2/nodes/github_comment.py dev2/nodes/slack_notify.py dev2/tests/test_nodes.py dev2/requirements.txt
+git commit -m "feat: github_comment + slack_notify 노드 — PR 코멘트 등록 + Critical Slack 알림 (PRD 노드 N, O)"
+```
+
+---
+
+## Task 12: aggregate_graph 조립 + POST /aggregate API
+
+> 파이프라인 2 전체 연결: aggregate → comment_refine → (slack_notify) → github_comment
+
+**Files:**
+- Create: `dev2/aggregate_graph.py`
+- Create: `dev2/api/aggregate.py`
+- Create: `dev2/schema.py` 에 AggregatePayload, AggregateState 추가
+- Create: `dev2/tests/test_aggregate.py`
+- Modify: `dev2/main.py`
+
+**Step 1: schema.py에 AggregateState 추가**
+
+```python
+# dev2/schema.py 에 추가
+from typing import Optional
+
+class AggregatePayload(BaseModel):
+    """POST /aggregate 입력 계약 (M0 → Dev2)"""
+    task_id: str
+    pr_id: str
+    developer: Developer
+    context: TaskContext = TaskContext()
+    all_results: list[dict] = []    # AgentOutput × 4 (M2×2 + M3×2)
+
+class AggregateState(TypedDict, total=False):
+    # 입력
+    task_id: str
+    pr_id: str
+    developer_id: str
+    skill_level: Literal["junior", "mid", "senior"]
+    tech_stack: list[str]
+    architecture_docs: list[str]
+    coding_conventions: str
+    previous_pr_issues: list[str]
+    all_results: list[dict]
+    # aggregate_node 출력
+    aggregated_issues: list[dict]
+    total_summary: dict
+    # comment_refine_node 출력
+    comment_body: str
+    # github_comment_node 출력
+    github_comment_id: Optional[int]
+    github_comment_url: Optional[str]
+```
+
+**Step 2: aggregate_graph.py 구현**
+
+```python
+# dev2/aggregate_graph.py
+import os, logging
+from langchain_core.callbacks import LangChainTracer
+from langgraph.graph import StateGraph, END
+from dev2.schema import AggregateState
+from dev2.nodes.aggregate import aggregate_node
+from dev2.nodes.comment_refine import comment_refine_node
+from dev2.nodes.github_comment import github_comment_node
+from dev2.nodes.slack_notify import slack_notify_node
+
+logger = logging.getLogger(__name__)
+_tracer = LangChainTracer(project_name=os.getenv("LANGCHAIN_PROJECT", "dev2-local"))
+
+
+def _route_after_refine(state: AggregateState) -> str:
+    """Critical ≥ 1 → Slack 먼저 알림 후 GitHub 코멘트. 없으면 바로 GitHub 코멘트."""
+    return "slack_notify" if state.get("total_summary", {}).get("critical", 0) >= 1 else "github_comment"
+
+
+def build_aggregate_graph():
+    g = StateGraph(AggregateState)
+    g.add_node("aggregate",      aggregate_node)
+    g.add_node("comment_refine", comment_refine_node)
+    g.add_node("slack_notify",   slack_notify_node)
+    g.add_node("github_comment", github_comment_node)
+
+    g.set_entry_point("aggregate")
+    g.add_edge("aggregate", "comment_refine")
+    g.add_conditional_edges("comment_refine", _route_after_refine, {
+        "slack_notify":   "slack_notify",
+        "github_comment": "github_comment",
+    })
+    g.add_edge("slack_notify", "github_comment")  # Slack 알림 후 GitHub 코멘트
+    g.add_edge("github_comment", END)
+
+    return g.compile()
+
+
+async def run_aggregate(payload_dict: dict) -> dict:
+    """POST /aggregate BackgroundTasks 진입점"""
+    initial: AggregateState = {
+        "task_id":            payload_dict["task_id"],
+        "pr_id":              payload_dict["pr_id"],
+        "developer_id":       payload_dict["developer"]["id"],
+        "skill_level":        payload_dict["developer"]["skill_level"],
+        "tech_stack":         payload_dict["developer"]["tech_stack"],
+        "architecture_docs":  payload_dict.get("context", {}).get("architecture_docs", []),
+        "coding_conventions": payload_dict.get("context", {}).get("coding_conventions", ""),
+        "previous_pr_issues": payload_dict.get("context", {}).get("previous_pr_issues", []),
+        "all_results":        payload_dict.get("all_results", []),
+        "aggregated_issues":  [],
+        "total_summary":      {},
+        "comment_body":       "",
+    }
+    graph = build_aggregate_graph()
+    result = await graph.ainvoke(initial, config={"callbacks": [_tracer]})
+    return result
+```
+
+**Step 3: api/aggregate.py 구현**
+
+```python
+# dev2/api/aggregate.py
+from fastapi import APIRouter, BackgroundTasks
+from dev2.schema import AggregatePayload
+from dev2.aggregate_graph import run_aggregate
+
+router = APIRouter()
+
+@router.post("/aggregate", status_code=202)
+async def trigger_aggregate(payload: AggregatePayload, background_tasks: BackgroundTasks):
+    """
+    M0가 M2+M3 결과를 묶어 전송 → 취합·코멘트·알림 파이프라인 비동기 실행.
+    202 즉시 반환 (BackgroundTasks).
+    """
+    background_tasks.add_task(run_aggregate, payload.model_dump())
+    return {"status": "accepted", "task_id": payload.task_id}
+```
+
+**Step 4: main.py에 aggregate 라우터 등록**
+
+```python
+# dev2/main.py 수정
+from dev2.api.aggregate import router as aggregate_router
+app.include_router(aggregate_router)   # POST /aggregate
+```
+
+**Step 5: 실패하는 테스트 작성**
+
+```python
+# dev2/tests/test_aggregate.py
+import pytest
+from unittest.mock import patch, AsyncMock, MagicMock
+from httpx import AsyncClient
+from dev2.main import app
+
+# M2 결과만 포함 (static_analysis + security_scan)
+# M3(test_verification, performance)는 M3 서버에서 별도로 M4에 전달
+ALL_RESULTS_MOCK = [
+    {"agent": "static_analysis", "task_id": "u1",
+     "issues": [{"severity": "Critical", "line": 10, "file": "auth.py",
+                 "message": "SQL 인젝션", "rule_id": "B608",
+                 "suggestion": "파라미터 쿼리", "similar_issues": []}],
+     "summary": {"critical": 1, "major": 0, "minor": 0}, "execution_ms": 500},
+    {"agent": "security_scan",   "task_id": "u1", "issues": [],
+     "summary": {"critical": 0, "major": 0, "minor": 0}, "execution_ms": 300},
+]
+
+@pytest.mark.asyncio
+async def test_aggregate_endpoint_accepted():
+    with patch("dev2.api.aggregate.run_aggregate", new_callable=AsyncMock):
+        async with AsyncClient(app=app, base_url="http://test") as client:
+            r = await client.post("/aggregate", json={
+                "task_id": "u1", "pr_id": "42",
+                "developer": {"id": "dev-001", "skill_level": "junior", "tech_stack": ["python"]},
+                "all_results": ALL_RESULTS_MOCK,
+            })
+        assert r.status_code == 202
+        assert r.json()["task_id"] == "u1"
+
+@pytest.mark.asyncio
+async def test_aggregate_graph_critical_triggers_slack():
+    """Critical 이슈 → slack_notify → github_comment 경로 확인"""
+    from dev2.aggregate_graph import build_aggregate_graph
+    from dev2.schema import AggregateState
+
+    initial: AggregateState = {
+        "task_id": "u1", "pr_id": "42", "developer_id": "dev-001",
+        "skill_level": "junior", "tech_stack": ["python"],
+        "architecture_docs": [], "coding_conventions": "", "previous_pr_issues": [],
+        "all_results": ALL_RESULTS_MOCK,
+        "aggregated_issues": [], "total_summary": {}, "comment_body": "",
+    }
+
+    with patch("dev2.nodes.aggregate.insert_aggregated_result", new_callable=AsyncMock), \
+         patch("dev2.nodes.slack_notify.httpx") as mock_httpx, \
+         patch("dev2.nodes.github_comment.Github") as mock_gh:
+
+        mock_client = AsyncMock()
+        mock_httpx.AsyncClient.return_value.__aenter__ = AsyncMock(return_value=mock_client)
+        mock_httpx.AsyncClient.return_value.__aexit__ = AsyncMock(return_value=False)
+
+        mock_comment = MagicMock(id=1, html_url="https://github.com/org/repo/pull/42#1")
+        mock_gh.return_value.get_repo.return_value.get_pull.return_value \
+            .create_issue_comment.return_value = mock_comment
+
+        import os
+        os.environ["USE_MOCK_LLM"] = "true"
+        os.environ["SLACK_WEBHOOK_URL"] = "https://hooks.slack.com/test"
+        os.environ["GITHUB_TOKEN"] = "ghp_test"
+        os.environ["GITHUB_REPO"] = "org/repo"
+
+        graph = build_aggregate_graph()
+        result = await graph.ainvoke(initial)
+
+        # Critical 있으므로 Slack 호출됐어야 함
+        mock_client.post.assert_called_once()
+        assert result.get("total_summary", {}).get("critical", 0) == 1
+
+@pytest.mark.asyncio
+async def test_aggregate_graph_no_critical_skips_slack():
+    """Critical 없음 → slack_notify 건너뜀 → github_comment 직접"""
+    from dev2.aggregate_graph import build_aggregate_graph
+    from dev2.schema import AggregateState
+
+    no_critical_results = [
+        {"agent": "static_analysis", "task_id": "u2",
+         "issues": [{"severity": "Minor", "line": 5, "file": "app.py",
+                     "message": "lint", "rule_id": "E501",
+                     "suggestion": "fix", "similar_issues": []}],
+         "summary": {"critical": 0, "major": 0, "minor": 1}, "execution_ms": 100},
+    ]
+    initial: AggregateState = {
+        "task_id": "u2", "pr_id": "99", "developer_id": "dev-001",
+        "skill_level": "senior", "tech_stack": ["python"],
+        "architecture_docs": [], "coding_conventions": "", "previous_pr_issues": [],
+        "all_results": no_critical_results,
+        "aggregated_issues": [], "total_summary": {}, "comment_body": "",
+    }
+
+    with patch("dev2.nodes.aggregate.insert_aggregated_result", new_callable=AsyncMock), \
+         patch("dev2.nodes.slack_notify.httpx") as mock_httpx, \
+         patch("dev2.nodes.github_comment.Github"):
+
+        import os
+        os.environ["USE_MOCK_LLM"] = "true"
+        os.environ["SLACK_WEBHOOK_URL"] = "https://hooks.slack.com/test"
+        os.environ["GITHUB_TOKEN"] = "ghp_test"
+        os.environ["GITHUB_REPO"] = "org/repo"
+
+        graph = build_aggregate_graph()
+        result = await graph.ainvoke(initial)
+
+        # Critical 없으므로 Slack 호출 없어야 함
+        mock_httpx.AsyncClient.assert_not_called()
+        assert result.get("total_summary", {}).get("critical", 0) == 0
+```
+
+**Step 6: 테스트 통과 확인**
+
+```bash
+pytest dev2/tests/test_aggregate.py -v
+```
+Expected: PASS 3 tests
+
+**Step 7: 커밋**
+
+```bash
+git add dev2/aggregate_graph.py dev2/api/aggregate.py dev2/schema.py dev2/main.py dev2/tests/test_aggregate.py
+git commit -m "feat: aggregate_graph (파이프라인 2) + POST /aggregate API — I→M→N→O 전체 연결"
+```
+
+---
+
+## Task 13: 파이프라인 2 전체 테스트 + E2E 확인
+
+**Step 1: 전체 테스트 실행**
+
+```bash
+pytest dev2/tests/ -v --tb=short
+```
+Expected: 전체 PASS
+
+**Step 2: 커버리지 확인**
+
+```bash
+pytest dev2/tests/ --cov=dev2 --cov-report=term-missing
+```
+Expected: 80% 이상
+
+**Step 3: E2E 흐름 확인 (Mock)**
+
+```bash
+# 파이프라인 1: 분석
+curl -X POST http://localhost:8005/scan \
+  -H "Content-Type: application/json" \
+  -d '{
+    "task_id": "e2e-001", "pr_id": "42",
+    "pr_diff": "+++ b/src/auth.py\n+query = sql + username",
+    "developer": {"id": "dev-001", "skill_level": "junior", "tech_stack": ["python"]}
+  }'
+
+# 파이프라인 2: 취합 + 코멘트 + 알림
+curl -X POST http://localhost:8005/aggregate \
+  -H "Content-Type: application/json" \
+  -d '{
+    "task_id": "e2e-001", "pr_id": "42",
+    "developer": {"id": "dev-001", "skill_level": "junior", "tech_stack": ["python"]},
+    "context": {"architecture_docs": [], "coding_conventions": "", "previous_pr_issues": []},
+    "all_results": [
+      {"agent": "static_analysis",   "task_id": "e2e-001", "issues": [], "summary": {"critical": 0, "major": 0, "minor": 0}, "execution_ms": 100},
+      {"agent": "security_scan",     "task_id": "e2e-001", "issues": [{"severity": "Critical", "line": 12, "file": "auth.py", "message": "SQL 인젝션", "rule_id": "B608", "suggestion": "파라미터 쿼리", "similar_issues": []}], "summary": {"critical": 1, "major": 0, "minor": 0}, "execution_ms": 900},
+      {"agent": "test_verification", "task_id": "e2e-001", "issues": [], "summary": {"critical": 0, "major": 0, "minor": 0}, "execution_ms": 200},
+      {"agent": "performance",       "task_id": "e2e-001", "issues": [], "summary": {"critical": 0, "major": 0, "minor": 0}, "execution_ms": 150}
+    ]
+  }'
+
+# 결과 확인
+curl http://localhost:8005/insights/developer/dev-001
+```
+
+Expected:
+- `/aggregate` → 202 Accepted
+- 백그라운드: aggregate → comment_refine → slack_notify → github_comment 실행
+- `/insights/developer/dev-001` → Critical 1건 포함 응답
+
+**Step 4: 최종 커밋**
+
+```bash
+git add .
+git commit -m "feat: Dev2 파이프라인 2 전체 완성 — M2+M3 취합·LLM 코멘트·GitHub PR·Slack 알림 (PRD I→M→N→O)"
+```
+
+---
+
+## 구현 순서 요약 (최종)

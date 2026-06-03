@@ -117,3 +117,36 @@ async def insert_scan_summary(scan_id: int, agent: str, summary: dict):
                 minor    = EXCLUDED.minor
         """), {"scan_id": scan_id, "agent": agent, **summary})
         await s.commit()
+
+
+async def insert_aggregated_result(
+    task_id: str,
+    pr_id: str,
+    developer_id: str,
+    issues: list[dict],
+    summary: dict,
+) -> int:
+    """
+    pr_aggregated_results에 파이프라인 2 취합 결과를 INSERT한다. (PRD 노드 I)
+
+    aggregate_node가 M2+M3 AgentOutput을 취합한 뒤 호출한다.
+    issues/summary는 jsonb 컬럼에 직렬화하여 저장.
+
+    Returns:
+        삽입된 행의 id (bigint)
+    """
+    async with AsyncSessionLocal() as s:
+        r = await s.execute(text("""
+            INSERT INTO pr_aggregated_results
+              (task_id, pr_id, developer_id, issues, summary)
+            VALUES (:task_id, :pr_id, :developer_id, :issues, :summary)
+            RETURNING id
+        """), {
+            "task_id": task_id,
+            "pr_id": pr_id,
+            "developer_id": developer_id,
+            "issues": json.dumps(issues),
+            "summary": json.dumps(summary),
+        })
+        await s.commit()
+        return r.scalar()
