@@ -33,12 +33,14 @@ class Dev2State(PRReviewState, total=False):
     PRReviewState 필드를 모두 상속하며, Dev2 파이프라인 전용 필드를 추가한다.
     통합(Week 5) 시 common.state.PRReviewState 임포트로 교체.
     """
-    static_raw: list[dict]           # CLI 도구 원본 결과 (run_tools 노드 출력)
-    security_raw: list[dict]         # 보안 도구 원본 결과 (run_tools 노드 출력)
-    enriched: list[dict]             # pgVector 유사 이슈 + LLM 판단 결과
-    final_output: list[dict]         # Output Contract A 형식 최종 결과
-    tool_plan: Optional[dict]        # tool_router_agent 출력 (도구 선택 계획)
-    action_decision: Optional[dict]  # action_decider_agent 출력 (후속 액션 추천)
+    static_raw: list[dict]             # CLI 도구 원본 결과 (run_tools 노드 출력)
+    security_raw: list[dict]           # 보안 도구 원본 결과 (run_tools 노드 출력)
+    enriched: list[dict]               # pgVector 유사 이슈 + LLM 판단 결과
+    final_output: list[dict]           # Output Contract A 형식 최종 결과
+    tool_plan: Optional[dict]          # tool_router_agent 출력 (도구 선택 계획)
+    action_decision: Optional[dict]    # action_decider_agent 출력 (후속 액션 추천)
+    comment_body: str                  # LLM이 생성한 PR 코멘트 마크다운 (aggregate 파이프라인)
+    github_comment_url: Optional[str]  # 등록된 GitHub 코멘트 URL (aggregate 파이프라인)
 
 
 # ── Pydantic 모델 (Dev1 → Dev2 입력 계약 검증, CLAUDE.md §5-B) ─────────────

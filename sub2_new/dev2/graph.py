@@ -6,14 +6,18 @@ graph.py — Dev2 LangGraph StateGraph 조립
 
 파이프라인 흐름:
     START
-     └─→ run_tools      (ESLint/Pylint/Bandit/pip-audit 병렬 실행)
-     └─→ vector_search  (pgVector RAG Retrieve — 유사 이슈 검색)
-     └─→ llm_judge      (RAG Generate — claude-sonnet-4-6 severity 판단)
+     └─→ run_tools        (ESLint/Pylint/Bandit/pip-audit 병렬 실행)
+     └─→ vector_search    (pgVector RAG Retrieve — 유사 이슈 검색)
+     └─→ llm_judge        (RAG Generate — claude-sonnet-4-6 severity 판단)
      └─→ [조건부 분기]
-           ├─ Critical ≥ 1 → escalate (Dev4 즉시 알림)  → store
+           ├─ Critical ≥ 1 → escalate (Dev4 즉시 알림) → store
            └─ Critical = 0 → store (escalate 건너뜀)
-     └─→ store          (PostgreSQL + BigQuery 이중 적재)
-     └─→ END
+     └─→ store            (PostgreSQL + BigQuery 이중 적재)
+     └─→ comment_generate (LLM 코멘트 정제 — 사용자 수준 맞춤 설명)
+     └─→ github_comment   (GitHub PR 코멘트 등록 + 관련 사내 문서 링크)
+     └─→ [조건부 분기]
+           ├─ Critical ≥ 1 → slack_notify (시니어 개발자 즉시 알림) → END
+           └─ Critical = 0 → END
 
 Agentic Workflow 설계:
     _route_after_judge() — Critical 유무에 따른 동적 경로 결정.

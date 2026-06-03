@@ -4,15 +4,14 @@
 
 **Goal:** LangGraph StateGraph 기반 하이브리드 에이전트. CLI 도구(Pylint/Bandit 등)로 1차 분석 후 LangChain + **claude-sonnet-4-6**가 severity 판단 + 개선 제안 생성. **pgVector** 유사 이슈 검색 + PostgreSQL/BigQuery 이중 적재 + FastAPI 인사이트 API 제공.
 
-> ⚠️ **담당 외 기능 (팀 PRD M2 명세 vs 실제 분업)**
-> 팀 공통 PRD M2에 기술되어 있으나 **Dev2 구현 범위 밖**인 기능:
-> - **GitHub PR 코멘트 등록** → Dev4(M4) 담당. Dev2는 이슈 JSON만 생성해 Dev4에 전달
-> - **Slack 즉시 알림** → Dev4(M4) 담당. Dev2 escalate 노드는 Dev4 webhook HTTP POST만 수행
+> **담당 범위 업데이트 (2026-06-01)**
+> - **GitHub PR 코멘트 등록** → Dev2 + Dev3 각자 담당. LLM 코멘트 정제 후 직접 GitHub에 등록
+> - **Slack 즉시 알림** → Dev2 + Dev3 각자 담당. Critical 이슈 시 Slack 시니어 알림 직접 발송
 > - **관련 사내 문서 링크 제공** → Dev4(M4) 담당. KMS 링크는 Dev4가 PR 코멘트에 포함
 > - **반복 실수 감지 + 코딩 가이드 업데이트 제안** → Dev5 담당 (mistake_patterns 테이블)
 > - **GitHub Webhook 수신** → Dev1(M0) 담당. Dev2는 POST /scan 수신만. n8n 미사용 (CLAUDE.md §4)
 
-**Architecture:** LangGraph StateGraph 5노드 (run_tools → **vector_search → llm_judge** → escalate(조건부) → store). RAG 패턴: vector_search가 pgVector 코사인 유사도로 유사 이슈 먼저 검색 → llm_judge 프롬프트에 주입. 모델 라우팅(Critical/Major→**claude-sonnet-4-6**, Minor→스킵). GitHub Webhook은 **Dev1 Orchestrator**가 수신 → Dev2로 라우팅 (n8n 미사용, CLAUDE.md §4 참고).
+**Architecture:** LangGraph StateGraph 8노드 (run_tools → **vector_search → llm_judge** → escalate(조건부) → store → **comment_generate → github_comment → slack_notify**(조건부)). RAG 패턴: vector_search가 pgVector 코사인 유사도로 유사 이슈 먼저 검색 → llm_judge 프롬프트에 주입. 모델 라우팅(Critical→**claude-sonnet-4-6**, Major→**claude-haiku-4-5**, Minor→스킵). GitHub Webhook은 **Dev1 Orchestrator**가 수신 → Dev2로 라우팅 (n8n 미사용, CLAUDE.md §4 참고).
 
 > **[CLAUDE.md §9 준수]** LLM: claude-sonnet-4-6 | Vector DB: pgVector | State: PRReviewState 확장
 
