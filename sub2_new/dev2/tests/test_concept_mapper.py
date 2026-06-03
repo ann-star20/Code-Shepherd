@@ -13,9 +13,13 @@ from dev2.nodes.concept_mapper import (
     enrich_with_concept_mapping,
     extract_snippet,
     infer_learning_context,
+    build_code_context,
+    build_taxonomy,
     _lookup_concept,
 )
-from dev2.schema import Issue, AgentOutput, Summary, LearningContext
+from dev2.schema import (
+    Issue, AgentOutput, Summary, LearningContext, CodeContext, IssueTaxonomy,
+)
 
 
 # ── _lookup_concept 테스트 ────────────────────────────────────────────────────
@@ -291,3 +295,196 @@ class TestAgentOutputPydantic:
         for field in ["severity", "issue_type", "line", "file", "message",
                       "rule_id", "suggestion", "resolution_example", "similar_issues"]:
             assert field in dumped, f"{field} 필드가 model_dump에 없음"
+
+
+# ── build_code_context 테스트 ─────────────────────────────────────────────────
+
+class TestBuildCodeContext:
+    SAMPLE_DIFF = """\
+diff --git a/src/views.py b/src/views.py
+--- a/src/views.py
++++ b/src/views.py
+@@ -1,5 +1,7 @@
+ def get_user(request):
+     username = request.GET['username']
++    query = "SELECT * FROM auth_user WHERE username = '%s'" % username
++    users = User.objects.raw(query)
+     return render(request, "list.html")
+"""
+
+    def test_extracts_issue_line_and_surrounding_context(self):
+        # 위 diff에서 query 라인은 새 파일 기준 3번 라인
+        ctx = build_code_context(self.SAMPLE_DIFF, "src/views.py", 3,
+                                 "snippet_unavailable", "SQL Injection", "SQL 인젝션")
+        assert "SELECT" in ctx["issue_line"]
+        assert isinstance(ctx["context_before"], list)
+        assert isinstance(ctx["context_after"], list)
+        # 앞 라인에 함수 정의가 포함돼야 함
+        assert any("def get_user" in line for line in ctx["context_before"])
+
+    def test_preserves_indentation_in_context(self):
+        ctx = build_code_context(self.SAMPLE_DIFF, "src/views.py", 3,
+                                 "snippet_unavailable", "SQL Injection", "SQL 인젝션")
+        # username 라인은 들여쓰기가 보존돼야 함
+        assert any(line.startswith("    username") for line in ctx["context_before"])
+
+    def test_context_summary_never_empty(self):
+        ctx = build_code_context(self.SAMPLE_DIFF, "src/views.py", 3,
+                                 "snippet_unavailable", "SQL Injection", "SQL 인젝션")
+        assert ctx["context_summary"] != ""
+        assert isinstance(ctx["context_summary"], str)
+
+    def test_falls_back_to_code_snippet_when_line_not_found(self):
+        # diff에 없는 라인 → issue_line = code_snippet
+        ctx = build_code_context(self.SAMPLE_DIFF, "src/views.py", 9999,
+                                 "query = sql + username", "SQL Injection", "msg")
+        assert ctx["issue_line"] == "query = sql + username"
+        assert ctx["context_before"] == []
+        assert ctx["context_after"] == []
+
+    def test_falls_back_to_unavailable_when_no_snippet(self):
+        # diff에도 없고 snippet도 없음 → "snippet_unavailable"
+        ctx = build_code_context("", "src/views.py", 1, "snippet_unavailable", "", "")
+        assert ctx["issue_line"] == "snippet_unavailable"
+
+    def test_summary_uses_message_when_concept_unknown(self):
+        ctx = build_code_context("", "a.py", 1, "snippet_unavailable", "", "줄이 너무 깁니다")
+        assert ctx["context_summary"] != ""
+        assert "줄이 너무 깁니다" in ctx["context_summary"]
+
+
+# ── build_taxonomy 테스트 ─────────────────────────────────────────────────────
+
+class TestBuildTaxonomy:
+    def test_b608_is_sql_injection(self):
+        tax = build_taxonomy("B608", "raw_query", "SQL 인젝션", "", "Vulnerability")
+        assert tax["category"] == "Security"
+        assert tax["subcategory"] == "Injection"
+        assert tax["issue_type"] == "SQL Injection"
+        assert tax["sub_issue_type"] == "Raw Query String Formatting"
+
+    def test_no_parameterize_is_missing_parameterized_query(self):
+        tax = build_taxonomy("X", "no_parameterize", "", "", "")
+        assert tax["sub_issue_type"] == "Missing Parameterized Query"
+
+    def test_mark_safe_detected_from_code(self):
+        tax = build_taxonomy("X", "", "", "return mark_safe(user_input)", "")
+        assert tax["subcategory"] == "XSS"
+        assert tax["sub_issue_type"] == "mark_safe Misuse"
+
+    def test_safe_filter_detected_from_code(self):
+        tax = build_taxonomy("X", "", "", "{{ comment|safe }}", "")
+        assert tax["issue_type"] == "Cross-Site Scripting"
+        assert tax["sub_issue_type"] == "Template Safe Filter Misuse"
+
+    def test_inner_html_detected_from_code(self):
+        tax = build_taxonomy("X", "", "", "el.innerHTML = data", "")
+        assert tax["sub_issue_type"] == "Direct innerHTML Assignment"
+
+    def test_csrf_exempt_detected(self):
+        tax = build_taxonomy("X", "", "", "@csrf_exempt", "")
+        assert tax["subcategory"] == "CSRF"
+        assert tax["sub_issue_type"] == "csrf_exempt Misuse"
+
+    def test_no_login_required_is_auth(self):
+        tax = build_taxonomy("X", "no_login_required", "", "", "")
+        assert tax["subcategory"] == "Authentication & Authorization"
+        assert tax["sub_issue_type"] == "Missing login_required"
+
+    def test_no_permission_check_is_authz_bypass(self):
+        tax = build_taxonomy("X", "no_permission_check", "", "", "")
+        assert tax["issue_type"] == "Authorization Bypass"
+
+    def test_complexity_is_cyclomatic(self):
+        tax = build_taxonomy("R1260", "", "Cyclomatic complexity is too high", "", "")
+        assert tax["subcategory"] == "Complexity"
+        assert tax["sub_issue_type"] == "High Cyclomatic Complexity"
+
+    def test_general_lint_is_code_smell(self):
+        tax = build_taxonomy("SA-E501", "", "line too long", "", "Code Smell")
+        assert tax["category"] == "Code Quality"
+        assert tax["sub_issue_type"] == "General Code Smell"
+
+    def test_fallback_when_nothing_matches(self):
+        tax = build_taxonomy("", "", "", "", "")
+        assert tax["category"] == "General"
+        assert tax["issue_type"] == "Unknown"
+        assert tax["sub_issue_type"] == "General Review Issue"
+
+
+# ── enrich_with_concept_mapping: code_context / taxonomy 통합 테스트 ──────────
+
+class TestEnrichAddsM4FeedbackFields:
+    BASE_ISSUE = {
+        "severity": "Critical",
+        "issue_type": "Vulnerability",
+        "line": 3,
+        "file": "src/views.py",
+        "message": "SQL 인젝션 가능성",
+        "rule_id": "B608",
+        "suggestion": "파라미터화된 쿼리 사용",
+        "resolution_example": "",
+        "similar_issues": [],
+        "_source": "security",
+        "llm_judged": True,
+    }
+
+    SAMPLE_DIFF = """\
+diff --git a/src/views.py b/src/views.py
+--- a/src/views.py
++++ b/src/views.py
+@@ -1,5 +1,7 @@
+ def get_user(request):
+     username = request.GET['username']
++    query = "SELECT * FROM auth_user WHERE username = '%s'" % username
++    users = User.objects.raw(query)
+     return render(request, "list.html")
+"""
+
+    def test_b608_produces_sql_injection_taxonomy(self):
+        result = enrich_with_concept_mapping(self.BASE_ISSUE, self.SAMPLE_DIFF, ["django"])
+        assert result["taxonomy"]["issue_type"] == "SQL Injection"
+        assert result["taxonomy"]["sub_issue_type"] == "Raw Query String Formatting"
+
+    def test_code_context_present_with_non_empty_summary(self):
+        result = enrich_with_concept_mapping(self.BASE_ISSUE, self.SAMPLE_DIFF, [])
+        assert "code_context" in result
+        assert result["code_context"]["context_summary"] != ""
+        assert "SELECT" in result["code_context"]["issue_line"]
+
+    def test_code_snippet_fallback_into_code_context(self):
+        # diff 없음 → code_snippet "snippet_unavailable" → issue_line도 동일
+        result = enrich_with_concept_mapping(self.BASE_ISSUE, "", [])
+        assert result["code_snippet"] == "snippet_unavailable"
+        assert result["code_context"]["issue_line"] == "snippet_unavailable"
+
+    def test_existing_and_m4_fields_all_preserved(self):
+        result = enrich_with_concept_mapping(self.BASE_ISSUE, self.SAMPLE_DIFF, [])
+        # 기존 필드
+        assert result["severity"] == "Critical"
+        assert result["rule_id"] == "B608"
+        assert result["llm_judged"] is True
+        # 기존 M4 매핑 필드
+        assert result["concept"] == "SQL Injection"
+        assert result["code_snippet"] != ""
+        assert isinstance(result["learning_context"], LearningContext)
+        # 신규 M4 피드백 필드
+        assert "code_context" in result
+        assert "taxonomy" in result
+
+    def test_result_passes_issue_pydantic(self):
+        # code_context / taxonomy dict이 Issue Pydantic에 통과하는지 (store 경계 검증)
+        result = enrich_with_concept_mapping(self.BASE_ISSUE, self.SAMPLE_DIFF, [])
+        fields = {
+            "severity", "issue_type", "line", "file", "message", "rule_id",
+            "suggestion", "resolution_example", "status", "similar_issues",
+            "concept", "mistake_type", "concept_id", "mistake_type_concept_id",
+            "confidence_score", "code_snippet", "learning_context",
+            "code_context", "taxonomy",
+        }
+        filtered = {k: v for k, v in result.items() if k in fields}
+        issue = Issue(**filtered)
+        assert isinstance(issue.code_context, CodeContext)
+        assert isinstance(issue.taxonomy, IssueTaxonomy)
+        assert issue.taxonomy.issue_type == "SQL Injection"
+        assert issue.code_context.context_summary != ""
