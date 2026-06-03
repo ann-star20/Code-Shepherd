@@ -56,7 +56,12 @@ BIGQUERY_TABLE = os.getenv("BIGQUERY_TABLE", "scan_results")
 
 # Issue 모델의 유효 필드 목록 — 내부 필드(_source, llm_*) 필터링에 사용
 _ISSUE_FIELDS = frozenset({
-    "severity", "line", "file", "message", "rule_id", "suggestion", "similar_issues",
+    # 기존 필드
+    "severity", "issue_type", "line", "file", "message", "rule_id",
+    "suggestion", "resolution_example", "status", "similar_issues",
+    # M4 매핑 필드 (concept_mapper가 채움)
+    "concept", "mistake_type", "concept_id", "mistake_type_concept_id",
+    "confidence_score", "code_snippet", "learning_context",
 })
 
 
@@ -67,6 +72,7 @@ def _build_output(
     agent: str,
     task_id: str,
     exec_ms: int,
+    action_decision: dict | None = None,
 ) -> dict:
     """
     이슈 목록을 AgentOutput Output Contract dict으로 변환한다.
@@ -96,20 +102,35 @@ def _build_output(
                 exc, raw.get("rule_id", "?"),
             )
 
-    # ② Summary 계산
+    # ② Summary 계산 (action_decision의 recommended_action 포함)
+    recommended_action = ""
+    if action_decision:
+        recommended_action = action_decision.get("recommended_action", "")
+
     summary = Summary(
         critical=sum(1 for i in validated if i.severity == "Critical"),
         major=sum(1 for i in validated if i.severity == "Major"),
         minor=sum(1 for i in validated if i.severity == "Minor"),
+        recommended_action=recommended_action,
     )
 
-    # ③ AgentOutput 빌드 → model_dump()로 dict 반환
+    # ③ metadata 구성 (action_decision 포함 — M0/Dev4 참고용)
+    metadata: dict = {}
+    if action_decision:
+        metadata["action_decision"] = {
+            "recommended_action": action_decision.get("recommended_action", ""),
+            "reason":             action_decision.get("reason", ""),
+            "confidence":         action_decision.get("confidence", 0.0),
+        }
+
+    # ④ AgentOutput 빌드 → model_dump()로 dict 반환
     return AgentOutput(
         agent=agent,
         task_id=task_id,
         issues=validated,
         summary=summary,
         execution_ms=exec_ms,
+        metadata=metadata,
     ).model_dump()
 
 
@@ -269,10 +290,10 @@ async def store_node(state: Dev2State) -> dict:
         {"final_output": [AgentOutput dict, ...]}
     """
     enriched: list[dict] = state.get("enriched", [])
-    # Dev2State 필드를 직접 읽음 (scan.py의 _payload_to_state가 flat하게 저장)
     task_id: str = state.get("task_id", "unknown-task")
     pr_id: str = state.get("pr_id", "")
     developer_id: str = state.get("developer_id", "")
+    action_decision: dict | None = state.get("action_decision")  # type: ignore
     trace_id = _make_trace_id(task_id)
 
     if not enriched:
@@ -304,8 +325,8 @@ async def store_node(state: Dev2State) -> dict:
     final_output: list[dict] = []
 
     for agent_name, issues in agent_groups:
-        # ① AgentOutput 빌드 (Pydantic 검증 — 내부 필드 제거)
-        output = _build_output(issues, agent_name, task_id, exec_ms)
+        # ① AgentOutput 빌드 (Pydantic 검증 — 내부 필드 제거, action_decision 포함)
+        output = _build_output(issues, agent_name, task_id, exec_ms, action_decision)
 
         # ② Cloud SQL (PostgreSQL) 적재 (실패 시 re-raise)
         try:

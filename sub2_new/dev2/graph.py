@@ -45,10 +45,12 @@ import os
 
 from langgraph.graph import END, StateGraph
 
+from dev2.nodes.action_decider_agent import action_decider_agent_node
 from dev2.nodes.escalate import escalate_node
 from dev2.nodes.llm_judge import llm_judge_node
 from dev2.nodes.run_tools import run_tools_node
 from dev2.nodes.store import store_node
+from dev2.nodes.tool_router_agent import tool_router_agent_node
 from dev2.nodes.vector_search import vector_search_node
 from dev2.schema import Dev2State
 
@@ -77,36 +79,34 @@ def _get_tracer():
 
 # ── 조건부 엣지 라우터 ────────────────────────────────────────────────────────
 
-def _route_after_judge(state: Dev2State) -> str:
+def route_after_action_decider(state: Dev2State) -> str:
     """
     Agentic Workflow 조건부 분기:
-        Critical 이슈 ≥ 1 → "escalate" (Dev4 즉시 알림 경로)
-        Critical 이슈 = 0 → "store"    (바로 저장 경로)
+        action_decision.recommended_action == "early_escalation" → "escalate"
+        그 외 (request_rework / needs_human_review / store_only)    → "store"
 
-    이 함수가 AI Native Agentic Workflow의 핵심 —
-    LLM 판단(llm_judge) 결과를 기반으로 실행 경로가 동적으로 결정된다.
-
-    CLAUDE.md §4: Critical ≥ 1 → escalate (Slack 즉시 알림)
+    request_rework / needs_human_review는 M2가 직접 처리하지 않고
+    recommended_action 값만 store에 기록해 M0/Dev4가 참고하도록 한다.
 
     Args:
-        state: llm_judge가 채운 enriched 포함 Dev2State
+        state: action_decider_agent가 채운 action_decision 포함 Dev2State
 
     Returns:
-        "escalate" 또는 "store" — add_conditional_edges 키와 매핑됨
+        "escalate" 또는 "store"
     """
-    enriched: list[dict] = state.get("enriched", [])
-    has_critical = any(i.get("severity") == "Critical" for i in enriched)
+    action_decision: dict = state.get("action_decision") or {}
+    recommended = action_decision.get("recommended_action", "store_only")
 
-    if has_critical:
-        critical_count = sum(1 for i in enriched if i.get("severity") == "Critical")
-        logger.info(
-            "_route_after_judge: Critical %d개 감지 → escalate 경로 선택",
-            critical_count,
-        )
+    if recommended == "early_escalation":
+        logger.info("route_after_action_decider: early_escalation → escalate 경로")
         return "escalate"
 
-    logger.debug("_route_after_judge: Critical 없음 → store 경로 선택")
+    logger.debug("route_after_action_decider: %s → store 경로", recommended)
     return "store"
+
+
+# backward compatibility — 기존 테스트/코드가 _route_after_judge를 참조하는 경우 대비
+_route_after_judge = route_after_action_decider
 
 
 # ── 그래프 빌더 ───────────────────────────────────────────────────────────────
@@ -130,32 +130,36 @@ def build_graph():
     """
     g = StateGraph(Dev2State)
 
-    # ── 노드 등록 ──────────────────────────────────────────────────────────────
-    g.add_node("run_tools", run_tools_node)         # CLI 도구 실행 (Pylint/Bandit 등)
-    g.add_node("vector_search", vector_search_node) # RAG Retrieve (pgVector)
-    g.add_node("llm_judge", llm_judge_node)         # RAG Generate (claude-sonnet-4-6)
-    g.add_node("escalate", escalate_node)           # Agentic 분기 (Critical 에스컬레이션)
-    g.add_node("store", store_node)                 # OLTP+OLAP 이중 저장
+    # ── 노드 등록 (7개) ────────────────────────────────────────────────────────
+    g.add_node("tool_router_agent",    tool_router_agent_node)    # PR 맥락 기반 도구 선택
+    g.add_node("run_tools",            run_tools_node)            # 선택된 도구 병렬 실행
+    g.add_node("vector_search",        vector_search_node)        # RAG Retrieve (pgVector)
+    g.add_node("llm_judge",            llm_judge_node)            # RAG Generate + concept 매핑
+    g.add_node("action_decider_agent", action_decider_agent_node) # 후속 액션 추천
+    g.add_node("escalate",             escalate_node)             # Critical 에스컬레이션
+    g.add_node("store",                store_node)                # OLTP+OLAP 이중 저장
 
     # ── 엣지 정의 ──────────────────────────────────────────────────────────────
-    g.set_entry_point("run_tools")
-    g.add_edge("run_tools", "vector_search")        # RAG: 이슈 탐지 후 유사 사례 검색
-    g.add_edge("vector_search", "llm_judge")        # RAG: context 주입 후 LLM 판단
+    g.set_entry_point("tool_router_agent")
+    g.add_edge("tool_router_agent",    "run_tools")
+    g.add_edge("run_tools",            "vector_search")
+    g.add_edge("vector_search",        "llm_judge")
+    g.add_edge("llm_judge",            "action_decider_agent")
 
-    # 조건부 엣지: Critical 유무에 따라 경로 분기 (Agentic Workflow 핵심)
+    # 조건부 엣지: action_decider_agent 추천값 기반 분기
     g.add_conditional_edges(
-        "llm_judge",
-        _route_after_judge,
+        "action_decider_agent",
+        route_after_action_decider,
         {
-            "escalate": "escalate",  # Critical ≥ 1 → Dev4 알림 후 store
-            "store": "store",        # Critical = 0 → 바로 store
+            "escalate": "escalate",  # early_escalation → 에스컬레이션 후 store
+            "store":    "store",     # 그 외 → 바로 store
         },
     )
-    g.add_edge("escalate", "store")  # escalate 이후 항상 store
-    g.add_edge("store", END)         # 저장 완료 → 파이프라인 종료
+    g.add_edge("escalate", "store")
+    g.add_edge("store",    END)
 
     compiled = g.compile()
-    logger.debug("Dev2 StateGraph 컴파일 완료 (5 nodes, conditional escalation edge)")
+    logger.debug("Dev2 StateGraph 컴파일 완료 (7 nodes: tool_router → ... → action_decider → store)")
     return compiled
 
 

@@ -66,40 +66,55 @@ async def run_tools_node(state: Dev2State) -> dict:
     """
     LangGraph 노드: 변경된 파일에 CLI 도구를 언어별로 병렬 실행한다.
 
-    흐름:
-        1. pr_diff 파싱 → 변경 파일 목록 추출
-        2. detect_languages() → 언어별 파일 그룹핑
-        3. asyncio.gather() → 언어별 _run_for_language 병렬 실행
-        4. 결과 취합 → static_raw, security_raw 반환
+    tool_plan 우선: tool_router_agent가 state["tool_plan"]을 채웠으면
+        changed_files와 selected_tools를 사용해 필요한 도구만 실행.
+    fallback: tool_plan 없으면 pr_diff에서 파일 추출 + 언어별 전체 도구 실행.
 
     Args:
-        state: Dev2State (pr_diff 필드 포함)
+        state: Dev2State (pr_diff, tool_plan 필드 사용)
 
     Returns:
         {"static_raw": [...], "security_raw": [...]}
-        — LangGraph가 이 dict를 state에 merge한다
     """
     diff = state.get("pr_diff", "")
-    if not diff:
-        logger.warning("run_tools_node: pr_diff가 비어 있음, 분석 생략")
-        return {"static_raw": [], "security_raw": []}
+    tool_plan: dict | None = state.get("tool_plan")  # type: ignore
 
-    all_files = _extract_changed_files(diff)
-    if not all_files:
-        logger.warning("run_tools_node: 지원되는 변경 파일 없음 (diff 파일 수: %d줄)", len(diff.splitlines()))
-        return {"static_raw": [], "security_raw": []}
+    # ── tool_plan 기반 실행 (tool_router_agent가 선택한 도구만) ─────────────
+    if tool_plan and tool_plan.get("selected_tools"):
+        selected_tools: set[str] = set(tool_plan["selected_tools"])
+        all_files = tool_plan.get("changed_files") or _extract_changed_files(diff)
+        if not all_files:
+            logger.warning("run_tools_node: tool_plan 있지만 changed_files 없음")
+            return {"static_raw": [], "security_raw": []}
 
-    lang_groups = detect_languages(all_files)  # {"python": [...], "javascript": [...]}
-    logger.info("run_tools_node: %d개 언어 감지 %s", len(lang_groups), list(lang_groups.keys()))
-
-    # ── 언어별 도구 병렬 실행 (asyncio.gather + return_exceptions) ──────────
-    # Week 5 교체 포인트: 타임아웃은 CLAUDE.md §6 기준 30초
-    # common/harness.py의 run_parallel_agents()로 교체 시 이 gather 블록 제거
-    tasks = [
-        asyncio.wait_for(
-            _run_for_language(lang, files),
-            timeout=TOOL_TIMEOUT_SEC,
+        # 지원 확장자 파일만 필터
+        all_files = [f for f in all_files if Path(f).suffix.lower() in SUPPORTED_EXTENSIONS]
+        lang_groups = detect_languages(all_files)
+        logger.info(
+            "run_tools_node: tool_plan 기반 실행 — selected_tools=%s, 언어=%s",
+            sorted(selected_tools), list(lang_groups.keys()),
         )
+        runner_fn = lambda lang, files: _run_for_language(lang, files, selected_tools)
+    else:
+        # ── fallback: 기존 동작 (전체 도구 실행) ─────────────────────────────
+        if not diff:
+            logger.warning("run_tools_node: pr_diff가 비어 있음, 분석 생략")
+            return {"static_raw": [], "security_raw": []}
+        all_files = _extract_changed_files(diff)
+        if not all_files:
+            logger.warning("run_tools_node: 지원되는 변경 파일 없음")
+            return {"static_raw": [], "security_raw": []}
+        lang_groups = detect_languages(all_files)
+        selected_tools = None  # type: ignore
+        logger.info(
+            "run_tools_node: fallback(tool_plan 없음) — %d개 언어 %s",
+            len(lang_groups), list(lang_groups.keys()),
+        )
+        runner_fn = lambda lang, files: _run_for_language(lang, files, None)
+
+    # ── 언어별 병렬 실행 ─────────────────────────────────────────────────────
+    tasks = [
+        asyncio.wait_for(runner_fn(lang, files), timeout=TOOL_TIMEOUT_SEC)
         for lang, files in lang_groups.items()
     ]
     results = await asyncio.gather(*tasks, return_exceptions=True)
@@ -109,11 +124,9 @@ async def run_tools_node(state: Dev2State) -> dict:
 
     for lang, result in zip(lang_groups.keys(), results):
         if isinstance(result, asyncio.TimeoutError):
-            # CLAUDE.md §6: 타임아웃 → 해당 언어 결과 제외하고 진행
             logger.warning("run_tools_node: %s 도구 30초 타임아웃 — 결과 제외", lang)
             continue
         if isinstance(result, Exception):
-            # CLAUDE.md §10-④: 에러는 삼키지 않는다 — 로그 후 계속
             logger.error("run_tools_node: %s 도구 실패 — %s", lang, result)
             continue
         static_raw.extend(result.get("static", []))
@@ -126,16 +139,21 @@ async def run_tools_node(state: Dev2State) -> dict:
     return {"static_raw": static_raw, "security_raw": security_raw}
 
 
-async def _run_for_language(lang: str, files: list[str]) -> dict:
+async def _run_for_language(
+    lang: str,
+    files: list[str],
+    selected_tools: set[str] | None = None,
+) -> dict:
     """
     언어별 정적분석 + 보안 도구 실행.
 
-    모든 동기 subprocess.run 호출은 asyncio.to_thread()로 스레드풀에 오프로드된다.
-    → 이벤트 루프를 블록하지 않아 다른 언어 도구와 진정한 병렬 실행 가능.
+    selected_tools가 있으면 해당 도구만 실행.
+    None이면 언어별 전체 도구 실행 (fallback).
 
     Args:
         lang: 언어 식별자 ("python", "javascript", "typescript", 등)
         files: 해당 언어의 변경 파일 경로 목록
+        selected_tools: tool_router_agent가 선택한 도구 집합 (None이면 전체)
 
     Returns:
         {"static": [...], "security": [...]}
@@ -143,59 +161,135 @@ async def _run_for_language(lang: str, files: list[str]) -> dict:
     runners = {
         "python":     _run_python,
         "javascript": _run_javascript,
-        "typescript": _run_javascript,   # eslint로 TS도 처리
+        "typescript": _run_javascript,
         "csharp":     _run_csharp,
         "html":       _run_html,
         "css":        _run_css,
     }
     runner = runners.get(lang, _run_generic)
-    return await runner(files)
+    return await runner(files, selected_tools)
 
 
-async def _run_python(files: list[str]) -> dict:
-    """pylint + radon (정적) + bandit + semgrep (보안) 병렬 실행"""
-    # asyncio.to_thread: 동기 subprocess.run을 스레드풀에서 실행 (Python 3.9+)
-    # 두 그룹을 gather로 동시에 실행 (정적/보안 교차 병렬화)
-    static_task = asyncio.to_thread(lambda: run_pylint(files) + run_radon(files))
-    security_task = asyncio.to_thread(lambda: run_bandit(files) + run_semgrep(files, lang="python"))
-    static, security = await asyncio.gather(static_task, security_task)
-    return {"static": static, "security": security}
+async def _run_python(files: list[str], st: set[str] | None = None) -> dict:
+    """pylint + radon (정적) + bandit + semgrep (보안). st=None이면 전체 실행."""
+    all_tools = st is None
+    static_parts = []
+    security_parts = []
+
+    tasks = []
+    labels = []
+    if all_tools or "pylint" in (st or set()):
+        tasks.append(asyncio.to_thread(run_pylint, files))
+        labels.append("pylint")
+    if all_tools or "radon" in (st or set()):
+        tasks.append(asyncio.to_thread(run_radon, files))
+        labels.append("radon")
+    if all_tools or "bandit" in (st or set()):
+        tasks.append(asyncio.to_thread(run_bandit, files))
+        labels.append("bandit")
+    if all_tools or "semgrep" in (st or set()):
+        tasks.append(asyncio.to_thread(run_semgrep, files, "python"))
+        labels.append("semgrep")
+
+    results = await asyncio.gather(*tasks, return_exceptions=True)
+    for label, result in zip(labels, results):
+        if isinstance(result, Exception):
+            logger.warning("_run_python: %s 실패 — %s", label, result)
+            continue
+        if label in ("pylint", "radon"):
+            static_parts.extend(result)
+        else:
+            security_parts.extend(result)
+
+    return {"static": static_parts, "security": security_parts}
 
 
-async def _run_javascript(files: list[str]) -> dict:
-    """eslint (정적) + semgrep + npm audit (보안)"""
-    static_task = asyncio.to_thread(lambda: run_eslint(files))
-    # npm_audit는 파일 단위가 아닌 프로젝트 단위 — 별도 스레드 실행
-    security_task = asyncio.to_thread(
-        lambda: run_semgrep(files, lang="javascript") + run_npm_audit()
-    )
-    static, security = await asyncio.gather(static_task, security_task)
-    return {"static": static, "security": security}
+async def _run_javascript(files: list[str], st: set[str] | None = None) -> dict:
+    """eslint (정적) + semgrep + npm audit (보안)."""
+    all_tools = st is None
+    static_parts: list[dict] = []
+    security_parts: list[dict] = []
+
+    tasks = []
+    labels = []
+    if all_tools or "eslint" in (st or set()):
+        tasks.append(asyncio.to_thread(run_eslint, files))
+        labels.append("eslint")
+    if all_tools or "semgrep" in (st or set()):
+        tasks.append(asyncio.to_thread(run_semgrep, files, "javascript"))
+        labels.append("semgrep")
+    if all_tools or "npm_audit" in (st or set()):
+        tasks.append(asyncio.to_thread(run_npm_audit))
+        labels.append("npm_audit")
+
+    results = await asyncio.gather(*tasks, return_exceptions=True)
+    for label, result in zip(labels, results):
+        if isinstance(result, Exception):
+            logger.warning("_run_javascript: %s 실패 — %s", label, result)
+            continue
+        if label == "eslint":
+            static_parts.extend(result)
+        else:
+            security_parts.extend(result)
+
+    return {"static": static_parts, "security": security_parts}
 
 
-async def _run_csharp(files: list[str]) -> dict:
-    """roslyn (정적) + semgrep (보안)"""
-    static_task = asyncio.to_thread(lambda: run_roslyn(files))
-    security_task = asyncio.to_thread(lambda: run_semgrep(files, lang="csharp"))
-    static, security = await asyncio.gather(static_task, security_task)
-    return {"static": static, "security": security}
+async def _run_csharp(files: list[str], st: set[str] | None = None) -> dict:
+    """roslyn (정적) + semgrep (보안)."""
+    all_tools = st is None
+    tasks, labels = [], []
+    if all_tools or "roslyn" in (st or set()):
+        tasks.append(asyncio.to_thread(run_roslyn, files))
+        labels.append("roslyn")
+    if all_tools or "semgrep" in (st or set()):
+        tasks.append(asyncio.to_thread(run_semgrep, files, "csharp"))
+        labels.append("semgrep")
+
+    static_parts, security_parts = [], []
+    for label, result in zip(labels, await asyncio.gather(*tasks, return_exceptions=True)):
+        if isinstance(result, Exception):
+            logger.warning("_run_csharp: %s 실패 — %s", label, result)
+            continue
+        (static_parts if label == "roslyn" else security_parts).extend(result)
+
+    return {"static": static_parts, "security": security_parts}
 
 
-async def _run_html(files: list[str]) -> dict:
-    """htmlhint (정적) + semgrep (보안)"""
-    static_task = asyncio.to_thread(lambda: run_htmlhint(files))
-    security_task = asyncio.to_thread(lambda: run_semgrep(files, lang="html"))
-    static, security = await asyncio.gather(static_task, security_task)
-    return {"static": static, "security": security}
+async def _run_html(files: list[str], st: set[str] | None = None) -> dict:
+    """htmlhint (정적) + semgrep (보안)."""
+    all_tools = st is None
+    tasks, labels = [], []
+    if all_tools or "htmlhint" in (st or set()):
+        tasks.append(asyncio.to_thread(run_htmlhint, files))
+        labels.append("htmlhint")
+    if all_tools or "semgrep" in (st or set()):
+        tasks.append(asyncio.to_thread(run_semgrep, files, "html"))
+        labels.append("semgrep")
+
+    static_parts, security_parts = [], []
+    for label, result in zip(labels, await asyncio.gather(*tasks, return_exceptions=True)):
+        if isinstance(result, Exception):
+            logger.warning("_run_html: %s 실패 — %s", label, result)
+            continue
+        (static_parts if label == "htmlhint" else security_parts).extend(result)
+
+    return {"static": static_parts, "security": security_parts}
 
 
-async def _run_css(files: list[str]) -> dict:
-    """stylelint (정적만, CSS에는 별도 보안 도구 없음)"""
-    static = await asyncio.to_thread(lambda: run_stylelint(files))
-    return {"static": static, "security": []}
+async def _run_css(files: list[str], st: set[str] | None = None) -> dict:
+    """stylelint (정적만)."""
+    all_tools = st is None
+    if not (all_tools or "stylelint" in (st or set())):
+        return {"static": [], "security": []}
+    static = await asyncio.to_thread(run_stylelint, files)
+    return {"static": static if not isinstance(static, Exception) else [], "security": []}
 
 
-async def _run_generic(files: list[str]) -> dict:
-    """알 수 없는 언어 → semgrep 공통 보안 검사만 실행"""
-    security = await asyncio.to_thread(lambda: run_semgrep(files, lang="generic"))
-    return {"static": [], "security": security}
+async def _run_generic(files: list[str], st: set[str] | None = None) -> dict:
+    """알 수 없는 언어 → semgrep만."""
+    all_tools = st is None
+    if not (all_tools or "semgrep" in (st or set())):
+        return {"static": [], "security": []}
+    security = await asyncio.to_thread(run_semgrep, files, "generic")
+    return {"static": [], "security": security if not isinstance(security, Exception) else []}
