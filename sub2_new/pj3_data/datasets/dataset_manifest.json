@@ -1,0 +1,907 @@
+{
+  "dataset_root": "datasets/",
+  "purpose": "Task-Link M2/M3 evaluation dataset manifest",
+  "total_case_count": 70,
+  "cases": [
+    {
+      "case_id": "bugsinpy_black_3",
+      "module": "M3",
+      "source": "BugsInPy",
+      "case_type": "real_bug",
+      "project": "black",
+      "bug_id": 3,
+      "target_path": "m3_bugsinpy_selected/black_3",
+      "status": "ready"
+    },
+    {
+      "case_id": "bugsinpy_black_4",
+      "module": "M3",
+      "source": "BugsInPy",
+      "case_type": "real_bug",
+      "project": "black",
+      "bug_id": 4,
+      "target_path": "m3_bugsinpy_selected/black_4",
+      "status": "ready"
+    },
+    {
+      "case_id": "bugsinpy_cookiecutter_1",
+      "module": "M3",
+      "source": "BugsInPy",
+      "case_type": "real_bug",
+      "project": "cookiecutter",
+      "bug_id": 1,
+      "target_path": "m3_bugsinpy_selected/cookiecutter_1",
+      "status": "ready"
+    },
+    {
+      "case_id": "bugsinpy_cookiecutter_2",
+      "module": "M3",
+      "source": "BugsInPy",
+      "case_type": "real_bug",
+      "project": "cookiecutter",
+      "bug_id": 2,
+      "target_path": "m3_bugsinpy_selected/cookiecutter_2",
+      "status": "ready"
+    },
+    {
+      "case_id": "bugsinpy_fastapi_2",
+      "module": "M3",
+      "source": "BugsInPy",
+      "case_type": "real_bug",
+      "project": "fastapi",
+      "bug_id": 2,
+      "target_path": "m3_bugsinpy_selected/fastapi_2",
+      "status": "ready"
+    },
+    {
+      "case_id": "bugsinpy_fastapi_5",
+      "module": "M3",
+      "source": "BugsInPy",
+      "case_type": "real_bug",
+      "project": "fastapi",
+      "bug_id": 5,
+      "target_path": "m3_bugsinpy_selected/fastapi_5",
+      "status": "ready"
+    },
+    {
+      "case_id": "bugsinpy_tqdm_1",
+      "module": "M3",
+      "source": "BugsInPy",
+      "case_type": "real_bug",
+      "project": "tqdm",
+      "bug_id": 1,
+      "target_path": "m3_bugsinpy_selected/tqdm_1",
+      "status": "ready"
+    },
+    {
+      "case_id": "bugsinpy_tqdm_4",
+      "module": "M3",
+      "source": "BugsInPy",
+      "case_type": "real_bug",
+      "project": "tqdm",
+      "bug_id": 4,
+      "target_path": "m3_bugsinpy_selected/tqdm_4",
+      "status": "ready"
+    },
+    {
+      "case_id": "m3_custom_low_coverage_001",
+      "module": "M3",
+      "source": "Task-Link Custom",
+      "case_type": "test_performance",
+      "category": "low_coverage",
+      "rule_id": "TEST-001",
+      "target_path": "m3_test_performance_cases/custom_performance_cases/low_coverage_case",
+      "expected_output_ref": "expected_outputs/expected_m3_issues.json"
+    },
+    {
+      "case_id": "m3_custom_missing_test_function_001",
+      "module": "M3",
+      "source": "Task-Link Custom",
+      "case_type": "test_performance",
+      "category": "missing_test_function",
+      "rule_id": "TEST-004",
+      "target_path": "m3_test_performance_cases/custom_performance_cases/missing_test_function_case",
+      "expected_output_ref": "expected_outputs/expected_m3_issues.json"
+    },
+    {
+      "case_id": "m3_custom_n_plus_one_001",
+      "module": "M3",
+      "source": "Task-Link Custom",
+      "case_type": "test_performance",
+      "category": "n_plus_one",
+      "rule_id": "PERF-002",
+      "target_path": "m3_test_performance_cases/custom_performance_cases/n_plus_one_case",
+      "expected_output_ref": "expected_outputs/expected_m3_issues.json"
+    },
+    {
+      "case_id": "m3_custom_complexity_001",
+      "module": "M3",
+      "source": "Task-Link Custom",
+      "case_type": "test_performance",
+      "category": "complexity",
+      "rule_id": "PERF-001",
+      "target_path": "m3_test_performance_cases/custom_performance_cases/complexity_case",
+      "expected_output_ref": "expected_outputs/expected_m3_issues.json"
+    },
+    {
+      "case_id": "m3_custom_edge_case_missing_001",
+      "module": "M3",
+      "source": "Task-Link Custom",
+      "case_type": "test_performance",
+      "category": "edge_case_missing",
+      "rule_id": "TEST-003",
+      "target_path": "m3_test_performance_cases/custom_performance_cases/edge_case_missing_case",
+      "expected_output_ref": "expected_outputs/expected_m3_issues.json"
+    },
+    {
+      "case_id": "m3_custom_memory_leak_001",
+      "module": "M3",
+      "source": "Task-Link Custom",
+      "case_type": "test_performance",
+      "category": "memory_leak",
+      "rule_id": "PERF-003",
+      "target_path": "m3_test_performance_cases/custom_performance_cases/memory_leak_case",
+      "expected_output_ref": "expected_outputs/expected_m3_issues.json"
+    },
+    {
+      "case_id": "m2_custom_sqli_001",
+      "module": "M2",
+      "source": "Task-Link Custom",
+      "case_type": "security",
+      "category": "sqli",
+      "rule_id": "SEC-001",
+      "target_path": "m2_custom_security_cases/sqli_case",
+      "expected_output_ref": "expected_outputs/expected_m2_issues.json"
+    },
+    {
+      "case_id": "m2_custom_path_traversal_001",
+      "module": "M2",
+      "source": "Task-Link Custom",
+      "case_type": "security",
+      "category": "path_traversal",
+      "rule_id": "SEC-003",
+      "target_path": "m2_custom_security_cases/path_traversal_case",
+      "expected_output_ref": "expected_outputs/expected_m2_issues.json"
+    },
+    {
+      "case_id": "m2_custom_command_injection_001",
+      "module": "M2",
+      "source": "Task-Link Custom",
+      "case_type": "security",
+      "category": "command_injection",
+      "rule_id": "SEC-004",
+      "target_path": "m2_custom_security_cases/command_injection_case",
+      "expected_output_ref": "expected_outputs/expected_m2_issues.json"
+    },
+    {
+      "case_id": "m2_custom_auth_missing_001",
+      "module": "M2",
+      "source": "Task-Link Custom",
+      "case_type": "security",
+      "category": "auth_missing",
+      "rule_id": "AUTH-001",
+      "target_path": "m2_custom_security_cases/auth_missing_case",
+      "expected_output_ref": "expected_outputs/expected_m2_issues.json"
+    },
+    {
+      "case_id": "m2_custom_insecure_password_hash_001",
+      "module": "M2",
+      "source": "Task-Link Custom",
+      "case_type": "security",
+      "category": "insecure_password_hash",
+      "rule_id": "SEC-005",
+      "target_path": "m2_custom_security_cases/insecure_password_hash_case",
+      "expected_output_ref": "expected_outputs/expected_m2_issues.json"
+    },
+    {
+      "case_id": "m2_custom_hardcoded_secret_001",
+      "module": "M2",
+      "source": "Task-Link Custom",
+      "case_type": "security",
+      "category": "hardcoded_secret",
+      "rule_id": "SEC-006",
+      "target_path": "m2_custom_security_cases/hardcoded_secret_case",
+      "expected_output_ref": "expected_outputs/expected_m2_issues.json"
+    },
+    {
+      "case_id": "m2_owasp_sqli_BenchmarkTest00099",
+      "module": "M2",
+      "source": "OWASP BenchmarkPython",
+      "agent": "security_scan",
+      "case_type": "security",
+      "category": "sqli",
+      "cwe": "CWE-89",
+      "real_vulnerability": true,
+      "target_path": "m2_owasp_benchmark_python_selected/testcode/BenchmarkTest00099.py",
+      "expected_output_ref": "m2_owasp_benchmark_python_selected/expected_owasp_m2_issues.json",
+      "expected_rule_ids": [
+        "SEC-001"
+      ]
+    },
+    {
+      "case_id": "m2_owasp_sqli_BenchmarkTest00283",
+      "module": "M2",
+      "source": "OWASP BenchmarkPython",
+      "agent": "security_scan",
+      "case_type": "security",
+      "category": "sqli",
+      "cwe": "CWE-89",
+      "real_vulnerability": true,
+      "target_path": "m2_owasp_benchmark_python_selected/testcode/BenchmarkTest00283.py",
+      "expected_output_ref": "m2_owasp_benchmark_python_selected/expected_owasp_m2_issues.json",
+      "expected_rule_ids": [
+        "SEC-001"
+      ]
+    },
+    {
+      "case_id": "m2_owasp_sqli_BenchmarkTest00284",
+      "module": "M2",
+      "source": "OWASP BenchmarkPython",
+      "agent": "security_scan",
+      "case_type": "security",
+      "category": "sqli",
+      "cwe": "CWE-89",
+      "real_vulnerability": true,
+      "target_path": "m2_owasp_benchmark_python_selected/testcode/BenchmarkTest00284.py",
+      "expected_output_ref": "m2_owasp_benchmark_python_selected/expected_owasp_m2_issues.json",
+      "expected_rule_ids": [
+        "SEC-001"
+      ]
+    },
+    {
+      "case_id": "m2_owasp_sqli_BenchmarkTest00454",
+      "module": "M2",
+      "source": "OWASP BenchmarkPython",
+      "agent": "security_scan",
+      "case_type": "security",
+      "category": "sqli",
+      "cwe": "CWE-89",
+      "real_vulnerability": true,
+      "target_path": "m2_owasp_benchmark_python_selected/testcode/BenchmarkTest00454.py",
+      "expected_output_ref": "m2_owasp_benchmark_python_selected/expected_owasp_m2_issues.json",
+      "expected_rule_ids": [
+        "SEC-001"
+      ]
+    },
+    {
+      "case_id": "m2_owasp_sqli_BenchmarkTest00455",
+      "module": "M2",
+      "source": "OWASP BenchmarkPython",
+      "agent": "security_scan",
+      "case_type": "security",
+      "category": "sqli",
+      "cwe": "CWE-89",
+      "real_vulnerability": true,
+      "target_path": "m2_owasp_benchmark_python_selected/testcode/BenchmarkTest00455.py",
+      "expected_output_ref": "m2_owasp_benchmark_python_selected/expected_owasp_m2_issues.json",
+      "expected_rule_ids": [
+        "SEC-001"
+      ]
+    },
+    {
+      "case_id": "m2_owasp_sqli_BenchmarkTest00011",
+      "module": "M2",
+      "source": "OWASP BenchmarkPython",
+      "agent": "security_scan",
+      "case_type": "security",
+      "category": "sqli",
+      "cwe": "CWE-89",
+      "real_vulnerability": false,
+      "target_path": "m2_owasp_benchmark_python_selected/testcode/BenchmarkTest00011.py",
+      "expected_output_ref": "m2_owasp_benchmark_python_selected/expected_owasp_m2_issues.json",
+      "expected_rule_ids": []
+    },
+    {
+      "case_id": "m2_owasp_sqli_BenchmarkTest00012",
+      "module": "M2",
+      "source": "OWASP BenchmarkPython",
+      "agent": "security_scan",
+      "case_type": "security",
+      "category": "sqli",
+      "cwe": "CWE-89",
+      "real_vulnerability": false,
+      "target_path": "m2_owasp_benchmark_python_selected/testcode/BenchmarkTest00012.py",
+      "expected_output_ref": "m2_owasp_benchmark_python_selected/expected_owasp_m2_issues.json",
+      "expected_rule_ids": []
+    },
+    {
+      "case_id": "m2_owasp_sqli_BenchmarkTest00100",
+      "module": "M2",
+      "source": "OWASP BenchmarkPython",
+      "agent": "security_scan",
+      "case_type": "security",
+      "category": "sqli",
+      "cwe": "CWE-89",
+      "real_vulnerability": false,
+      "target_path": "m2_owasp_benchmark_python_selected/testcode/BenchmarkTest00100.py",
+      "expected_output_ref": "m2_owasp_benchmark_python_selected/expected_owasp_m2_issues.json",
+      "expected_rule_ids": []
+    },
+    {
+      "case_id": "m2_owasp_sqli_BenchmarkTest00192",
+      "module": "M2",
+      "source": "OWASP BenchmarkPython",
+      "agent": "security_scan",
+      "case_type": "security",
+      "category": "sqli",
+      "cwe": "CWE-89",
+      "real_vulnerability": false,
+      "target_path": "m2_owasp_benchmark_python_selected/testcode/BenchmarkTest00192.py",
+      "expected_output_ref": "m2_owasp_benchmark_python_selected/expected_owasp_m2_issues.json",
+      "expected_rule_ids": []
+    },
+    {
+      "case_id": "m2_owasp_sqli_BenchmarkTest00285",
+      "module": "M2",
+      "source": "OWASP BenchmarkPython",
+      "agent": "security_scan",
+      "case_type": "security",
+      "category": "sqli",
+      "cwe": "CWE-89",
+      "real_vulnerability": false,
+      "target_path": "m2_owasp_benchmark_python_selected/testcode/BenchmarkTest00285.py",
+      "expected_output_ref": "m2_owasp_benchmark_python_selected/expected_owasp_m2_issues.json",
+      "expected_rule_ids": []
+    },
+    {
+      "case_id": "m2_owasp_xss_BenchmarkTest00096",
+      "module": "M2",
+      "source": "OWASP BenchmarkPython",
+      "agent": "security_scan",
+      "case_type": "security",
+      "category": "xss",
+      "cwe": "CWE-79",
+      "real_vulnerability": true,
+      "target_path": "m2_owasp_benchmark_python_selected/testcode/BenchmarkTest00096.py",
+      "expected_output_ref": "m2_owasp_benchmark_python_selected/expected_owasp_m2_issues.json",
+      "expected_rule_ids": [
+        "SEC-002"
+      ]
+    },
+    {
+      "case_id": "m2_owasp_xss_BenchmarkTest00097",
+      "module": "M2",
+      "source": "OWASP BenchmarkPython",
+      "agent": "security_scan",
+      "case_type": "security",
+      "category": "xss",
+      "cwe": "CWE-79",
+      "real_vulnerability": true,
+      "target_path": "m2_owasp_benchmark_python_selected/testcode/BenchmarkTest00097.py",
+      "expected_output_ref": "m2_owasp_benchmark_python_selected/expected_owasp_m2_issues.json",
+      "expected_rule_ids": [
+        "SEC-002"
+      ]
+    },
+    {
+      "case_id": "m2_owasp_xss_BenchmarkTest00098",
+      "module": "M2",
+      "source": "OWASP BenchmarkPython",
+      "agent": "security_scan",
+      "case_type": "security",
+      "category": "xss",
+      "cwe": "CWE-79",
+      "real_vulnerability": true,
+      "target_path": "m2_owasp_benchmark_python_selected/testcode/BenchmarkTest00098.py",
+      "expected_output_ref": "m2_owasp_benchmark_python_selected/expected_owasp_m2_issues.json",
+      "expected_rule_ids": [
+        "SEC-002"
+      ]
+    },
+    {
+      "case_id": "m2_owasp_xss_BenchmarkTest00169",
+      "module": "M2",
+      "source": "OWASP BenchmarkPython",
+      "agent": "security_scan",
+      "case_type": "security",
+      "category": "xss",
+      "cwe": "CWE-79",
+      "real_vulnerability": true,
+      "target_path": "m2_owasp_benchmark_python_selected/testcode/BenchmarkTest00169.py",
+      "expected_output_ref": "m2_owasp_benchmark_python_selected/expected_owasp_m2_issues.json",
+      "expected_rule_ids": [
+        "SEC-002"
+      ]
+    },
+    {
+      "case_id": "m2_owasp_xss_BenchmarkTest00187",
+      "module": "M2",
+      "source": "OWASP BenchmarkPython",
+      "agent": "security_scan",
+      "case_type": "security",
+      "category": "xss",
+      "cwe": "CWE-79",
+      "real_vulnerability": true,
+      "target_path": "m2_owasp_benchmark_python_selected/testcode/BenchmarkTest00187.py",
+      "expected_output_ref": "m2_owasp_benchmark_python_selected/expected_owasp_m2_issues.json",
+      "expected_rule_ids": [
+        "SEC-002"
+      ]
+    },
+    {
+      "case_id": "m2_owasp_xss_BenchmarkTest00082",
+      "module": "M2",
+      "source": "OWASP BenchmarkPython",
+      "agent": "security_scan",
+      "case_type": "security",
+      "category": "xss",
+      "cwe": "CWE-79",
+      "real_vulnerability": false,
+      "target_path": "m2_owasp_benchmark_python_selected/testcode/BenchmarkTest00082.py",
+      "expected_output_ref": "m2_owasp_benchmark_python_selected/expected_owasp_m2_issues.json",
+      "expected_rule_ids": []
+    },
+    {
+      "case_id": "m2_owasp_xss_BenchmarkTest00083",
+      "module": "M2",
+      "source": "OWASP BenchmarkPython",
+      "agent": "security_scan",
+      "case_type": "security",
+      "category": "xss",
+      "cwe": "CWE-79",
+      "real_vulnerability": false,
+      "target_path": "m2_owasp_benchmark_python_selected/testcode/BenchmarkTest00083.py",
+      "expected_output_ref": "m2_owasp_benchmark_python_selected/expected_owasp_m2_issues.json",
+      "expected_rule_ids": []
+    },
+    {
+      "case_id": "m2_owasp_xss_BenchmarkTest00084",
+      "module": "M2",
+      "source": "OWASP BenchmarkPython",
+      "agent": "security_scan",
+      "case_type": "security",
+      "category": "xss",
+      "cwe": "CWE-79",
+      "real_vulnerability": false,
+      "target_path": "m2_owasp_benchmark_python_selected/testcode/BenchmarkTest00084.py",
+      "expected_output_ref": "m2_owasp_benchmark_python_selected/expected_owasp_m2_issues.json",
+      "expected_rule_ids": []
+    },
+    {
+      "case_id": "m2_owasp_xss_BenchmarkTest00149",
+      "module": "M2",
+      "source": "OWASP BenchmarkPython",
+      "agent": "security_scan",
+      "case_type": "security",
+      "category": "xss",
+      "cwe": "CWE-79",
+      "real_vulnerability": false,
+      "target_path": "m2_owasp_benchmark_python_selected/testcode/BenchmarkTest00149.py",
+      "expected_output_ref": "m2_owasp_benchmark_python_selected/expected_owasp_m2_issues.json",
+      "expected_rule_ids": []
+    },
+    {
+      "case_id": "m2_owasp_xss_BenchmarkTest00150",
+      "module": "M2",
+      "source": "OWASP BenchmarkPython",
+      "agent": "security_scan",
+      "case_type": "security",
+      "category": "xss",
+      "cwe": "CWE-79",
+      "real_vulnerability": false,
+      "target_path": "m2_owasp_benchmark_python_selected/testcode/BenchmarkTest00150.py",
+      "expected_output_ref": "m2_owasp_benchmark_python_selected/expected_owasp_m2_issues.json",
+      "expected_rule_ids": []
+    },
+    {
+      "case_id": "m2_owasp_pathtraver_BenchmarkTest00001",
+      "module": "M2",
+      "source": "OWASP BenchmarkPython",
+      "agent": "security_scan",
+      "case_type": "security",
+      "category": "pathtraver",
+      "cwe": "CWE-22",
+      "real_vulnerability": true,
+      "target_path": "m2_owasp_benchmark_python_selected/testcode/BenchmarkTest00001.py",
+      "expected_output_ref": "m2_owasp_benchmark_python_selected/expected_owasp_m2_issues.json",
+      "expected_rule_ids": [
+        "SEC-003"
+      ]
+    },
+    {
+      "case_id": "m2_owasp_pathtraver_BenchmarkTest00002",
+      "module": "M2",
+      "source": "OWASP BenchmarkPython",
+      "agent": "security_scan",
+      "case_type": "security",
+      "category": "pathtraver",
+      "cwe": "CWE-22",
+      "real_vulnerability": true,
+      "target_path": "m2_owasp_benchmark_python_selected/testcode/BenchmarkTest00002.py",
+      "expected_output_ref": "m2_owasp_benchmark_python_selected/expected_owasp_m2_issues.json",
+      "expected_rule_ids": [
+        "SEC-003"
+      ]
+    },
+    {
+      "case_id": "m2_owasp_pathtraver_BenchmarkTest00003",
+      "module": "M2",
+      "source": "OWASP BenchmarkPython",
+      "agent": "security_scan",
+      "case_type": "security",
+      "category": "pathtraver",
+      "cwe": "CWE-22",
+      "real_vulnerability": true,
+      "target_path": "m2_owasp_benchmark_python_selected/testcode/BenchmarkTest00003.py",
+      "expected_output_ref": "m2_owasp_benchmark_python_selected/expected_owasp_m2_issues.json",
+      "expected_rule_ids": [
+        "SEC-003"
+      ]
+    },
+    {
+      "case_id": "m2_owasp_pathtraver_BenchmarkTest00008",
+      "module": "M2",
+      "source": "OWASP BenchmarkPython",
+      "agent": "security_scan",
+      "case_type": "security",
+      "category": "pathtraver",
+      "cwe": "CWE-22",
+      "real_vulnerability": true,
+      "target_path": "m2_owasp_benchmark_python_selected/testcode/BenchmarkTest00008.py",
+      "expected_output_ref": "m2_owasp_benchmark_python_selected/expected_owasp_m2_issues.json",
+      "expected_rule_ids": [
+        "SEC-003"
+      ]
+    },
+    {
+      "case_id": "m2_owasp_pathtraver_BenchmarkTest00085",
+      "module": "M2",
+      "source": "OWASP BenchmarkPython",
+      "agent": "security_scan",
+      "case_type": "security",
+      "category": "pathtraver",
+      "cwe": "CWE-22",
+      "real_vulnerability": true,
+      "target_path": "m2_owasp_benchmark_python_selected/testcode/BenchmarkTest00085.py",
+      "expected_output_ref": "m2_owasp_benchmark_python_selected/expected_owasp_m2_issues.json",
+      "expected_rule_ids": [
+        "SEC-003"
+      ]
+    },
+    {
+      "case_id": "m2_owasp_pathtraver_BenchmarkTest00004",
+      "module": "M2",
+      "source": "OWASP BenchmarkPython",
+      "agent": "security_scan",
+      "case_type": "security",
+      "category": "pathtraver",
+      "cwe": "CWE-22",
+      "real_vulnerability": false,
+      "target_path": "m2_owasp_benchmark_python_selected/testcode/BenchmarkTest00004.py",
+      "expected_output_ref": "m2_owasp_benchmark_python_selected/expected_owasp_m2_issues.json",
+      "expected_rule_ids": []
+    },
+    {
+      "case_id": "m2_owasp_pathtraver_BenchmarkTest00005",
+      "module": "M2",
+      "source": "OWASP BenchmarkPython",
+      "agent": "security_scan",
+      "case_type": "security",
+      "category": "pathtraver",
+      "cwe": "CWE-22",
+      "real_vulnerability": false,
+      "target_path": "m2_owasp_benchmark_python_selected/testcode/BenchmarkTest00005.py",
+      "expected_output_ref": "m2_owasp_benchmark_python_selected/expected_owasp_m2_issues.json",
+      "expected_rule_ids": []
+    },
+    {
+      "case_id": "m2_owasp_pathtraver_BenchmarkTest00006",
+      "module": "M2",
+      "source": "OWASP BenchmarkPython",
+      "agent": "security_scan",
+      "case_type": "security",
+      "category": "pathtraver",
+      "cwe": "CWE-22",
+      "real_vulnerability": false,
+      "target_path": "m2_owasp_benchmark_python_selected/testcode/BenchmarkTest00006.py",
+      "expected_output_ref": "m2_owasp_benchmark_python_selected/expected_owasp_m2_issues.json",
+      "expected_rule_ids": []
+    },
+    {
+      "case_id": "m2_owasp_pathtraver_BenchmarkTest00007",
+      "module": "M2",
+      "source": "OWASP BenchmarkPython",
+      "agent": "security_scan",
+      "case_type": "security",
+      "category": "pathtraver",
+      "cwe": "CWE-22",
+      "real_vulnerability": false,
+      "target_path": "m2_owasp_benchmark_python_selected/testcode/BenchmarkTest00007.py",
+      "expected_output_ref": "m2_owasp_benchmark_python_selected/expected_owasp_m2_issues.json",
+      "expected_rule_ids": []
+    },
+    {
+      "case_id": "m2_owasp_pathtraver_BenchmarkTest00009",
+      "module": "M2",
+      "source": "OWASP BenchmarkPython",
+      "agent": "security_scan",
+      "case_type": "security",
+      "category": "pathtraver",
+      "cwe": "CWE-22",
+      "real_vulnerability": false,
+      "target_path": "m2_owasp_benchmark_python_selected/testcode/BenchmarkTest00009.py",
+      "expected_output_ref": "m2_owasp_benchmark_python_selected/expected_owasp_m2_issues.json",
+      "expected_rule_ids": []
+    },
+    {
+      "case_id": "m2_owasp_cmdi_BenchmarkTest00165",
+      "module": "M2",
+      "source": "OWASP BenchmarkPython",
+      "agent": "security_scan",
+      "case_type": "security",
+      "category": "cmdi",
+      "cwe": "CWE-78",
+      "real_vulnerability": true,
+      "target_path": "m2_owasp_benchmark_python_selected/testcode/BenchmarkTest00165.py",
+      "expected_output_ref": "m2_owasp_benchmark_python_selected/expected_owasp_m2_issues.json",
+      "expected_rule_ids": [
+        "SEC-004"
+      ]
+    },
+    {
+      "case_id": "m2_owasp_cmdi_BenchmarkTest00166",
+      "module": "M2",
+      "source": "OWASP BenchmarkPython",
+      "agent": "security_scan",
+      "case_type": "security",
+      "category": "cmdi",
+      "cwe": "CWE-78",
+      "real_vulnerability": true,
+      "target_path": "m2_owasp_benchmark_python_selected/testcode/BenchmarkTest00166.py",
+      "expected_output_ref": "m2_owasp_benchmark_python_selected/expected_owasp_m2_issues.json",
+      "expected_rule_ids": [
+        "SEC-004"
+      ]
+    },
+    {
+      "case_id": "m2_owasp_cmdi_BenchmarkTest00167",
+      "module": "M2",
+      "source": "OWASP BenchmarkPython",
+      "agent": "security_scan",
+      "case_type": "security",
+      "category": "cmdi",
+      "cwe": "CWE-78",
+      "real_vulnerability": true,
+      "target_path": "m2_owasp_benchmark_python_selected/testcode/BenchmarkTest00167.py",
+      "expected_output_ref": "m2_owasp_benchmark_python_selected/expected_owasp_m2_issues.json",
+      "expected_rule_ids": [
+        "SEC-004"
+      ]
+    },
+    {
+      "case_id": "m2_owasp_cmdi_BenchmarkTest00168",
+      "module": "M2",
+      "source": "OWASP BenchmarkPython",
+      "agent": "security_scan",
+      "case_type": "security",
+      "category": "cmdi",
+      "cwe": "CWE-78",
+      "real_vulnerability": true,
+      "target_path": "m2_owasp_benchmark_python_selected/testcode/BenchmarkTest00168.py",
+      "expected_output_ref": "m2_owasp_benchmark_python_selected/expected_owasp_m2_issues.json",
+      "expected_rule_ids": [
+        "SEC-004"
+      ]
+    },
+    {
+      "case_id": "m2_owasp_cmdi_BenchmarkTest00267",
+      "module": "M2",
+      "source": "OWASP BenchmarkPython",
+      "agent": "security_scan",
+      "case_type": "security",
+      "category": "cmdi",
+      "cwe": "CWE-78",
+      "real_vulnerability": true,
+      "target_path": "m2_owasp_benchmark_python_selected/testcode/BenchmarkTest00267.py",
+      "expected_output_ref": "m2_owasp_benchmark_python_selected/expected_owasp_m2_issues.json",
+      "expected_rule_ids": [
+        "SEC-004"
+      ]
+    },
+    {
+      "case_id": "m2_owasp_cmdi_BenchmarkTest00350",
+      "module": "M2",
+      "source": "OWASP BenchmarkPython",
+      "agent": "security_scan",
+      "case_type": "security",
+      "category": "cmdi",
+      "cwe": "CWE-78",
+      "real_vulnerability": false,
+      "target_path": "m2_owasp_benchmark_python_selected/testcode/BenchmarkTest00350.py",
+      "expected_output_ref": "m2_owasp_benchmark_python_selected/expected_owasp_m2_issues.json",
+      "expected_rule_ids": []
+    },
+    {
+      "case_id": "m2_owasp_cmdi_BenchmarkTest00512",
+      "module": "M2",
+      "source": "OWASP BenchmarkPython",
+      "agent": "security_scan",
+      "case_type": "security",
+      "category": "cmdi",
+      "cwe": "CWE-78",
+      "real_vulnerability": false,
+      "target_path": "m2_owasp_benchmark_python_selected/testcode/BenchmarkTest00512.py",
+      "expected_output_ref": "m2_owasp_benchmark_python_selected/expected_owasp_m2_issues.json",
+      "expected_rule_ids": []
+    },
+    {
+      "case_id": "m2_owasp_cmdi_BenchmarkTest00736",
+      "module": "M2",
+      "source": "OWASP BenchmarkPython",
+      "agent": "security_scan",
+      "case_type": "security",
+      "category": "cmdi",
+      "cwe": "CWE-78",
+      "real_vulnerability": false,
+      "target_path": "m2_owasp_benchmark_python_selected/testcode/BenchmarkTest00736.py",
+      "expected_output_ref": "m2_owasp_benchmark_python_selected/expected_owasp_m2_issues.json",
+      "expected_rule_ids": []
+    },
+    {
+      "case_id": "m2_owasp_cmdi_BenchmarkTest00900",
+      "module": "M2",
+      "source": "OWASP BenchmarkPython",
+      "agent": "security_scan",
+      "case_type": "security",
+      "category": "cmdi",
+      "cwe": "CWE-78",
+      "real_vulnerability": false,
+      "target_path": "m2_owasp_benchmark_python_selected/testcode/BenchmarkTest00900.py",
+      "expected_output_ref": "m2_owasp_benchmark_python_selected/expected_owasp_m2_issues.json",
+      "expected_rule_ids": []
+    },
+    {
+      "case_id": "m2_owasp_cmdi_BenchmarkTest01097",
+      "module": "M2",
+      "source": "OWASP BenchmarkPython",
+      "agent": "security_scan",
+      "case_type": "security",
+      "category": "cmdi",
+      "cwe": "CWE-78",
+      "real_vulnerability": false,
+      "target_path": "m2_owasp_benchmark_python_selected/testcode/BenchmarkTest01097.py",
+      "expected_output_ref": "m2_owasp_benchmark_python_selected/expected_owasp_m2_issues.json",
+      "expected_rule_ids": []
+    },
+    {
+      "case_id": "m2_owasp_hash_BenchmarkTest00054",
+      "module": "M2",
+      "source": "OWASP BenchmarkPython",
+      "agent": "security_scan",
+      "case_type": "security",
+      "category": "hash",
+      "cwe": "CWE-328",
+      "real_vulnerability": true,
+      "target_path": "m2_owasp_benchmark_python_selected/testcode/BenchmarkTest00054.py",
+      "expected_output_ref": "m2_owasp_benchmark_python_selected/expected_owasp_m2_issues.json",
+      "expected_rule_ids": [
+        "SEC-005"
+      ]
+    },
+    {
+      "case_id": "m2_owasp_hash_BenchmarkTest00057",
+      "module": "M2",
+      "source": "OWASP BenchmarkPython",
+      "agent": "security_scan",
+      "case_type": "security",
+      "category": "hash",
+      "cwe": "CWE-328",
+      "real_vulnerability": true,
+      "target_path": "m2_owasp_benchmark_python_selected/testcode/BenchmarkTest00057.py",
+      "expected_output_ref": "m2_owasp_benchmark_python_selected/expected_owasp_m2_issues.json",
+      "expected_rule_ids": [
+        "SEC-005"
+      ]
+    },
+    {
+      "case_id": "m2_owasp_hash_BenchmarkTest00058",
+      "module": "M2",
+      "source": "OWASP BenchmarkPython",
+      "agent": "security_scan",
+      "case_type": "security",
+      "category": "hash",
+      "cwe": "CWE-328",
+      "real_vulnerability": true,
+      "target_path": "m2_owasp_benchmark_python_selected/testcode/BenchmarkTest00058.py",
+      "expected_output_ref": "m2_owasp_benchmark_python_selected/expected_owasp_m2_issues.json",
+      "expected_rule_ids": [
+        "SEC-005"
+      ]
+    },
+    {
+      "case_id": "m2_owasp_hash_BenchmarkTest00059",
+      "module": "M2",
+      "source": "OWASP BenchmarkPython",
+      "agent": "security_scan",
+      "case_type": "security",
+      "category": "hash",
+      "cwe": "CWE-328",
+      "real_vulnerability": true,
+      "target_path": "m2_owasp_benchmark_python_selected/testcode/BenchmarkTest00059.py",
+      "expected_output_ref": "m2_owasp_benchmark_python_selected/expected_owasp_m2_issues.json",
+      "expected_rule_ids": [
+        "SEC-005"
+      ]
+    },
+    {
+      "case_id": "m2_owasp_hash_BenchmarkTest00060",
+      "module": "M2",
+      "source": "OWASP BenchmarkPython",
+      "agent": "security_scan",
+      "case_type": "security",
+      "category": "hash",
+      "cwe": "CWE-328",
+      "real_vulnerability": true,
+      "target_path": "m2_owasp_benchmark_python_selected/testcode/BenchmarkTest00060.py",
+      "expected_output_ref": "m2_owasp_benchmark_python_selected/expected_owasp_m2_issues.json",
+      "expected_rule_ids": [
+        "SEC-005"
+      ]
+    },
+    {
+      "case_id": "m2_owasp_hash_BenchmarkTest00055",
+      "module": "M2",
+      "source": "OWASP BenchmarkPython",
+      "agent": "security_scan",
+      "case_type": "security",
+      "category": "hash",
+      "cwe": "CWE-328",
+      "real_vulnerability": false,
+      "target_path": "m2_owasp_benchmark_python_selected/testcode/BenchmarkTest00055.py",
+      "expected_output_ref": "m2_owasp_benchmark_python_selected/expected_owasp_m2_issues.json",
+      "expected_rule_ids": []
+    },
+    {
+      "case_id": "m2_owasp_hash_BenchmarkTest00056",
+      "module": "M2",
+      "source": "OWASP BenchmarkPython",
+      "agent": "security_scan",
+      "case_type": "security",
+      "category": "hash",
+      "cwe": "CWE-328",
+      "real_vulnerability": false,
+      "target_path": "m2_owasp_benchmark_python_selected/testcode/BenchmarkTest00056.py",
+      "expected_output_ref": "m2_owasp_benchmark_python_selected/expected_owasp_m2_issues.json",
+      "expected_rule_ids": []
+    },
+    {
+      "case_id": "m2_owasp_hash_BenchmarkTest00061",
+      "module": "M2",
+      "source": "OWASP BenchmarkPython",
+      "agent": "security_scan",
+      "case_type": "security",
+      "category": "hash",
+      "cwe": "CWE-328",
+      "real_vulnerability": false,
+      "target_path": "m2_owasp_benchmark_python_selected/testcode/BenchmarkTest00061.py",
+      "expected_output_ref": "m2_owasp_benchmark_python_selected/expected_owasp_m2_issues.json",
+      "expected_rule_ids": []
+    },
+    {
+      "case_id": "m2_owasp_hash_BenchmarkTest00062",
+      "module": "M2",
+      "source": "OWASP BenchmarkPython",
+      "agent": "security_scan",
+      "case_type": "security",
+      "category": "hash",
+      "cwe": "CWE-328",
+      "real_vulnerability": false,
+      "target_path": "m2_owasp_benchmark_python_selected/testcode/BenchmarkTest00062.py",
+      "expected_output_ref": "m2_owasp_benchmark_python_selected/expected_owasp_m2_issues.json",
+      "expected_rule_ids": []
+    },
+    {
+      "case_id": "m2_owasp_hash_BenchmarkTest00063",
+      "module": "M2",
+      "source": "OWASP BenchmarkPython",
+      "agent": "security_scan",
+      "case_type": "security",
+      "category": "hash",
+      "cwe": "CWE-328",
+      "real_vulnerability": false,
+      "target_path": "m2_owasp_benchmark_python_selected/testcode/BenchmarkTest00063.py",
+      "expected_output_ref": "m2_owasp_benchmark_python_selected/expected_owasp_m2_issues.json",
+      "expected_rule_ids": []
+    }
+  ]
+}

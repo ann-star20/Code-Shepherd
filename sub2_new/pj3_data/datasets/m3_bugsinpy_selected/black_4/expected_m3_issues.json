@@ -1,0 +1,34 @@
+{
+  "case_id": "bugsinpy_black_4",
+  "source": "BugsInPy",
+  "project": "black",
+  "bug_id": 4,
+  "purpose": "M3 real Python bug validation",
+  "paths": {
+    "buggy": "datasets/m3_bugsinpy_selected/black_4/buggy",
+    "fixed": "datasets/m3_bugsinpy_selected/black_4/fixed",
+    "metadata": "datasets/m3_bugsinpy_selected/black_4/metadata"
+  },
+  "expected_issues": [
+    {
+      "module": "M3",
+      "id": "TEST-FAIL-001",
+      "severity": "Major",
+      "title": "Bug-revealing test fails on buggy version",
+      "evidence_source": "metadata/run_test.sh",
+      "test_file": "tests/test_black.py;tests/data/beginning_backslash.py"
+    },
+    {
+      "module": "M3",
+      "id": "PATCH-001",
+      "severity": "Info",
+      "title": "Buggy and fixed versions differ in patch target files",
+      "evidence_source": "metadata/bug_patch.txt"
+    }
+  ],
+  "notes": [
+    "BugsInPy does not directly provide Task-Link issue IDs such as TEST-001 or PERF-002.",
+    "This expected file maps BugsInPy evidence to Task-Link M3 evaluation format.",
+    "Python 3.8.3, black code formatter bug involving beginning_backslash"
+  ]
+}

@@ -73,6 +73,30 @@ class LearningContext(BaseModel):
     domain_context: str = "ecommerce"
 
 
+class CodeContext(BaseModel):
+    """M4 개인화 학습 피드백용 — 이슈 라인 주변 코드 맥락.
+
+    pr_diff / file / line / code_snippet 으로 규칙 기반 조립한다 (LLM 호출 없음).
+    찾지 못하면 issue_line = code_snippet, 그것도 없으면 "snippet_unavailable".
+    """
+    context_before: list[str] = []      # 이슈 라인 앞 코드 (3~5줄)
+    issue_line: str = ""                 # 문제가 발생한 코드 한 줄
+    context_after: list[str] = []        # 이슈 라인 뒤 코드 (3~5줄)
+    context_summary: str = ""            # 규칙 기반 맥락 설명 (빈 문자열 금지)
+
+
+class IssueTaxonomy(BaseModel):
+    """M4 개인화 학습 피드백용 — 보안/정적분석 기준 하위 분류.
+
+    성능/테스트/함수 정밀 분석은 M3 담당이므로 제외한다.
+    rule_id / mistake_type / 코드 패턴 기반으로 규칙 분류한다.
+    """
+    category: str = "General"            # 예: "Security", "Code Quality"
+    subcategory: str = "Code Quality"    # 예: "Injection", "XSS"
+    issue_type: str = "Unknown"          # 예: "SQL Injection"
+    sub_issue_type: str = "General Review Issue"  # 예: "Raw Query String Formatting"
+
+
 class Issue(BaseModel):
     # ── 기존 필드 (변경 없음) ────────────────────────────────────────────────────
     severity: Literal["Critical", "Major", "Minor"]
@@ -93,6 +117,8 @@ class Issue(BaseModel):
     confidence_score: float = 0.0            # 분류 신뢰도 0.0~1.0
     code_snippet: str = ""                   # 문제 코드 조각 (없으면 "snippet_unavailable")
     learning_context: LearningContext = LearningContext()
+    code_context: CodeContext = CodeContext()        # 이슈 라인 주변 코드 맥락 (M4 피드백용)
+    taxonomy: IssueTaxonomy = IssueTaxonomy()         # 보안/정적분석 하위 분류 (M4 피드백용)
 
 
 class ToolPlan(BaseModel):

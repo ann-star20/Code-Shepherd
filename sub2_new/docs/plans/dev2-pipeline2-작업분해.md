@@ -106,20 +106,10 @@ requirements.txt               ← PyGitHub 추가
 
 ---
 
-## ✅ 완료 — tool_router_agent + action_decider_agent (파이프라인 1 확장)
-
-**구현 완료 (47/47 테스트 PASS)**:
-- `tool_router_agent`: PR diff/tech_stack/이슈이력 → 필요 도구만 선택 → tool_plan
-- `action_decider_agent`: 이슈 분석 결과 → recommended_action 추천 → action_decision
-- `graph.py` 7노드로 확장 (기존 5노드 + tool_router_agent + action_decider_agent)
-- `schema.py` ToolPlan, ActionDecision 모델 추가
-- `store.py` final_output에 summary.recommended_action + metadata.action_decision 포함
-
----
-
 ## Task 12 — aggregate_graph + POST /aggregate API (2~3시간)
 
-**하는 일**: 만든 노드 4개를 LangGraph로 연결 + FastAPI 엔드포인트 추가
+**하는 일**: 만든 노드 4개를 
+ + FastAPI 엔드포인트 추가
 
 **실제 만들어야 하는 것**:
 
