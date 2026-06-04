@@ -73,11 +73,16 @@ export default function AppLayout() {
           ${sidebarOpen ? "w-60" : "w-0 overflow-hidden"}
         `}
       >
-        {/* 상단 — 앱 이름 + 토글 */}
-        <div className="flex items-center justify-between px-3 py-3 border-b border-sidebar-border">
-          <span className="font-semibold text-sm text-notion-text">
-            Code Shepherd
-          </span>
+        {/* 상단 — 로고 + 토글 */}
+        <div className="flex items-center justify-between gap-2 px-3 py-3 border-b border-sidebar-border">
+          <Link to="/" className="min-w-0 flex-shrink">
+            <img
+              src="/logo2.png"
+              alt="code shepherd"
+              className="h-7 w-auto max-w-[148px] object-contain object-left"
+              data-testid="sidebar-logo"
+            />
+          </Link>
           <button
             onClick={() => setSidebarOpen(false)}
             className="p-1 rounded hover:bg-sidebar-hover text-notion-text-secondary"
