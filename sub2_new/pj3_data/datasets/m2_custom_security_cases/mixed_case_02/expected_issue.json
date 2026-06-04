@@ -1,0 +1,46 @@
+{
+  "case_id": "m2_custom_mixed_002",
+  "module": "M2",
+  "source": "Task-Link Custom",
+  "expected_issues": [
+    {
+      "id": "SEC-003",
+      "title": "Path Traversal via unsanitized filename",
+      "severity": "High",
+      "issue_type": "security",
+      "line": 17,
+      "file": "vulnerable.py",
+      "message": "User-supplied filename is joined to BASE_DIR without validation, enabling path traversal attacks (e.g. '../../etc/passwd').",
+      "rule_id": "SEC-003",
+      "suggestion": "Resolve the path and verify it starts with BASE_DIR before accessing.",
+      "resolution_example": "file_path = (BASE_DIR / filename).resolve()\nif not str(file_path).startswith(str(BASE_DIR.resolve())):\n    raise ValueError('Access denied')",
+      "similar_issues": ["SEC-004"]
+    },
+    {
+      "id": "SEC-004",
+      "title": "Command Injection via os.system with f-string",
+      "severity": "Critical",
+      "issue_type": "security",
+      "line": 20,
+      "file": "vulnerable.py",
+      "message": "User-supplied 'host' is interpolated directly into a shell command via os.system, enabling command injection (e.g. '127.0.0.1; rm -rf /').",
+      "rule_id": "SEC-004",
+      "suggestion": "Use subprocess.run with a list of arguments and validate input before use.",
+      "resolution_example": "subprocess.run([\"ping\", \"-c\", \"1\", host], capture_output=True)",
+      "similar_issues": ["SEC-003"]
+    },
+    {
+      "id": "AUTH-001",
+      "title": "Missing Authorization Check",
+      "severity": "High",
+      "issue_type": "security",
+      "line": 25,
+      "file": "vulnerable.py",
+      "message": "delete_user_account does not verify whether the current user has permission to delete the target account, allowing any authenticated user to delete any account.",
+      "rule_id": "AUTH-001",
+      "suggestion": "Check that current_user_id matches target_user_id or that the user has admin privileges before deletion.",
+      "resolution_example": "if current_user_id != target_user_id and current_user_id not in self.admins:\n    raise PermissionError('Not authorized')",
+      "similar_issues": ["AUTH-002"]
+    }
+  ]
+}

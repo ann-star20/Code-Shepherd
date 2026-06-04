@@ -146,25 +146,11 @@ PERF 계열(001/002/003)은 코드를 **정적 분석**(읽어서 패턴 탐지)
 
 ## 8. 바로 쓰는 프롬프트 (복붙용)
 
-데이터 루트(이 경로 기준으로 케이스를 가리킴):
-
-```
-datasets/m3_mixed_project_cases/    ← mixed 케이스 6개 (시작점)
-datasets/m3_test_performance_cases/ ← rule 1개짜리 케이스
-datasets/m3_bugsinpy_selected/      ← 실제 버그 케이스
-```
-
-M3 에이전트(또는 Claude)에 아래처럼 넣으면 됨. `[분석 대상]`에
-위 데이터 루트의 실제 파일 경로를 적거나, 그 파일 내용을 붙여넣으면 됨.
+M3 에이전트(또는 LLM)에 아래처럼 넣으면 됨. `{코드}` 자리에 app 파일 내용 붙여넣기.
 
 ```
 너는 Python 코드의 테스트 품질과 성능 이슈만 찾는 분석기다.
 아래 6가지 rule_id 중 해당되는 것만 보고하라. 보안은 무시한다.
-
-[분석 대상]
-- 소스: datasets/m3_mixed_project_cases/mixed_case_001/app/order_service.py
-- 테스트: datasets/m3_mixed_project_cases/mixed_case_001/tests/test_order_service.py
-  (소스 함수 중 테스트에 없는 것 = TEST-001/004 판단 근거)
 
 [탐지 규칙]
 - TEST-001: 테스트되지 않은 함수가 많아 커버리지 80% 미만으로 추정
@@ -182,17 +168,16 @@ M3 에이전트(또는 Claude)에 아래처럼 넣으면 됨. `[분석 대상]`�
     "evidence": "for 루프 안에서 repo.find_by_id() 반복 호출"
   }
 ]
-```
 
-> 다른 케이스를 보려면 위 `[분석 대상]`의 `mixed_case_001` 부분과
-> 파일명(`order_service.py`)만 해당 케이스 것으로 바꾸면 됨.
+[분석할 코드]
+{코드}
+```
 
 채점까지 자동화하려면 이어서:
 
 ```
 위 결과의 rule_id 집합을, 같은 케이스 폴더의 expected_issue.json 안
 expected_issues[].id 집합과 비교하라.
-(예: datasets/m3_mixed_project_cases/mixed_case_001/expected_issue.json)
 - 정답을 모두 포함하면 PASS
 - 정답을 놓치면 누락(FN), 정답에 없는 걸 보고하면 오탐(FP)
 PASS/FAIL과 FN·FP 목록을 출력하라.

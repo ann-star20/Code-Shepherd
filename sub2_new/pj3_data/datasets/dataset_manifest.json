@@ -1,7 +1,7 @@
 {
   "dataset_root": "datasets/",
   "purpose": "Task-Link M2/M3 evaluation dataset manifest",
-  "total_case_count": 84,
+  "total_case_count": 90,
   "cases": [
     {
       "case_id": "bugsinpy_black_3",
@@ -1068,6 +1068,93 @@
       ],
       "target_path": "m3_mixed_project_cases/mixed_case_006",
       "expected_output_ref": "m3_mixed_project_cases/mixed_case_006/expected_issue.json"
+    },
+    {
+      "case_id": "m2_custom_mixed_001",
+      "module": "M2",
+      "source": "Task-Link Custom",
+      "case_type": "security",
+      "category": "mixed",
+      "rule_ids": [
+        "SEC-006",
+        "SEC-005",
+        "SEC-001"
+      ],
+      "target_path": "m2_custom_security_cases/mixed_case_01",
+      "expected_output_ref": "m2_custom_security_cases/mixed_case_01/expected_issue.json"
+    },
+    {
+      "case_id": "m2_custom_mixed_002",
+      "module": "M2",
+      "source": "Task-Link Custom",
+      "case_type": "security",
+      "category": "mixed",
+      "rule_ids": [
+        "SEC-003",
+        "SEC-004",
+        "AUTH-001"
+      ],
+      "target_path": "m2_custom_security_cases/mixed_case_02",
+      "expected_output_ref": "m2_custom_security_cases/mixed_case_02/expected_issue.json"
+    },
+    {
+      "case_id": "m2_custom_mixed_003",
+      "module": "M2",
+      "source": "Task-Link Custom",
+      "case_type": "security",
+      "category": "mixed",
+      "rule_ids": [
+        "SEC-006",
+        "SEC-001",
+        "SEC-005",
+        "AUTH-001"
+      ],
+      "target_path": "m2_custom_security_cases/mixed_case_03",
+      "expected_output_ref": "m2_custom_security_cases/mixed_case_03/expected_issue.json"
+    },
+    {
+      "case_id": "m2_custom_mixed_004",
+      "module": "M2",
+      "source": "Task-Link Custom",
+      "case_type": "security",
+      "category": "mixed",
+      "rule_ids": [
+        "SEC-006",
+        "SEC-003",
+        "SEC-004"
+      ],
+      "target_path": "m2_custom_security_cases/mixed_case_04",
+      "expected_output_ref": "m2_custom_security_cases/mixed_case_04/expected_issue.json"
+    },
+    {
+      "case_id": "m2_custom_mixed_005",
+      "module": "M2",
+      "source": "Task-Link Custom",
+      "case_type": "security",
+      "category": "mixed",
+      "rule_ids": [
+        "SEC-005",
+        "SEC-001",
+        "SEC-004"
+      ],
+      "target_path": "m2_custom_security_cases/mixed_case_05",
+      "expected_output_ref": "m2_custom_security_cases/mixed_case_05/expected_issue.json"
+    },
+    {
+      "case_id": "m2_custom_mixed_006",
+      "module": "M2",
+      "source": "Task-Link Custom",
+      "case_type": "security",
+      "category": "mixed",
+      "rule_ids": [
+        "SEC-006",
+        "SEC-001",
+        "SEC-003",
+        "SEC-005",
+        "AUTH-001"
+      ],
+      "target_path": "m2_custom_security_cases/mixed_case_06",
+      "expected_output_ref": "m2_custom_security_cases/mixed_case_06/expected_issue.json"
     }
   ]
 }
