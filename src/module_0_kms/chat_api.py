@@ -1,0 +1,521 @@
+"""
+KMS 사내 지식 챗봇 — RAG 파이프라인
+
+POST /chat : question 임베딩 → pgVector 유사도 검색 → LLM 답변 생성
+
+환경변수:
+    OLLAMA_BASE_URL        (기본값: http://localhost:11434)
+    OLLAMA_EMBEDDING_MODEL (기본값: bge-m3)
+    ANTHROPIC_API_KEY      (필수 — 운영 환경)
+    CHAT_LLM_MODEL         (기본값: claude-sonnet-4-6)
+    USE_MOCK_LLM           (기본값: true — Mock LLM 사용)
+"""
+
+from __future__ import annotations
+
+import json
+import logging
+import os
+from dataclasses import dataclass, field
+
+import asyncpg
+import httpx
+from fastapi import APIRouter
+from pydantic import BaseModel, field_validator
+
+_OLLAMA_BASE_URL = os.getenv("OLLAMA_BASE_URL", "http://localhost:11434")
+_EMBEDDING_MODEL = os.getenv("OLLAMA_EMBEDDING_MODEL", "bge-m3")
+_LLM_MODEL = os.getenv("CHAT_LLM_MODEL", "gemini-2.5-flash")
+_USE_MOCK_LLM = os.getenv("USE_MOCK_LLM", "true").lower() == "true"
+
+logger = logging.getLogger(__name__)
+
+router = APIRouter(prefix="/chat", tags=["Chat"])
+
+# lifespan에서 주입
+_db_pool: asyncpg.Pool | None = None
+
+
+def _get_pool() -> asyncpg.Pool:
+    if _db_pool is None:
+        raise RuntimeError("DB 풀이 초기화되지 않았습니다.")
+    return _db_pool
+
+
+# ---------------------------------------------------------------------------
+# 요청/응답 모델
+# ---------------------------------------------------------------------------
+
+
+class ChatRequest(BaseModel):
+    question: str
+    top_k: int = 5
+
+    @field_validator("question")
+    @classmethod
+    def question_not_empty(cls, v: str) -> str:
+        if not v.strip():
+            raise ValueError("질문이 비어있습니다.")
+        return v
+
+
+class ChatSource(BaseModel):
+    chunk_id: str
+    content: str
+    score: float
+    doc_title: str | None = None
+    source_type: str = "pgvector"   # "pgvector" | "postgresql" | "neo4j" | "gcs"
+
+
+class ChatResponse(BaseModel):
+    question: str
+    answer: str
+    sources: list[ChatSource]
+    model: str
+    intent: str = "semantic"                # Intent Classifier 결과
+    storages: list[str] = ["pgvector"]      # 실제 사용된 Storage 목록
+
+
+# ---------------------------------------------------------------------------
+# Intent Classification 모델
+# ---------------------------------------------------------------------------
+
+@dataclass
+class IntentResult:
+    intent: str           # "semantic" | "structured" | "graph" | "file" | "multi"
+    storages: list[str] = field(default_factory=list)  # ["pgvector"|"postgresql"|"neo4j"|"gcs"]
+    query_hint: str = ""  # SQL 힌트 또는 키워드
+
+
+_INTENT_SYSTEM_PROMPT = """\
+당신은 사내 지식 검색 시스템의 쿼리 라우터입니다.
+사용자 질문을 분석해 아래 JSON 형식으로만 응답하세요. 다른 텍스트 금지.
+
+intent 선택 기준:
+- semantic:    의미 검색 ("설명해줘", "방법", "가이드", "어떻게")
+- structured:  통계/목록 ("몇 개", "목록", "최근", "어떤 파일")
+- graph:       관계/연결 ("관련된", "연관", "연결", "개념들")
+- file:        파일 직접 조회 ("파일 내용", "원본", "보여줘" + 파일명)
+
+storages: intent에 맞는 DB 목록 (pgvector/postgresql/neo4j/gcs)
+
+{"intent":"<intent>","storages":["<db>"],"query_hint":"<SQL 힌트 또는 키워드>"}"""
+
+_INTENT_MOCK = IntentResult(intent="semantic", storages=["pgvector"], query_hint="")
+
+
+async def call_gemini_with_retry(messages):  # type: ignore[empty-body]
+    """Gemini 호출 — 테스트에서 monkeypatch 대상."""
+    from langchain_google_genai import ChatGoogleGenerativeAI
+    from langchain_core.messages import HumanMessage, SystemMessage as SM  # noqa: F401
+    llm = ChatGoogleGenerativeAI(
+        model=_LLM_MODEL, temperature=0,
+        google_api_key=os.getenv("GOOGLE_API_KEY"),
+    )
+    return await llm.ainvoke(messages)
+
+
+async def _classify_intent(question: str) -> IntentResult:
+    """Gemini로 질문의 intent와 대상 Storage를 분류한다."""
+    if _USE_MOCK_LLM:
+        return _INTENT_MOCK
+
+    from langchain_core.messages import HumanMessage, SystemMessage
+    try:
+        response = await call_gemini_with_retry([
+            SystemMessage(content=_INTENT_SYSTEM_PROMPT),
+            HumanMessage(content=question),
+        ])
+        raw = response.content.strip()
+        if raw.startswith("```"):
+            raw = raw.split("```")[1].lstrip("json").strip()
+        data = json.loads(raw)
+        return IntentResult(
+            intent=data.get("intent", "semantic"),
+            storages=data.get("storages", ["pgvector"]),
+            query_hint=data.get("query_hint", ""),
+        )
+    except Exception:
+        logger.warning("Intent 분류 실패 — semantic으로 폴백")
+        return IntentResult(intent="semantic", storages=["pgvector"], query_hint="")
+
+
+# ---------------------------------------------------------------------------
+# SQL 보안 검증
+# ---------------------------------------------------------------------------
+
+_SQL_FORBIDDEN = frozenset({"insert", "update", "delete", "drop", "truncate", "alter", "create", "grant"})
+
+# Text-to-SQL에서 접근 가능한 테이블 허용 목록 (CLAUDE.md 섹션 5-B)
+_SQL_ALLOWED_TABLES = frozenset({"documents", "chunks", "agent_traces"})
+
+
+def _validate_sql(sql: str) -> bool:
+    """Text-to-SQL 결과를 실행 전 검증한다.
+
+    SELECT 전용, LIMIT 필수, 위험 키워드 금지.
+    """
+    if not sql.strip():
+        return False
+    tokens = sql.lower().split()
+    if not tokens or tokens[0] != "select":
+        return False
+    if any(t in _SQL_FORBIDDEN for t in tokens):
+        return False
+    if "limit" not in tokens:
+        return False
+    return True
+
+
+def _validate_sql_v2(sql: str) -> bool:
+    """sqlglot AST 기반 SQL 검증 — keyword-split 취약점 해결.
+
+    _validate_sql()의 한계:
+    - UNION SELECT → users 테이블 exfiltration 가능
+    - 세미콜론 stacked query 우회 가능
+    - 허용 테이블 외 접근 미차단
+
+    허용 조건:
+    - 단일 SELECT 문 (세미콜론 stacked query 차단)
+    - LIMIT 필수
+    - 접근 테이블이 _SQL_ALLOWED_TABLES 안에만 있어야 함
+    - UNION 차단 (Union 노드는 Select가 아님 → isinstance 검사로 자동 차단)
+    - 적어도 하나의 허용 테이블을 포함해야 함
+    """
+    import sqlglot
+    from sqlglot import exp
+
+    sql = sql.strip()
+    if not sql:
+        return False
+
+    try:
+        statements = sqlglot.parse(sql, dialect="postgres")
+    except sqlglot.errors.ParseError:
+        return False
+
+    # 단일 문장만 허용 (세미콜론 stacked query 차단)
+    if len(statements) != 1:
+        return False
+
+    stmt = statements[0]
+    if stmt is None:
+        return False
+
+    # SELECT 문이어야 함 (UNION은 exp.Union, DELETE는 exp.Delete → 모두 차단)
+    if not isinstance(stmt, exp.Select):
+        return False
+
+    # LIMIT 필수
+    if stmt.args.get("limit") is None:
+        return False
+
+    # 접근 테이블 검증 — 모든 테이블이 허용 목록 안에 있어야 함
+    tables = list(stmt.find_all(exp.Table))
+    if not tables:
+        return False  # 테이블 없는 쿼리 차단 (SELECT 1 LIMIT 1 등)
+
+    for table in tables:
+        table_name = table.name.lower()
+        if table_name not in _SQL_ALLOWED_TABLES:
+            return False
+
+    return True
+
+
+# ---------------------------------------------------------------------------
+# 내부 헬퍼 — monkeypatch 가능하도록 모듈 수준 함수로 분리
+# ---------------------------------------------------------------------------
+
+
+async def _query_pgvector(
+    question: str,
+    pool: asyncpg.Pool,
+    top_k: int = 5,
+) -> list[dict]:
+    """질문을 임베딩해 chunk_embeddings에서 코사인 유사도 상위 k개를 반환한다."""
+    embedding = await _embed_question(question)
+    embedding_str = json.dumps(embedding)
+    async with pool.acquire() as conn:
+        rows = await conn.fetch(
+            """
+            SELECT
+                chunk_id::text,
+                content,
+                1 - (embedding <=> $1::vector) AS score,
+                metadata->>'doc_title' AS doc_title
+            FROM chunk_embeddings
+            ORDER BY embedding <=> $1::vector
+            LIMIT $2
+            """,
+            embedding_str,
+            top_k,
+        )
+    return [
+        {
+            "chunk_id": r["chunk_id"],
+            "content": r["content"],
+            "score": float(r["score"]),
+            "doc_title": r["doc_title"],
+            "source_type": "pgvector",
+        }
+        for r in rows
+    ]
+
+
+async def _embed_question(question: str) -> list[float]:
+    """Ollama bge-m3로 질문을 임베딩한다."""
+    async with httpx.AsyncClient(timeout=30.0) as client:
+        response = await client.post(
+            f"{_OLLAMA_BASE_URL}/api/embeddings",
+            json={"model": _EMBEDDING_MODEL, "prompt": question},
+        )
+        response.raise_for_status()
+        return response.json()["embedding"]
+
+
+_POSTGRESQL_SCHEMA_HINT = """\
+테이블: documents (doc_id UUID, title TEXT, file_type TEXT, upload_status TEXT, created_at TIMESTAMP)
+테이블: chunks (chunk_id UUID, doc_id UUID, content TEXT, chunk_type TEXT)
+테이블: chunk_embeddings (chunk_id UUID, content TEXT, metadata JSONB)"""
+
+_TEXT_TO_SQL_SYSTEM_PROMPT = """\
+당신은 PostgreSQL 전문가입니다.
+사용자 질문을 아래 스키마 기반으로 SELECT 쿼리 하나로만 변환하세요.
+LIMIT를 반드시 포함하고, SELECT 이외의 명령(INSERT/UPDATE/DELETE/DROP 등)은 절대 사용하지 마세요.
+쿼리만 출력하고 다른 텍스트는 출력하지 마세요.
+
+{schema}"""
+
+
+async def _generate_sql(question: str, schema_hint: str = "") -> str:
+    """Gemini로 자연어 질문을 PostgreSQL SELECT 쿼리로 변환한다."""
+    if _USE_MOCK_LLM:
+        return f"SELECT title, file_type, upload_status FROM documents LIMIT 10"
+
+    from langchain_google_genai import ChatGoogleGenerativeAI
+    from langchain_core.messages import HumanMessage, SystemMessage
+
+    llm = ChatGoogleGenerativeAI(
+        model=_LLM_MODEL, temperature=0,
+        google_api_key=os.getenv("GOOGLE_API_KEY"),
+    )
+    schema = schema_hint or _POSTGRESQL_SCHEMA_HINT
+    messages = [
+        SystemMessage(content=_TEXT_TO_SQL_SYSTEM_PROMPT.format(schema=schema)),
+        HumanMessage(content=question),
+    ]
+    try:
+        response = await llm.ainvoke(messages)
+        sql = response.content.strip()
+        # 마크다운 코드블록 제거
+        if sql.startswith("```"):
+            sql = sql.split("```")[1].lstrip("sql").strip()
+        return sql
+    except Exception:
+        logger.warning("Text-to-SQL 생성 실패 — 기본 쿼리 반환")
+        return "SELECT title FROM documents LIMIT 5"
+
+
+async def _query_postgresql(
+    question: str,
+    pool: asyncpg.Pool,
+    schema_hint: str = "",
+) -> list[dict]:
+    """Text-to-SQL로 생성된 쿼리를 검증 후 PostgreSQL에서 실행한다."""
+    sql = await _generate_sql(question, schema_hint)
+    if not _validate_sql_v2(sql):
+        logger.warning(f"_validate_sql_v2 실패 — 쿼리 차단: {sql[:80]}")
+        return []
+
+    async with pool.acquire() as conn:
+        rows = await conn.fetch(sql)
+
+    return [
+        {**dict(row), "source_type": "postgresql"}
+        for row in rows
+    ]
+
+
+_GCS_BUCKET = os.getenv("GCS_BUCKET", "tasklink-kms-storage-dev")
+
+
+async def _fetch_gcs_markdown(file_name: str) -> str:
+    """GCS에서 Markdown 파일을 읽어 문자열로 반환한다."""
+    try:
+        from google.cloud import storage as gcs_storage  # type: ignore
+    except ImportError:
+        logger.warning("google-cloud-storage 미설치 — GCS 조회 건너뜁니다.")
+        return ""
+
+    client = gcs_storage.Client()
+    bucket = client.bucket(_GCS_BUCKET)
+    blob = bucket.blob(file_name)
+    return blob.download_as_text(encoding="utf-8")
+
+
+async def _query_gcs(question: str) -> list[dict]:
+    """질문에서 파일명을 추출해 GCS Markdown을 fetch하고 Gemini로 요약한다."""
+    # 질문에서 키워드 추출 (한글 파일명 패턴 또는 첫 단어)
+    import re
+    file_match = re.search(r"[\w가-힣]+\.md", question)
+    file_name = file_match.group(0) if file_match else f"{question.split()[0]}.md"
+
+    try:
+        content = await _fetch_gcs_markdown(file_name)
+    except Exception as e:
+        logger.warning(f"GCS fetch 실패: {e}")
+        return []
+
+    if not content.strip():
+        return []
+
+    summary = await _generate_answer(question, content)
+    return [
+        {
+            "chunk_id": file_name,
+            "content": summary,
+            "score": 1.0,
+            "doc_title": file_name,
+            "source_type": "gcs",
+        }
+    ]
+
+
+_NEO4J_URI = os.getenv("NEO4J_URI", "bolt://localhost:7687")
+_NEO4J_USER = os.getenv("NEO4J_USER", "neo4j")
+_NEO4J_PASSWORD = os.getenv("NEO4J_PASSWORD", "password")
+
+# 고정 Cypher 템플릿 — 질문 키워드 기반 엔티티-청크 관계 조회
+_CYPHER_RELATED_ENTITIES = """\
+MATCH (e:Entity)<-[:MENTIONS]-(c:Chunk)
+WHERE toLower(e.name) CONTAINS toLower($keyword)
+RETURN e.name AS entity, c.content AS chunk, 'MENTIONS' AS relation
+LIMIT 10"""
+
+
+async def _run_cypher(cypher: str, params: dict | None = None) -> list[dict]:
+    """Neo4j 드라이버로 Cypher를 실행하고 결과를 dict 리스트로 반환한다."""
+    try:
+        from neo4j import AsyncGraphDatabase
+    except ImportError:
+        logger.warning("neo4j 패키지 미설치 — Neo4j 조회 건너뜁니다.")
+        return []
+
+    driver = AsyncGraphDatabase.driver(
+        _NEO4J_URI, auth=(_NEO4J_USER, _NEO4J_PASSWORD)
+    )
+    try:
+        async with driver.session() as session:
+            result = await session.run(cypher, parameters=params or {})
+            return [dict(record) async for record in result]
+    finally:
+        await driver.close()
+
+
+async def _query_neo4j(question: str) -> list[dict]:
+    """질문 키워드로 Neo4j Entity-Chunk 관계 그래프를 조회한다."""
+    # 첫 단어를 키워드로 사용 (단순 휴리스틱)
+    keyword = question.split()[0] if question.split() else question
+    try:
+        records = await _run_cypher(_CYPHER_RELATED_ENTITIES, {"keyword": keyword})
+    except Exception as e:
+        logger.warning(f"Neo4j 조회 실패: {e}")
+        return []
+
+    return [
+        {**record, "source_type": "neo4j"}
+        for record in records
+    ]
+
+
+async def _generate_answer(question: str, context: str) -> str:
+    """Gemini 2.5 Flash로 RAG 답변을 생성한다. USE_MOCK_LLM=true이면 Mock 반환."""
+    if _USE_MOCK_LLM:
+        if context.strip():
+            return f"[Mock 답변] 질문 '{question}'에 대한 컨텍스트를 찾았습니다."
+        return f"[Mock 답변] 질문 '{question}'에 대한 관련 정보를 찾지 못했습니다."
+
+    from langchain_google_genai import ChatGoogleGenerativeAI  # 런타임 임포트
+    from langchain_core.messages import HumanMessage, SystemMessage
+
+    llm = ChatGoogleGenerativeAI(
+        model=_LLM_MODEL,
+        temperature=0,
+        google_api_key=os.getenv("GOOGLE_API_KEY"),
+    )
+    system_prompt = (
+        "당신은 사내 지식 베이스를 활용하는 AI 어시스턴트입니다. "
+        "아래 제공된 컨텍스트를 바탕으로 질문에 한국어로 정확하게 답변하세요. "
+        "컨텍스트에 없는 내용은 모른다고 말하세요."
+    )
+    user_content = f"[컨텍스트]\n{context}\n\n[질문]\n{question}" if context.strip() else question
+
+    messages = [SystemMessage(content=system_prompt), HumanMessage(content=user_content)]
+    response = await llm.ainvoke(messages)
+    return response.content
+
+
+# ---------------------------------------------------------------------------
+# 엔드포인트
+# ---------------------------------------------------------------------------
+
+
+@router.post("", response_model=ChatResponse)
+async def chat(request: ChatRequest) -> ChatResponse:
+    """
+    멀티 스토리지 RAG 챗봇 엔드포인트.
+
+    1. Intent Classifier → intent / storages 결정
+    2. storages에 따라 pgVector / PostgreSQL / Neo4j / GCS 쿼리
+    3. 검색 결과를 컨텍스트로 LLM 답변 생성
+    4. answer + sources + intent + storages 반환
+    """
+    pool = _get_pool()
+
+    # Step 1: Intent 분류
+    intent_result = await _classify_intent(request.question)
+    storages = intent_result.storages or ["pgvector"]
+
+    # Step 2: Storage별 쿼리 라우팅
+    raw_chunks: list[dict] = []
+    for storage in storages:
+        if storage == "pgvector":
+            results = await _query_pgvector(request.question, pool, top_k=request.top_k)
+        elif storage == "postgresql":
+            results = await _query_postgresql(request.question, pool)
+        elif storage == "neo4j":
+            results = await _query_neo4j(request.question)
+        elif storage == "gcs":
+            results = await _query_gcs(request.question)
+        else:
+            results = await _query_pgvector(request.question, pool, top_k=request.top_k)
+        raw_chunks.extend(results)
+
+    # Step 3: 컨텍스트 구성 + 답변 생성
+    context = "\n\n".join(
+        f"[{c.get('doc_title') or '출처 미상'}]\n{c.get('content', '')}"
+        for c in raw_chunks
+    )
+    answer = await _generate_answer(request.question, context)
+
+    # Step 4: ChatSource 변환 (필수 필드 기본값 보완)
+    sources = [
+        ChatSource(
+            chunk_id=c.get("chunk_id", ""),
+            content=c.get("content", ""),
+            score=float(c.get("score", 0.0)),
+            doc_title=c.get("doc_title"),
+            source_type=c.get("source_type", "pgvector"),
+        )
+        for c in raw_chunks
+    ]
+
+    return ChatResponse(
+        question=request.question,
+        answer=answer,
+        sources=sources,
+        model=_LLM_MODEL,
+        intent=intent_result.intent,
+        storages=storages,
+    )

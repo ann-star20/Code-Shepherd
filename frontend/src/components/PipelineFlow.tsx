@@ -1,0 +1,413 @@
+import type { AgentTraceItem } from "../types/kms";
+
+const STAGES = [
+  { agent: "DocumentParserAgent",    label: "문서 파싱 Agent",  icon: "🔬", step: 1, nodeType: "agent" as const },
+  { agent: "MarkdownValidateAgent",  label: "Markdown 검증",    icon: "🔍", step: 2, nodeType: "agent" as const },
+  { agent: "ChunkingAgent",          label: "청킹",             icon: "✂️", step: 3, nodeType: "tool"  as const },
+  { agent: "ChunkValidateAgent",     label: "청크 검증",        icon: "📋", step: 4, nodeType: "tool"  as const },
+  { agent: "MetadataExtractAgent",   label: "메타데이터 추출",  icon: "🏷️", step: 5, nodeType: "agent" as const },
+  { agent: "MetadataValidateAgent",  label: "메타데이터 검증",  icon: "✅", step: 6, nodeType: "agent" as const },
+  { agent: "StoreRouteAgent",        label: "저장",             icon: "💾", step: 7, nodeType: "tool"  as const },
+] as const;
+
+const STATUS_BG: Record<string, string> = {
+  success: "#14532d",
+  fail:    "#450a0a",
+  running: "#451a03",
+  pending: "#1f2937",
+};
+
+const STATUS_BORDER: Record<string, string> = {
+  success: "#22c55e",
+  fail:    "#ef4444",
+  running: "#f59e0b",
+  pending: "#374151",
+};
+
+const STATUS_LABEL: Record<string, string> = {
+  success: "완료",
+  fail:    "실패",
+  running: "실행중",
+  pending: "대기",
+};
+
+const STATUS_DOT: Record<string, string> = {
+  success: "#22c55e",
+  fail:    "#ef4444",
+  running: "#f59e0b",
+  pending: "#4b5563",
+};
+
+function formatMs(ms: number): string {
+  return ms < 1000 ? `${ms}ms` : `${(ms / 1000).toFixed(1)}s`;
+}
+
+interface PipelineFlowProps {
+  traces: AgentTraceItem[];
+  isProcessing?: boolean;
+}
+
+export function PipelineFlow({ traces, isProcessing = false }: PipelineFlowProps) {
+  const byAgent = Object.fromEntries(traces.map((t) => [t.agent_name, t]));
+
+  const lastSuccessStep = STAGES.reduce((max, s) => {
+    const t = byAgent[s.agent];
+    return t?.status === "success" ? Math.max(max, s.step) : max;
+  }, 0);
+  const runningStep = isProcessing ? lastSuccessStep + 1 : -1;
+
+  // 성공한 스테이지 수만 카운트 (running 포함 X)
+  const successCount = traces.filter((t) => t.status === "success").length;
+  // 현재 실행 중인 스테이지 이름
+  const runningStage = STAGES.find((s) => s.step === runningStep);
+
+  return (
+    <div style={styles.wrapper}>
+      {/* Header */}
+      <div style={styles.header}>
+        <div style={styles.headerLeft}>
+          <span style={styles.headerIcon}>🤖</span>
+          <span style={styles.headerTitle}>KMS 멀티 에이전트 파이프라인</span>
+        </div>
+        <div style={styles.headerRight}>
+          <span style={{ ...styles.badge, background: "#1e1b4b", color: "#a5b4fc", borderColor: "#4f46e5" }}>
+            🤖 LLM Agent ×4
+          </span>
+          <span style={{ ...styles.badge, background: "#1c1917", color: "#a8a29e", borderColor: "#44403c" }}>
+            ⚙️ Tool ×3
+          </span>
+
+          {isProcessing && runningStage && (
+            <span style={{ ...styles.agentCount, color: "#f59e0b", borderColor: "#f59e0b55", background: "#451a03" }}>
+              ▶ {runningStage.label} 처리중
+            </span>
+          )}
+          <span style={styles.agentCount}>{successCount} / {STAGES.length} 완료</span>
+        </div>
+      </div>
+
+      {/* Flow — 2-row layout: row1(1~4) + row2(5~7) */}
+      <div style={styles.flow}>
+        {([STAGES.slice(0, 4), STAGES.slice(4)] as Array<typeof STAGES[number][]>).map((rowStages, rowIdx) => (
+          <div key={rowIdx}>
+
+            {/* Row divider: Step4 중앙(우측 60px)에서 수직 하강 → Step5 중앙까지 수평 이동 → ↓ */}
+            {rowIdx > 0 && (
+              <div style={styles.rowDivider}>
+                {/* ① Step4에서 내려오는 수직선 (right: 60px = 카드 너비 120의 절반) */}
+                <div style={styles.rowConnVertLine} />
+                {/* ② Step5 중앙까지 이어지는 수평선 (bottom 정렬) */}
+                <div style={styles.rowConnHorizLine} />
+                {/* ③ Step5 중앙 위 아래 화살표 */}
+                <div style={styles.rowConnArrow} />
+              </div>
+            )}
+
+            {/* 카드 행 */}
+            <div style={styles.flowRow}>
+              {/* Row 2: Step5를 Step2 아래 정렬하기 위한 투명 스페이서 (Card1 + Connector 폭) */}
+              {rowIdx > 0 && (
+                <>
+                  <div style={{ width: 120, flexShrink: 0 }} />
+                  <div style={{ flex: 1, minWidth: 20 }} />
+                </>
+              )}
+              {rowStages.flatMap((stage, i) => {
+                const trace          = byAgent[stage.agent];
+                const isRunning      = stage.step === runningStep;
+                const rawTraceStatus = trace?.status ?? "pending";
+                // 파이프라인이 종료됐는데 트레이스가 "running"으로 남아있으면 하네스 DB 업데이트
+                // 실패로 인한 stale 상태 → "fail"로 표시
+                const sk: keyof typeof STATUS_BORDER =
+                  isRunning
+                    ? "running"
+                    : !isProcessing && rawTraceStatus === "running"
+                    ? "fail"
+                    : rawTraceStatus;
+
+                const isLlmAgent  = stage.nodeType === "agent";
+                const idleAccent  = isLlmAgent ? "#4f46e5" : "#374151";
+                const borderColor = (sk === "pending" && !isRunning) ? idleAccent : STATUS_BORDER[sk];
+                const bgColor     = (sk === "pending" && !isRunning && isLlmAgent) ? "#1e1b4b" : STATUS_BG[sk];
+
+                const card = (
+                  <div
+                    key={stage.agent}
+                    style={{
+                      ...styles.nodeCard,
+                      background:  bgColor,
+                      borderColor: borderColor,
+                      animation: isRunning ? "pulse-glow 1.2s ease-in-out infinite" : undefined,
+                      boxShadow: sk === "success"
+                        ? `0 0 0 1px ${borderColor}33`
+                        : "none",
+                    }}
+                    title={trace?.error_message ?? undefined}
+                  >
+                    {/* Card Header */}
+                    <div style={{ ...styles.cardHeader, borderBottomColor: borderColor + "44" }}>
+                      <div style={styles.cardHeaderLeft}>
+                        <div style={{
+                          ...styles.statusDot,
+                          background: STATUS_DOT[sk],
+                          animation: isRunning ? "pulse-dot 0.8s ease-in-out infinite" : "none",
+                        }} />
+                        <span style={{ ...styles.cardType, color: isLlmAgent ? "#a5b4fc" : "#6b7280" }}>
+                          {isLlmAgent ? "Agent" : "Tool"}
+                        </span>
+                      </div>
+                      <span style={styles.stepNum}>{stage.step}</span>
+                    </div>
+
+                    {/* Card Body */}
+                    <div style={styles.cardBody}>
+                      <span style={styles.nodeIcon}>{stage.icon}</span>
+                      <span style={styles.nodeLabel}>{stage.label}</span>
+                      {trace?.execution_ms != null && (
+                        <span style={styles.timing}>{formatMs(trace.execution_ms)}</span>
+                      )}
+                      {isRunning && (
+                        <span style={styles.runningBadge}>
+                          ▶ 처리중
+                        </span>
+                      )}
+                      {sk === "fail" && trace?.error_message && (
+                        <span style={styles.errorMsg}>
+                          {trace.error_message.slice(0, 30)}…
+                        </span>
+                      )}
+                    </div>
+
+                    {/* Card Footer */}
+                    <div style={{ ...styles.cardFooter, borderTopColor: borderColor + "33" }}>
+                      <span style={{ ...styles.statusPill, color: borderColor, borderColor: borderColor + "55", background: borderColor + "15" }}>
+                        {STATUS_LABEL[sk]}
+                      </span>
+                    </div>
+                  </div>
+                );
+
+                if (i < rowStages.length - 1) {
+                  return [
+                    card,
+                    <div key={`conn-${stage.agent}`} style={styles.connector}>
+                      <div style={{ ...styles.connLine, background: sk === "success" ? "#22c55e66" : "#374151" }} />
+                      <div style={{ ...styles.connArrow, borderLeftColor: sk === "success" ? "#22c55e66" : "#374151" }} />
+                    </div>,
+                  ];
+                }
+                return [card];
+              })}
+            </div>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+const styles: Record<string, React.CSSProperties> = {
+  wrapper: {
+    background:   "#0d1117",
+    borderRadius: 14,
+    padding:      "20px 24px 24px",
+    marginTop:    24,
+    border:       "1px solid #21262d",
+    fontFamily:   "system-ui, sans-serif",
+  },
+  header: {
+    display:        "flex",
+    alignItems:     "center",
+    justifyContent: "space-between",
+    marginBottom:   20,
+    paddingBottom:  14,
+    borderBottom:   "1px solid #21262d",
+  },
+  headerLeft: {
+    display:    "flex",
+    alignItems: "center",
+    gap:        8,
+  },
+  headerIcon: { fontSize: 16 },
+  headerTitle: {
+    color:      "#e6edf3",
+    fontSize:   13,
+    fontWeight: 600,
+  },
+  headerRight: {
+    display:    "flex",
+    alignItems: "center",
+    gap:        6,
+  },
+  badge: {
+    fontSize:     10,
+    fontWeight:   700,
+    padding:      "3px 9px",
+    borderRadius: 20,
+    border:       "1px solid",
+    letterSpacing: "0.03em",
+  },
+  agentCount: {
+    color:        "#8b949e",
+    fontSize:     11,
+    background:   "#21262d",
+    padding:      "3px 10px",
+    borderRadius: 20,
+  },
+  flow: {
+    display:        "flex",
+    flexDirection:  "column",
+    gap:            0,
+    padding:        "0 0 8px",
+  },
+  flowRow: {
+    display:        "flex",
+    alignItems:     "center",
+    gap:            0,
+    width:          "100%",
+  },
+  rowDivider: {
+    position: "relative",
+    height:   36,
+    margin:   "4px 0",
+  },
+  // Step4 중앙에서 수직으로 절반 높이만 내려옴 (right: 60 = 카드 120의 절반)
+  rowConnVertLine: {
+    position:     "absolute" as const,
+    right:        60,
+    top:          0,
+    width:        2,
+    height:       18,
+    background:   "#4b5563",
+    borderRadius: 1,
+  },
+  // 수직선 끝에서 Step5 중앙까지 수평으로 이어짐 (top: 16 = 수직선 끝)
+  rowConnHorizLine: {
+    position:   "absolute" as const,
+    left:       "calc(33.333% + 20px)",
+    top:        16,
+    width:      "calc(66.667% - 80px)",
+    height:     2,
+    background: "#4b5563",
+  },
+  // Step5 중앙 아래 화살표
+  rowConnArrow: {
+    position:     "absolute" as const,
+    left:         "calc(33.333% + 15px)",
+    top:          18,
+    width:        0,
+    height:       0,
+    borderLeft:   "5px solid transparent",
+    borderRight:  "5px solid transparent",
+    borderTop:    "6px solid #6b7280",
+  },
+  nodeCard: {
+    width:        120,
+    borderRadius: 10,
+    border:       "1.5px solid",
+    flexShrink:   0,
+    cursor:       "default",
+    transition:   "border-color 0.4s ease, background-color 0.4s ease, box-shadow 0.3s",
+    overflow:     "hidden",
+  },
+  cardHeader: {
+    display:         "flex",
+    alignItems:      "center",
+    justifyContent:  "space-between",
+    padding:         "7px 10px 6px",
+    borderBottom:    "1px solid",
+  },
+  cardHeaderLeft: {
+    display:    "flex",
+    alignItems: "center",
+    gap:        6,
+  },
+  statusDot: {
+    width:        7,
+    height:       7,
+    borderRadius: "50%",
+    flexShrink:   0,
+    transition:   "background-color 0.4s ease",
+  },
+  cardType: {
+    fontSize:    10,
+    fontWeight:  700,
+    letterSpacing: "0.05em",
+    textTransform: "uppercase" as const,
+  },
+  stepNum: {
+    color:        "#6e7681",
+    fontSize:     10,
+    fontWeight:   600,
+  },
+  cardBody: {
+    display:        "flex",
+    flexDirection:  "column",
+    alignItems:     "center",
+    padding:        "12px 8px 10px",
+    gap:            6,
+    minHeight:      74,
+    justifyContent: "center",
+  },
+  nodeIcon: {
+    fontSize:   22,
+    lineHeight: 1,
+  },
+  nodeLabel: {
+    color:      "#e6edf3",
+    fontSize:   11,
+    fontWeight: 600,
+    textAlign:  "center",
+    lineHeight: 1.35,
+  },
+  timing: {
+    color:    "#8b949e",
+    fontSize: 10,
+    fontVariantNumeric: "tabular-nums",
+  },
+  runningBadge: {
+    color:      "#f59e0b",
+    fontSize:   10,
+    fontWeight: 700,
+  },
+  errorMsg: {
+    color:     "#f87171",
+    fontSize:  9,
+    textAlign: "center",
+    lineHeight: 1.3,
+    maxWidth:   100,
+  },
+  cardFooter: {
+    display:         "flex",
+    justifyContent:  "center",
+    padding:         "6px 8px",
+    borderTop:       "1px solid",
+  },
+  statusPill: {
+    fontSize:     9,
+    fontWeight:   700,
+    padding:      "2px 10px",
+    borderRadius: 10,
+    border:       "1px solid",
+    letterSpacing: "0.04em",
+  },
+  connector: {
+    display:    "flex",
+    alignItems: "center",
+    flex:       1,
+    minWidth:   20,
+  },
+  connLine: {
+    flex:       1,
+    height:     2,
+    transition: "background-color 0.4s ease",
+  },
+  connArrow: {
+    width:        0,
+    height:       0,
+    borderTop:    "4px solid transparent",
+    borderBottom: "4px solid transparent",
+    borderLeft:   "6px solid",
+    transition:   "border-left-color 0.4s ease",
+  },
+};
