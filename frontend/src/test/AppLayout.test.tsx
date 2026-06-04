@@ -61,7 +61,15 @@ describe("AppLayout sidebar", () => {
     server.use(
       http.get(`${BASE}/teams/:id/members`, () =>
         HttpResponse.json([
-          { id: 1, user_id: "1", role: "member", joined_at: "2026-01-01T00:00:00Z" },
+          {
+            id: 1,
+            user_id: "1",
+            role: "member",
+            joined_at: "2026-01-01T00:00:00Z",
+            login: "testuser",
+            name: "Test User",
+            avatar_url: null,
+          },
         ])
       ),
       http.get(`${BASE}/teams/:id/prs`, () =>
@@ -118,5 +126,40 @@ describe("AppLayout sidebar", () => {
     await user.click(await screen.findByTestId("team-create-button"));
     expect(screen.getByTestId("sidebar-new-team-name")).toBeInTheDocument();
     expect(screen.getByTestId("sidebar-new-team-repo")).toBeInTheDocument();
+  });
+
+  it("shows notification bell and pending invite actions", async () => {
+    const invId = "bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb";
+    let accepted = false;
+    server.use(
+      http.get(`${BASE}/invitations`, () => {
+        if (accepted) return HttpResponse.json([]);
+        return HttpResponse.json([
+          {
+            id: invId,
+            team_id: "11111111-1111-1111-1111-111111111111",
+            team_name: "Alpha Team",
+            invited_by_login: "lead1",
+            invited_by_name: "Lead One",
+            status: "pending",
+            created_at: "2026-01-01T00:00:00Z",
+          },
+        ]);
+      }),
+      http.post(`${BASE}/invitations/${invId}/accept`, () => {
+        accepted = true;
+        return HttpResponse.json({
+          invitation_id: invId,
+          team_id: "11111111-1111-1111-1111-111111111111",
+        });
+      })
+    );
+    const user = userEvent.setup();
+    renderAppLayout();
+    expect(await screen.findByTestId("header-notifications")).toBeInTheDocument();
+    await user.click(screen.getByLabelText("팀 초대 알림"));
+    expect(screen.getByTestId(`notification-item-${invId}`)).toBeInTheDocument();
+    await user.click(screen.getByTestId(`accept-invite-${invId}`));
+    expect(await screen.findByText("새 초대가 없습니다")).toBeInTheDocument();
   });
 });

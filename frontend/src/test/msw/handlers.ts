@@ -52,8 +52,47 @@ export const handlers = [
         user_id: "1",
         role: "lead",
         joined_at: "2026-01-01T00:00:00Z",
+        login: "testuser",
+        name: "Test User",
+        avatar_url: null,
       },
     ])
+  ),
+  http.get(`${BASE}/invitations`, () => HttpResponse.json([])),
+  http.post(`${BASE}/invitations/:id/accept`, () =>
+    HttpResponse.json({
+      invitation_id: "inv-1",
+      team_id: MOCK_TEAM_ID,
+      member: {
+        id: "mem-2",
+        user_id: "1",
+        role: "member",
+        login: "testuser",
+        name: "Test User",
+        avatar_url: null,
+      },
+    })
+  ),
+  http.post(`${BASE}/invitations/:id/decline`, () =>
+    HttpResponse.json({
+      id: "inv-1",
+      team_id: MOCK_TEAM_ID,
+      team_name: "Alpha Team",
+      status: "declined",
+      created_at: "2026-01-01T00:00:00Z",
+    })
+  ),
+  http.post(`${BASE}/teams/:id/invitations`, () =>
+    HttpResponse.json(
+      {
+        id: "inv-new",
+        team_id: MOCK_TEAM_ID,
+        team_name: "Alpha Team",
+        status: "pending",
+        created_at: new Date().toISOString(),
+      },
+      { status: 201 }
+    )
   ),
   http.get(`${BASE}/teams/:id/prs`, ({ params }) => {
     return HttpResponse.json({

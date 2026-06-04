@@ -33,3 +33,19 @@ class MemberView:
     user_id: uuid.UUID
     role: str
     joined_at: datetime
+    login: str
+    name: str
+    avatar_url: str | None
+
+
+@dataclass
+class InvitationView:
+    id: uuid.UUID
+    team_id: uuid.UUID
+    team_name: str
+    invitee_user_id: uuid.UUID
+    invited_by_user_id: uuid.UUID
+    invited_by_login: str
+    invited_by_name: str
+    status: str
+    created_at: datetime

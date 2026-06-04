@@ -21,6 +21,7 @@ import {
   Users,
   Youtube,
 } from "lucide-react";
+import HeaderNotifications from "../components/HeaderNotifications";
 import { useAuth } from "../lib/auth";
 import { useTeamContext } from "../contexts/TeamContext";
 
@@ -509,6 +510,7 @@ export default function AppLayout() {
             <Search size={14} />
             <span>검색...</span>
           </div>
+          <HeaderNotifications />
         </header>
 
         <main className="flex-1 overflow-y-auto">

@@ -13,8 +13,8 @@ from shared.logging import get_logger
 
 from ..dependencies import get_current_active_user
 from ..services.pr_service import list_prs_for_team
+from ..services.invite_service import create_invitation
 from ..services.team_service import (
-    add_member,
     create_team,
     delete_team,
     get_members,
@@ -41,6 +41,11 @@ class TeamUpdate(BaseModel):
 class MemberAdd(BaseModel):
     user_id: str
     role: str = "member"
+
+
+class InvitationCreate(BaseModel):
+    user_id: str | None = None
+    github_id: str | None = None
 
 
 class RoleUpdate(BaseModel):
@@ -132,9 +137,44 @@ async def list_members(
             "user_id": str(m.user_id),
             "role": m.role,
             "joined_at": m.joined_at,
+            "login": m.login,
+            "name": m.name,
+            "avatar_url": m.avatar_url,
         }
         for m in members
     ]
+
+
+def _invitation_response(inv) -> dict:
+    return {
+        "id": str(inv.id),
+        "team_id": str(inv.team_id),
+        "team_name": inv.team_name,
+        "invitee_user_id": str(inv.invitee_user_id),
+        "invited_by_user_id": str(inv.invited_by_user_id),
+        "invited_by_login": inv.invited_by_login,
+        "invited_by_name": inv.invited_by_name,
+        "status": inv.status,
+        "created_at": inv.created_at,
+    }
+
+
+@router.post("/{team_id}/invitations", status_code=status.HTTP_201_CREATED)
+async def create_team_invitation(
+    team_id: uuid.UUID,
+    body: InvitationCreate,
+    payload: dict = Depends(get_current_active_user),
+    db: AsyncSession = Depends(get_session),
+):
+    target_id = uuid.UUID(body.user_id) if body.user_id else None
+    inv = await create_invitation(
+        db,
+        team_id,
+        _parse_user_id(payload),
+        target_user_id=target_id,
+        github_id=body.github_id,
+    )
+    return _invitation_response(inv)
 
 
 @router.post("/{team_id}/members", status_code=status.HTTP_201_CREATED)
@@ -144,18 +184,14 @@ async def add_team_member(
     payload: dict = Depends(get_current_active_user),
     db: AsyncSession = Depends(get_session),
 ):
-    member = await add_member(
+    """하위 호환 — 즉시 가입 대신 초대 생성."""
+    inv = await create_invitation(
         db,
         team_id,
         _parse_user_id(payload),
-        uuid.UUID(body.user_id),
-        body.role,
+        target_user_id=uuid.UUID(body.user_id),
     )
-    return {
-        "id": str(member.id),
-        "user_id": str(member.user_id),
-        "role": member.role,
-    }
+    return _invitation_response(inv)
 
 
 @router.delete("/{team_id}/members/{target_user_id}", status_code=status.HTTP_204_NO_CONTENT)
@@ -187,6 +223,9 @@ async def update_team_member_role(
         "id": str(member.id),
         "user_id": str(member.user_id),
         "role": member.role,
+        "login": member.login,
+        "name": member.name,
+        "avatar_url": member.avatar_url,
     }
 
 

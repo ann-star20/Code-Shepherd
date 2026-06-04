@@ -5,6 +5,7 @@ from __future__ import annotations
 import pytest
 
 from .helpers import make_token, make_user
+from .invite_helpers import invite_and_accept
 
 
 async def _create_team_with_lead(
@@ -65,10 +66,12 @@ async def test_only_lead_can_update_team(client, db_session):
 
     member = await make_user(db_session, login="update_member")
     member_token, _ = await make_token(db_session, member)
-    await client.post(
-        f"/teams/{team_id}/members",
-        json={"user_id": str(member.user_id)},
-        headers={"Authorization": f"Bearer {lead_token}"},
+    await invite_and_accept(
+        client,
+        team_id=team_id,
+        lead_token=lead_token,
+        invitee_user_id=str(member.user_id),
+        invitee_token=member_token,
     )
 
     resp = await client.patch(
@@ -91,10 +94,12 @@ async def test_only_lead_can_delete_team(client, db_session):
 
     member = await make_user(db_session, login="del_member")
     member_token, _ = await make_token(db_session, member)
-    await client.post(
-        f"/teams/{team_id}/members",
-        json={"user_id": str(member.user_id)},
-        headers={"Authorization": f"Bearer {lead_token}"},
+    await invite_and_accept(
+        client,
+        team_id=team_id,
+        lead_token=lead_token,
+        invitee_user_id=str(member.user_id),
+        invitee_token=member_token,
     )
 
     resp = await client.delete(
@@ -104,17 +109,17 @@ async def test_only_lead_can_delete_team(client, db_session):
 
 
 @pytest.mark.asyncio
-async def test_add_member_prevents_duplicate(client, db_session):
+async def test_invite_prevents_duplicate_pending(client, db_session):
     team_id, lead_token, _ = await _create_team_with_lead(client, db_session, "nodup_lead")
     member = await make_user(db_session, login="nodup_member")
 
     resp1 = await client.post(
-        f"/teams/{team_id}/members",
+        f"/teams/{team_id}/invitations",
         json={"user_id": str(member.user_id)},
         headers={"Authorization": f"Bearer {lead_token}"},
     )
     resp2 = await client.post(
-        f"/teams/{team_id}/members",
+        f"/teams/{team_id}/invitations",
         json={"user_id": str(member.user_id)},
         headers={"Authorization": f"Bearer {lead_token}"},
     )
@@ -139,10 +144,12 @@ async def test_member_cannot_add_members(client, db_session):
 
     member = await make_user(db_session, login="add_member")
     member_token, _ = await make_token(db_session, member)
-    await client.post(
-        f"/teams/{team_id}/members",
-        json={"user_id": str(member.user_id)},
-        headers={"Authorization": f"Bearer {lead_token}"},
+    await invite_and_accept(
+        client,
+        team_id=team_id,
+        lead_token=lead_token,
+        invitee_user_id=str(member.user_id),
+        invitee_token=member_token,
     )
 
     new_guy = await make_user(db_session, login="new_guy")
@@ -183,10 +190,12 @@ async def test_member_gets_self_scope_prs(client, db_session):
 
     member = await make_user(db_session, login="pr_member")
     member_token, _ = await make_token(db_session, member)
-    await client.post(
-        f"/teams/{team_id}/members",
-        json={"user_id": str(member.user_id)},
-        headers={"Authorization": f"Bearer {lead_token}"},
+    await invite_and_accept(
+        client,
+        team_id=team_id,
+        lead_token=lead_token,
+        invitee_user_id=str(member.user_id),
+        invitee_token=member_token,
     )
 
     resp = await client.get(

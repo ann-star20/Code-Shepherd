@@ -63,12 +63,20 @@ export const teamsApi = {
   ) => apiClient.patch(`/teams/${id}`, data),
   delete: (id: string) => apiClient.delete(`/teams/${id}`),
   getMembers: (id: string) => apiClient.get(`/teams/${id}/members`),
-  addMember: (teamId: string, userId: string, role = "member") =>
-    apiClient.post(`/teams/${teamId}/members`, { user_id: userId, role }),
+  createInvitation: (
+    teamId: string,
+    data: { user_id?: string; github_id?: string }
+  ) => apiClient.post(`/teams/${teamId}/invitations`, data),
   removeMember: (teamId: string, userId: string) =>
     apiClient.delete(`/teams/${teamId}/members/${userId}`),
   updateMemberRole: (teamId: string, userId: string, role: string) =>
     apiClient.patch(`/teams/${teamId}/members/${userId}`, { role }),
   getPRs: (teamId: string) => apiClient.get(`/teams/${teamId}/prs`),
   approvePR: (prId: string) => apiClient.post(`/prs/${prId}/approve`),
+};
+
+export const invitationsApi = {
+  listMine: () => apiClient.get("/invitations"),
+  accept: (id: string) => apiClient.post(`/invitations/${id}/accept`),
+  decline: (id: string) => apiClient.post(`/invitations/${id}/decline`),
 };

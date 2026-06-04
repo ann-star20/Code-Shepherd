@@ -39,12 +39,15 @@ def _to_team_view(team: Team) -> TeamView:
     )
 
 
-def _to_member_view(member: TeamMember) -> MemberView:
+def _to_member_view(member: TeamMember, user: User) -> MemberView:
     return MemberView(
         id=member.id,
         user_id=member.user_id,
         role=member.team_role,
         joined_at=member.joined_at,
+        login=user.login,
+        name=user.name,
+        avatar_url=user.avatar_url,
     )
 
 
@@ -201,22 +204,22 @@ async def get_members(
     await _get_team_or_404(db, team_id)
     await _require_member(db, team_id, requester_id)
     result = await db.execute(
-        select(TeamMember)
+        select(TeamMember, User)
+        .join(User, User.user_id == TeamMember.user_id)
         .where(TeamMember.team_id == team_id)
         .order_by(TeamMember.joined_at.asc())
     )
-    return [_to_member_view(m) for m in result.scalars().all()]
+    return [_to_member_view(m, u) for m, u in result.all()]
 
 
-async def add_member(
+async def join_team_member(
     db: AsyncSession,
     team_id: uuid.UUID,
-    requester_id: uuid.UUID,
     target_user_id: uuid.UUID,
     role: str = "member",
 ) -> MemberView:
+    """초대 수락 등 — 팀장 검증 없이 멤버십 생성."""
     team = await _get_team_or_404(db, team_id)
-    await _require_lead(db, team_id, requester_id)
 
     if role not in ("lead", "member"):
         raise HTTPException(
@@ -248,9 +251,23 @@ async def add_member(
     )
     db.add(membership)
     target.team = team.name
-    await db.commit()
+    await db.flush()
     await db.refresh(membership)
-    return _to_member_view(membership)
+    return _to_member_view(membership, target)
+
+
+async def add_member(
+    db: AsyncSession,
+    team_id: uuid.UUID,
+    requester_id: uuid.UUID,
+    target_user_id: uuid.UUID,
+    role: str = "member",
+) -> MemberView:
+    """테스트·레거시 — 즉시 가입 (초대 플로우는 invite_service)."""
+    await _require_lead(db, team_id, requester_id)
+    view = await join_team_member(db, team_id, target_user_id, role)
+    await db.commit()
+    return view
 
 
 async def remove_member(
@@ -316,7 +333,8 @@ async def update_member_role(
     membership.team_role = new_role
     await db.commit()
     await db.refresh(membership)
-    return _to_member_view(membership)
+    user = await _get_user(db, target_user_id)
+    return _to_member_view(membership, user)
 
 
 async def search_users(db: AsyncSession, query: str) -> list[User]:
@@ -362,4 +380,5 @@ async def get_membership(
 ) -> MemberView:
     await _get_team_or_404(db, team_id)
     membership = await _require_member(db, team_id, user_id)
-    return _to_member_view(membership)
+    user = await _get_user(db, user_id)
+    return _to_member_view(membership, user)

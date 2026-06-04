@@ -474,3 +474,24 @@ CREATE TABLE IF NOT EXISTS team_members (
 
 CREATE INDEX IF NOT EXISTS idx_teams_repo ON teams (github_repo_full_name);
 CREATE INDEX IF NOT EXISTS idx_team_members_user ON team_members (user_id);
+
+
+-- =============================================================================
+-- 부록 B. team_invitations (운영 DB additive — api-core Alembic 0006)
+-- =============================================================================
+
+CREATE TABLE IF NOT EXISTS team_invitations (
+    id                  UUID         PRIMARY KEY DEFAULT gen_random_uuid(),
+    team_id             UUID         NOT NULL REFERENCES teams (team_id) ON DELETE CASCADE,
+    invitee_user_id     UUID         NOT NULL REFERENCES users (user_id) ON DELETE CASCADE,
+    invited_by_user_id  UUID         NOT NULL REFERENCES users (user_id) ON DELETE CASCADE,
+    status              VARCHAR(20)  NOT NULL DEFAULT 'pending'
+                        CHECK (status IN ('pending', 'accepted', 'declined', 'cancelled')),
+    created_at          TIMESTAMPTZ  NOT NULL DEFAULT now(),
+    responded_at        TIMESTAMPTZ
+);
+
+CREATE INDEX IF NOT EXISTS idx_team_invitations_invitee_pending
+    ON team_invitations (invitee_user_id, status);
+CREATE INDEX IF NOT EXISTS idx_team_invitations_team_invitee
+    ON team_invitations (team_id, invitee_user_id);

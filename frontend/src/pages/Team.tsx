@@ -6,13 +6,16 @@ import { useEffect, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { teamsApi, usersApi } from "../lib/api";
 import { useTeamContext } from "../contexts/TeamContext";
-import { Search, Trash2, UserMinus, UserPlus } from "lucide-react";
+import { Search, UserMinus, UserPlus } from "lucide-react";
 
 interface Member {
   id: string;
   user_id: string;
   role: "lead" | "member";
   joined_at: string;
+  login: string;
+  name: string;
+  avatar_url: string | null;
 }
 
 interface UserResult {
@@ -20,6 +23,34 @@ interface UserResult {
   login: string;
   name: string | null;
   avatar_url: string | null;
+}
+
+function MemberAvatar({
+  login,
+  name,
+  avatarUrl,
+  size = "md",
+}: {
+  login: string;
+  name: string;
+  avatarUrl: string | null;
+  size?: "sm" | "md";
+}) {
+  const dim = size === "sm" ? "w-5 h-5" : "w-7 h-7";
+  const text = size === "sm" ? "text-[10px]" : "text-xs";
+  if (avatarUrl) {
+    return (
+      <img src={avatarUrl} alt={login} className={`${dim} rounded-full object-cover`} />
+    );
+  }
+  const initial = (name || login || "?")[0]?.toUpperCase() ?? "?";
+  return (
+    <div
+      className={`${dim} rounded-full bg-gray-200 flex items-center justify-center ${text} text-gray-600`}
+    >
+      {initial}
+    </div>
+  );
 }
 
 export default function Team() {
@@ -32,7 +63,9 @@ export default function Team() {
     role,
   } = useTeamContext();
   const [memberSearch, setMemberSearch] = useState("");
+  const [githubIdInput, setGithubIdInput] = useState("");
   const [searchResults, setSearchResults] = useState<UserResult[]>([]);
+  const [inviteMessage, setInviteMessage] = useState<string | null>(null);
 
   const selectedTeamId = currentTeamId;
 
@@ -61,13 +94,19 @@ export default function Team() {
     },
   });
 
-  const addMember = useMutation({
-    mutationFn: ({ userId }: { userId: string }) =>
-      teamsApi.addMember(selectedTeamId!, userId),
+  const inviteMember = useMutation({
+    mutationFn: (payload: { user_id?: string; github_id?: string }) =>
+      teamsApi.createInvitation(selectedTeamId!, payload),
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["team-members", selectedTeamId] });
+      setInviteMessage("팀 초대를 보냈습니다");
       setMemberSearch("");
+      setGithubIdInput("");
       setSearchResults([]);
+      setTimeout(() => setInviteMessage(null), 3000);
+    },
+    onError: () => {
+      setInviteMessage("초대에 실패했습니다. GitHub ID를 확인해 주세요.");
+      setTimeout(() => setInviteMessage(null), 4000);
     },
   });
 
@@ -95,6 +134,12 @@ export default function Team() {
     }
     const res = await usersApi.search(query);
     setSearchResults(res.data);
+  };
+
+  const handleGithubInvite = () => {
+    const gid = githubIdInput.trim();
+    if (!gid || !selectedTeamId) return;
+    inviteMember.mutate({ github_id: gid });
   };
 
   if (teams.length === 0) {
@@ -157,7 +202,34 @@ export default function Team() {
 
           <div className="p-4">
             {isLead && (
-              <div className="mb-4">
+              <div className="mb-4 space-y-3">
+                {inviteMessage && (
+                  <p className="text-xs text-notion-text-secondary" role="status">
+                    {inviteMessage}
+                  </p>
+                )}
+                <div className="flex gap-2">
+                  <input
+                    type="text"
+                    value={githubIdInput}
+                    onChange={(e) => setGithubIdInput(e.target.value)}
+                    onKeyDown={(e) => {
+                      if (e.key === "Enter") handleGithubInvite();
+                    }}
+                    placeholder="GitHub ID (예: octocat)"
+                    className="flex-1 text-sm border border-notion-border rounded px-3 py-2 focus:outline-none focus:ring-1 focus:ring-notion-text"
+                    data-testid="github-id-invite-input"
+                  />
+                  <button
+                    type="button"
+                    onClick={handleGithubInvite}
+                    disabled={!githubIdInput.trim() || inviteMember.isPending}
+                    className="text-sm px-3 py-2 rounded border border-notion-border hover:bg-sidebar-hover disabled:opacity-50"
+                    data-testid="github-id-invite-button"
+                  >
+                    초대
+                  </button>
+                </div>
                 <div className="relative">
                   <Search
                     size={14}
@@ -167,7 +239,7 @@ export default function Team() {
                     type="text"
                     value={memberSearch}
                     onChange={(e) => void handleSearch(e.target.value)}
-                    placeholder="사용자 검색 (login 또는 이름)"
+                    placeholder="사용자 검색 (GitHub ID 또는 이름)"
                     className="w-full text-sm border border-notion-border rounded pl-8 pr-3 py-2 focus:outline-none focus:ring-1 focus:ring-notion-text"
                     data-testid="user-search-input"
                   />
@@ -181,16 +253,13 @@ export default function Team() {
                         className="flex items-center justify-between px-3 py-2 hover:bg-sidebar-hover"
                       >
                         <div className="flex items-center gap-2">
-                          {u.avatar_url ? (
-                            <img
-                              src={u.avatar_url}
-                              alt={u.login}
-                              className="w-5 h-5 rounded-full"
-                            />
-                          ) : (
-                            <div className="w-5 h-5 rounded-full bg-gray-200" />
-                          )}
-                          <span className="text-sm text-notion-text">{u.login}</span>
+                          <MemberAvatar
+                            login={u.login}
+                            name={u.name ?? u.login}
+                            avatarUrl={u.avatar_url}
+                            size="sm"
+                          />
+                          <span className="text-sm text-notion-text">@{u.login}</span>
                           {u.name && (
                             <span className="text-xs text-notion-text-secondary">
                               {u.name}
@@ -199,10 +268,10 @@ export default function Team() {
                         </div>
                         <button
                           type="button"
-                          onClick={() => addMember.mutate({ userId: u.id })}
+                          onClick={() => inviteMember.mutate({ user_id: u.id })}
                           className="p-1 rounded hover:bg-sidebar-active text-notion-text-secondary"
-                          data-testid={`add-member-${u.id}`}
-                          aria-label={`${u.login} 추가`}
+                          data-testid={`invite-member-${u.id}`}
+                          aria-label={`${u.login} 초대`}
                         >
                           <UserPlus size={14} />
                         </button>
@@ -221,12 +290,17 @@ export default function Team() {
                   data-testid={`member-${m.user_id}`}
                 >
                   <div className="flex items-center gap-3">
-                    <div className="w-7 h-7 rounded-full bg-gray-200 flex items-center justify-center text-xs">
-                      {m.user_id}
-                    </div>
+                    <MemberAvatar
+                      login={m.login}
+                      name={m.name}
+                      avatarUrl={m.avatar_url}
+                    />
                     <div>
                       <span className="text-sm text-notion-text">
-                        User #{m.user_id}
+                        {m.name || m.login}
+                      </span>
+                      <span className="text-xs text-notion-text-secondary ml-1">
+                        @{m.login}
                       </span>
                       <span
                         className={`ml-2 text-xs px-1.5 py-0.5 rounded-full ${
