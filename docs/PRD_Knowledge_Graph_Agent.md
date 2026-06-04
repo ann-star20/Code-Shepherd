@@ -283,53 +283,55 @@ CREATE INDEX document_doc_id FOR (d:Document) ON (d.doc_id)
 | 성능 문서에서 추출 | `:Concept:Performance` | `N+1Query`, `MissingIndex` |
 | 양쪽 모두 해당 | `:Concept:Security:Performance` | `MemoryLeak`, `ConnPoolExhaustion` |
 
-**교차 도메인 MERGE Cypher**:
+**교차 도메인 MERGE Cypher** (Tag Node 방식 — APOC 불필요):
 
 ```cypher
-// 1. 노드 생성 또는 병합 (name 기준 단일 노드 보장)
+// 1. Concept 노드 생성 또는 병합
 MERGE (c:Concept {name: "MemoryLeak"})
 ON CREATE SET
-  c.aliases      = ["Memory Leak", "메모리 누수"],
-  c.cwe_id       = "CWE-401",
+  c.aliases        = ["Memory Leak", "메모리 누수"],
+  c.cwe_id         = "CWE-401",
   c.description_ko = "객체 참조 미해제로 인한 GC 부하 및 힙 메모리 소진",
-  c.created_at   = timestamp()
+  c.created_at     = timestamp()
 ON MATCH SET
-  c.updated_at   = timestamp()
+  c.updated_at     = timestamp()
 
-// 2. 도메인 라벨 누적 부여 (기존 라벨 제거 없이 추가만)
+// 2. 도메인 Tag 연결 (누적 추가 — 기존 관계 삭제 없음)
 WITH c
-CALL apoc.create.addLabels(c, ["Security", "Performance"]) YIELD node
-RETURN node
+UNWIND ["Security", "Performance"] AS tag_name
+  MERGE (t:Tag {name: tag_name})
+  MERGE (c)-[:TAGGED_WITH]->(t)
 ```
 
-**조회 패턴**:
+**조회 패턴** (Tag Node 방식):
 ```cypher
 // 보안 도메인 Concept만 조회
-MATCH (c:Concept:Security) RETURN c
+MATCH (c:Concept)-[:TAGGED_WITH]->(:Tag {name: "Security"}) RETURN c
 
 // 성능 도메인 Concept만 조회
-MATCH (c:Concept:Performance) RETURN c
+MATCH (c:Concept)-[:TAGGED_WITH]->(:Tag {name: "Performance"}) RETURN c
 
-// 교차 도메인 Concept 조회 ("보안이면서 성능이기도 한" 노드)
-MATCH (c:Concept:Security:Performance) RETURN c
+// 교차 도메인 Concept ("보안이면서 성능이기도 한" 노드)
+MATCH (c:Concept)-[:TAGGED_WITH]->(:Tag {name: "Security"})
+WHERE (c)-[:TAGGED_WITH]->(:Tag {name: "Performance"})
+RETURN c
 
-// "MemoryLeak" 키워드 + 보안 컨텍스트 조회
-MATCH (c:Concept:Security {name: "MemoryLeak"}) RETURN c
+// "MemoryLeak" + 보안 컨텍스트
+MATCH (c:Concept {name: "MemoryLeak"})-[:TAGGED_WITH]->(:Tag {name: "Security"}) RETURN c
 
-// aliases 포함 전체 검색 (키워드 "메모리 누수")
+// aliases 포함 전체 검색
 MATCH (c:Concept) WHERE "메모리 누수" IN c.aliases RETURN c
 ```
 
-**Extractor Agent 라벨 결정 로직**:
-Extractor가 LLM 추출 결과 JSON에서 `concept_domain` 필드를 반환하면, Graph Writer가 아래 매핑으로 라벨을 결정한다.
+**Extractor Agent 도메인 태그 결정 로직**:
+Extractor가 LLM 결과 JSON에서 `concept_domain` 필드를 반환하면, Graph Writer가 아래 매핑으로 Tag를 연결한다.
 
 ```python
-DOMAIN_LABEL_MAP = {
+DOMAIN_TAG_MAP = {
     "security":     ["Security"],
     "performance":  ["Performance"],
     "both":         ["Security", "Performance"],
 }
-# LLM이 모호하게 판단한 경우 Link Resolver가 사후 라벨 추가
 ```
 
 프롬프트 출력 스키마에 `concept_domain` 필드를 추가한다:
@@ -1115,28 +1117,38 @@ def test_doc_id_content_change():
 | Assert 1 | 중복 에러 없이 `state`가 `'CRAWLING'`으로 변경됨 |
 | Assert 2 | `updated_at`이 `created_at`보다 미래 시간으로 자동 갱신됨 |
 
-**T04. Neo4j 양대 도메인 격벽 및 다중 라벨 MERGE 테스트**
+**T04. Neo4j Tag Node 방식 도메인 태깅 + MERGE 멱등성 테스트**
 
 | 항목 | 내용 |
 |------|------|
-| 시나리오 | `MemoryLeak` 개념 노드 생성 Cypher를 2회 실행 후 `apoc.create.addLabels`로 `:Security`, `:Performance` 순차 부여 |
+| 시나리오 | `MemoryLeak` 개념 노드 생성 Cypher를 2회 실행 후 Tag Node(`Security`, `Performance`) 관계를 순차 부여 |
 | Assert 1 | 전체 `:Concept` 노드 수 = 1 (Deduplication 보장) |
-| Assert 2 | 해당 노드 라벨 배열에 `["Concept", "Security", "Performance"]` 3개 모두 포함 (단조 증가) |
+| Assert 2 | `(MemoryLeak)-[:TAGGED_WITH]->(Security)` 및 `(MemoryLeak)-[:TAGGED_WITH]->(Performance)` 관계 각 1개씩만 존재 |
 
 ```python
-def test_neo4j_multilabel_deduplication(neo4j_session):
-    # 2회 MERGE 실행
+def test_neo4j_tag_node_deduplication(neo4j_session):
+    # Arrange — 2회 MERGE 실행 (멱등성 확인)
     for _ in range(2):
-        neo4j_session.run("MERGE (c:Concept {name: 'MemoryLeak'})")
-    neo4j_session.run("CALL apoc.create.addLabels(['MemoryLeak'], ['Security','Performance'])")
+        neo4j_session.run("""
+            MERGE (c:Concept {name: 'MemoryLeak'})
+            WITH c
+            UNWIND ['Security', 'Performance'] AS tag_name
+              MERGE (t:Tag {name: tag_name})
+              MERGE (c)-[:TAGGED_WITH]->(t)
+        """)
 
-    result = neo4j_session.run("MATCH (c:Concept) RETURN count(c) AS cnt").single()
-    assert result["cnt"] == 1
+    # Assert 1 — Concept 노드 중복 없음
+    cnt = neo4j_session.run(
+        "MATCH (c:Concept {name:'MemoryLeak'}) RETURN count(c) AS cnt"
+    ).single()["cnt"]
+    assert cnt == 1
 
-    labels = neo4j_session.run(
-        "MATCH (c:Concept {name:'MemoryLeak'}) RETURN labels(c) AS lbls"
-    ).single()["lbls"]
-    assert set(["Concept", "Security", "Performance"]).issubset(set(labels))
+    # Assert 2 — Tag 관계 중복 없음 (각 1개)
+    tags = neo4j_session.run("""
+        MATCH (c:Concept {name:'MemoryLeak'})-[:TAGGED_WITH]->(t:Tag)
+        RETURN collect(t.name) AS tags
+    """).single()["tags"]
+    assert set(tags) == {"Security", "Performance"}
 ```
 
 ### 10.4. 레이어 C — 비동기 파이프라인 및 스테이징 격리 검증 (`test_pipeline_gate.py`)
@@ -1272,7 +1284,7 @@ tests/harness/test_llm_eval.py       PASSED [100%]   # T07, T08
 
 ## 11. 최종 승인 게이트 — 4대 핵심 커밋 규칙
 
-Celery 비동기 태스크, PostgreSQL 스테이징 테이블, Neo4j 지식 그래프가 3중으로 얽힌 하이브리드 아키텍처에서, 관리자 승인 후 운영 DB에 데이터를 최종 반영(`state='COMMITTED'`)할 때 백엔드 엔진이 강제 준수해야 하는 원자적 커밋 규칙이다.
+FastAPI BackgroundTasks(PipelineTask), PostgreSQL 스테이징 테이블, Neo4j 지식 그래프가 3중으로 얽힌 하이브리드 아키텍처에서, 관리자 승인 후 운영 DB에 데이터를 최종 반영(`state='COMMITTED'`)할 때 백엔드 엔진이 강제 준수해야 하는 원자적 커밋 규칙이다. (v1 기준 3대 규칙; 규칙 ③ Link Resolver는 v2 대상)
 
 ### 규칙 ① — 2단계 크로스 DB 트랜잭션 보장 (Two-Phase Commit Pattern)
 
@@ -1303,39 +1315,42 @@ async def commit_to_master(session_id: str, approved_concepts: list):
 **구현 제약**: Neo4j 적재 시 반드시 `Concept.name`을 유니크 식별 키로 `MERGE ... ON CREATE SET ... ON MATCH SET` 구문을 사용한다. 동일 데이터 재입력 시 노드 중복 생성 없이 `updated_at` 타임스탬프만 갱신된다.
 
 ```cypher
+// Tag Node 방식 — APOC 불필요, 순수 Cypher (v1)
 MERGE (c:Concept {name: $name})
 ON CREATE SET
-  c.cwe_id        = $cwe_id,
+  c.cwe_id         = $cwe_id,
   c.description_ko = $description_ko,
-  c.aliases       = $aliases,
-  c.created_at    = timestamp()
+  c.aliases        = $aliases,
+  c.created_at     = timestamp()
 ON MATCH SET
-  c.updated_at    = timestamp()
+  c.updated_at     = timestamp()
 WITH c
-CALL apoc.create.addLabels(c, $domain_labels) YIELD node
-RETURN node
+UNWIND $domain_tags AS tag_name          // ["Security"], ["Performance"], or ["Security","Performance"]
+  MERGE (t:Tag {name: tag_name})
+  MERGE (c)-[:TAGGED_WITH]->(t)
 ```
 
-### 규칙 ③ — 후행 Link Resolver 트리거 연동
+> **설계 이유**: `apoc.create.addLabels()`는 APOC 플러그인 필수. Neo4j Aura Free 미지원.
+> Tag Node(`-[:TAGGED_WITH]->`) 방식은 순수 Cypher로 동일 교차도메인 필터링을 달성한다.
+> `MATCH (c:Concept)-[:TAGGED_WITH]->(:Tag {name:'Security'})` = 기존 `MATCH (c:Concept:Security)`
 
-**규칙**: 개념 노드가 Neo4j 마스터에 최종 커밋(`COMMITTED`)된 직후, 백엔드는 5단계 Link Resolver Agent 태스크를 자동 트리거해야 한다.
+### 규칙 ③ — Link Resolver 트리거 (v2 대상 — v1 미구현)
 
-**동작**: 새로 커밋된 `Concept` 노드의 `aliases` 배열과 기존 그래프 내 노드들의 유사도를 즉시 계산하여 `SAME_AS` 또는 `RELATED_TO` 관계를 맺는 후속 커밋까지 완료되어야 한 세션의 커밋 프로세스가 완전히 종료된 것으로 간주한다.
+> **v1 상태 전이**: `APPROVED → COMMITTED` (직결).
+> `COMMITTED_PENDING_RESOLVE` 상태는 v1에 존재하지 않는다.
 
-```python
-async def commit_to_master(session_id: str, approved_concepts: list):
-    # ... (규칙 ① 코드) ...
-    # 커밋 완료 후 Link Resolver 자동 트리거
-    for concept in approved_concepts:
-        resolve_links_task.delay(concept_name=concept["name"])
-    # resolve_links_task 완료 시점까지 세션 상태는 COMMITTED_PENDING_RESOLVE
-    # 관계 맺기 완료 후 COMMITTED로 최종 전환
-```
+**v2 계획**: 개념 노드가 Neo4j에 커밋된 직후 Link Resolver Agent가 `aliases` 기반 벡터 유사도 탐색으로 `SAME_AS` / `RELATED_TO` 관계를 자동 생성. v2에서 Celery 도입 시 함께 구현.
 
-**세션 상태 전이 확장**:
+**v1 세션 상태 전이** (단순화):
 
 ```
-APPROVED → COMMITTING → COMMITTED_PENDING_RESOLVE → COMMITTED(완전 종료)
+APPROVED → COMMITTED
+```
+
+**v2 세션 상태 전이** (예정):
+
+```
+APPROVED → COMMITTED → COMMITTED_PENDING_RESOLVE → FULLY_RESOLVED
 ```
 
 ### 규칙 ④ — 소스 문서(`Document`) 상태 동기화 격리
@@ -1365,12 +1380,12 @@ async def commit_to_master(session_id: str, approved_concepts: list):
 
 **4대 규칙 요약**:
 
-| 규칙 | 핵심 보장 | 실패 시 동작 |
-|------|-----------|-------------|
-| ① 2단계 크로스 DB 트랜잭션 | PG + Neo4j 원자성 | Neo4j 실패 → PG 롤백 |
-| ② 멱등성 MERGE Commit | 이중 실행 안전 | 노드 중복 없이 타임스탬프만 갱신 |
-| ③ Link Resolver 자동 트리거 | 고립 노드 방지 | 관계 미연결 시 COMMITTED 미전환 |
-| ④ Document 상태 동기화 | 대시보드 정합성 | 동일 트랜잭션 내 즉시 반영 |
+| 규칙 | 핵심 보장 | 실패 시 동작 | v1 여부 |
+|------|-----------|-------------|---------|
+| ① 크로스 DB 일관성 | PG 소스오브트루스 + 시작 시 Neo4j 재조정 | 재시작 시 COMMITTED 행 재처리 | ✅ v1 |
+| ② 멱등성 MERGE Commit | 이중 실행 안전 | 노드 중복 없이 타임스탬프만 갱신 | ✅ v1 |
+| ③ Link Resolver 자동 트리거 | 고립 노드 방지 | — | ⏳ v2 |
+| ④ Document 상태 동기화 | 대시보드 정합성 | 동일 트랜잭션 내 즉시 반영 | ✅ v1 |
 
 ---
 
@@ -1495,35 +1510,48 @@ on neo4j failure instead of silently continuing
 |------|------|
 | 테스트 경계 시각화 | 어떤 레이어가 어느 테스트 파일로 커버되는지 레이어-테스트 매핑이 명확해야 TDD가 가능하다 |
 | SDD 스펙 도출 근거 | 폴더 구조는 곧 유즈케이스 목록이다. `usecases/run_pipeline.py`, `usecases/approve_staging.py`가 PRD 요구사항과 1:1 대응됨을 보장한다 |
-| 비동기 흐름 복잡성 통제 | FastAPI → Celery → 2-phase commit → Link Resolver 트리거까지 이어지는 흐름에서 "어떤 레이어가 어느 경계를 넘는가"를 구조로 강제하면 레이스 컨디션 원인 파악이 즉각 가능하다 |
+| 비동기 흐름 복잡성 통제 | FastAPI → BackgroundTask(PipelineTask) → dual-DB commit까지 이어지는 흐름에서 "어떤 레이어가 어느 경계를 넘는가"를 구조로 강제하면 레이스 컨디션 원인 파악이 즉각 가능하다 |
 
 ### 14.2. 고수준 컴포넌트 통신 흐름
 
+> **v1 아키텍처**: Celery/Redis 미사용. `FastAPI BackgroundTasks` + `PipelineTask` 프로토콜로 비동기 처리.
+> v2에서 처리량이 10개/세션을 초과하면 Celery+Redis로 교체 가능하도록 `PipelineTask` 인터페이스로 추상화.
+
 ```
-[React :3000] ──REST/SSE──▶ [FastAPI :8000] ──task.delay()──▶ [Celery Worker]
-                                    │                                   │
-                                    │ HITL 승인 게이트                  │ 2-phase commit
-                                    ▼                                   ▼
-                           [최종 승인 API]            [PostgreSQL] + [Neo4j]
-                                                                        │
-                                                        ──LLM API──▶ [Gemini 2.5 Flash]
-                                                        ──@traceable─▶ [LangSmith]
-                                                                        │
-                                                        ←─SSE event─── [Redis broker]
+[React :3000] ──REST/SSE──▶ [FastAPI :8000]
+                                    │
+                          BackgroundTasks.add_task()
+                          (PipelineTask 프로토콜 구현체)
+                                    │
+                    ┌───────────────┼────────────────┐
+                    ▼               ▼                 ▼
+             HITL 승인 게이트  [pipeline_jobs]   asyncio.gather()
+             (SELECT FOR        PostgreSQL        Semaphore(RPM)
+              UPDATE SKIP       상태 기록              │
+              LOCKED)                          ──LLM API──▶ [Gemini 2.5 Flash]
+                    │                          ──@traceable─▶ [LangSmith]
+                    ▼
+           [PostgreSQL UPSERT]
+                    │  커밋 성공 후
+                    ▼
+            [Neo4j MERGE]       ← 실패 시 startup reconciliation 재처리
 ```
 
-**컴포넌트별 통신 방식**:
+**컴포넌트별 통신 방식** (v1):
 
 | 송신 | 수신 | 방식 | 방향 |
 |------|------|------|------|
 | React | FastAPI | REST (JSON) + SSE (실시간 로그) | 양방향 |
-| FastAPI | Celery | `task.delay()` Celery 태스크 디스패치 | 단방향 |
-| Celery | FastAPI | SSE 이벤트 푸시 (Redis pub/sub 경유) | 단방향 (역방향 콜백) |
-| Celery | PostgreSQL | SQLAlchemy AsyncSession (2-phase commit) | 양방향 |
-| Celery | Neo4j | Neo4j Driver (MERGE Cypher) | 양방향 |
-| Celery | Gemini API | HTTP (Google AI SDK) | 단방향 |
-| Celery | LangSmith | `@traceable` SDK 래핑 | 단방향 (트레이싱) |
+| FastAPI | PipelineTask | `BackgroundTasks.add_task()` | 단방향 |
+| PipelineTask | PostgreSQL | SQLAlchemy AsyncSession | 양방향 |
+| PipelineTask | Neo4j | Neo4j Driver (MERGE Cypher) | 양방향 |
+| PipelineTask | Gemini API | `asyncio.gather()` + Semaphore(RPM) | 단방향 |
+| PipelineTask | LangSmith | `@traceable` SDK 래핑 | 단방향 (트레이싱) |
 | FastAPI | LangSmith | `client.create_feedback()` (HITL 수정 시) | 단방향 |
+| FastAPI (startup) | PostgreSQL | RUNNING 고아 잡 → FAILED 전환 (10분 초과) | 양방향 |
+
+> **v2 마이그레이션 경로**: `PipelineTask` 프로토콜 구현체를 `CeleryPipelineTask`로 교환하면 Celery+Redis 전환 완료.
+> `FastAPI → task.delay() → Celery Worker → Redis pub/sub → SSE` 패턴은 v2 스펙.
 
 ### 14.3. 백엔드 — 클린 아키텍처 기반 폴더 레이아웃
 
