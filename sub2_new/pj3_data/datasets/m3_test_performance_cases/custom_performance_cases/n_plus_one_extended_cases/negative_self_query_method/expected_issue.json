@@ -1,0 +1,6 @@
+{
+  "case_id": "m3_custom_n_plus_one_negative_self_query_001",
+  "module": "M3",
+  "source": "Task-Link Custom",
+  "expected_issues": []
+}

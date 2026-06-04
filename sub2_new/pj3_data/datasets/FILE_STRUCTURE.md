@@ -53,12 +53,22 @@ datasets/
         ├── low_coverage_case/        #     낮은 커버리지
         ├── memory_leak_case/         #     메모리 누수
         ├── missing_test_function_case/ #   테스트 함수 누락
-        └── n_plus_one_case/          #     N+1 쿼리 문제
-            └── (각 케이스 공통 구성)
-                ├── app/              #       대상 애플리케이션 코드
-                ├── tests/            #       테스트 코드
-                ├── expected_issue.json #     기대 이슈(정답)
-                └── README.md         #       케이스 설명
+        ├── n_plus_one_case/          #     N+1 쿼리 문제 (기존)
+        │   └── (각 케이스 공통 구성)
+        │       ├── app/              #       대상 애플리케이션 코드
+        │       ├── tests/            #       테스트 코드
+        │       ├── expected_issue.json #     기대 이슈(정답)
+        │       └── README.md         #       케이스 설명
+        └── n_plus_one_extended_cases/ #   N+1 전용 확장 케이스 (8종: positive 4 + negative 4)
+            ├── positive_repository_find_by_id/  # for 루프 내 repository.find_by_id → PERF-002
+            ├── positive_db_execute_in_loop/     # for 루프 내 db.execute → PERF-002
+            ├── positive_sqlalchemy_query_in_loop/ # for 루프 내 session.query().filter().first() → PERF-002
+            ├── positive_nested_loop_db_call/    # 중첩 루프 내 repository.find_by_id → PERF-002
+            ├── negative_bulk_fetch_before_loop/ # 루프 전 bulk 조회 + 루프 내 dict lookup → 정상
+            ├── negative_loop_without_db_call/   # DB 호출 없는 단순 반복 → 정상
+            ├── negative_local_dict_get/         # 루프 내 dict.get (DB 아님) → 정상
+            └── negative_self_query_method/      # 로컬 self.query (DB 아님) → 정상
+                └── (각 케이스 공통 구성: app/ tests/ expected_issue.json README.md)
 ```
 
 ## 영역별 요약
@@ -68,7 +78,7 @@ datasets/
 | M2 보안(커스텀) | `m2_custom_security_cases/` | 6 | 직접 제작한 보안 취약점 탐지 평가 |
 | M2 보안(OWASP) | `m2_owasp_benchmark_python_selected/` | 50 | OWASP Benchmark 표준 케이스 평가 (오탐/미탐) |
 | M3 버그 | `m3_bugsinpy_selected/` | 8 | BugsInPy 실제 버그 탐지 평가 |
-| M3 테스트/성능 | `m3_test_performance_cases/custom_performance_cases/` | 6 | 성능·테스트 품질 이슈 탐지 평가 |
+| M3 테스트/성능 | `m3_test_performance_cases/custom_performance_cases/` | 14 | 성능·테스트 품질 이슈 탐지 평가 (기본 6 + N+1 확장 8) |
 
 ## OWASP BenchmarkPython 케이스 상세
 
@@ -85,7 +95,23 @@ datasets/
 - `case_id` 규칙: `m2_owasp_{category}_{test_name}` (예: `m2_owasp_sqli_BenchmarkTest00283`)
 - `real_vulnerability=true` → `expected_issues`에 issue 1개 / `false` → 빈 배열
 - OWASP 정답은 `expected_owasp_m2_issues.json`(별도 파일)에 저장 — 기존 `expected_outputs/expected_m2_issues.json`(custom 전용)과 분리
-- 전체 `dataset_manifest.json`에도 50개 OWASP case가 등록됨 (전체 case 수: 20 → 70)
+- 전체 `dataset_manifest.json`에도 50개 OWASP case가 등록됨 (전체 case 수: 20 → 70 → 78, N+1 확장 8종 추가)
+
+## N+1 확장 케이스 상세 (`n_plus_one_extended_cases/`)
+
+N+1 탐지기의 **recall**(positive 4)과 **false positive 방어**(negative 4)를 함께 검증한다.
+positive는 `expected_issues`에 `PERF-002` 1건, negative는 빈 배열.
+
+| 케이스 | 종류 | 패턴 | 기대 |
+|--------|------|------|------|
+| `positive_repository_find_by_id` | positive | for 루프 내 `repository.find_by_id(...)` | PERF-002 |
+| `positive_db_execute_in_loop` | positive | for 루프 내 `db.execute(...)` | PERF-002 |
+| `positive_sqlalchemy_query_in_loop` | positive | for 루프 내 `session.query(...).filter(...).first()` | PERF-002 |
+| `positive_nested_loop_db_call` | positive | 중첩 루프 내 `repository.find_by_id(...)` | PERF-002 |
+| `negative_bulk_fetch_before_loop` | negative | 루프 전 bulk 조회, 루프 내 dict lookup | 없음 |
+| `negative_loop_without_db_call` | negative | DB 호출 없는 문자열/숫자 처리 | 없음 |
+| `negative_local_dict_get` | negative | 루프 내 `dict.get(...)` (DB 아님) | 없음 |
+| `negative_self_query_method` | negative | 로컬 `self.query(...)` (DB 아님) | 없음 |
 
 ## BugsInPy 케이스 상세
 

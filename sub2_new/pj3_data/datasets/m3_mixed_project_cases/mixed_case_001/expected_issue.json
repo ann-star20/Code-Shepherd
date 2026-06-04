@@ -1,0 +1,31 @@
+{
+  "case_id": "m3_mixed_001_order_service",
+  "module": "M3",
+  "source": "Task-Link Custom",
+  "domain": "주문 서비스",
+  "expected_issues": [
+    {
+      "id": "PERF-001",
+      "title": "Time complexity issue — nested loop O(n²)",
+      "severity": "Minor",
+      "target_file": "app/order_service.py",
+      "target_function": "find_duplicate_orders",
+      "evidence": "이중 for 루프로 동일 상품 구성 주문을 비교한다."
+    },
+    {
+      "id": "PERF-002",
+      "title": "N+1 query pattern",
+      "severity": "Major",
+      "target_file": "app/order_service.py",
+      "target_function": "load_orders_with_items",
+      "evidence": "for 루프 안에서 repo.find_by_id(), repo.find_items_by_order() 두 번 DB 호출."
+    },
+    {
+      "id": "TEST-001",
+      "title": "Low test coverage",
+      "severity": "Major",
+      "target_file": "app/order_service.py",
+      "evidence": "calculate_discount, apply_coupon 함수가 테스트되지 않아 커버리지 80% 미달."
+    }
+  ]
+}

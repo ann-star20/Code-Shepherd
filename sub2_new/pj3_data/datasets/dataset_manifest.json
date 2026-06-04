@@ -1,7 +1,7 @@
 {
   "dataset_root": "datasets/",
   "purpose": "Task-Link M2/M3 evaluation dataset manifest",
-  "total_case_count": 70,
+  "total_case_count": 84,
   "cases": [
     {
       "case_id": "bugsinpy_black_3",
@@ -111,6 +111,86 @@
       "category": "n_plus_one",
       "rule_id": "PERF-002",
       "target_path": "m3_test_performance_cases/custom_performance_cases/n_plus_one_case",
+      "expected_output_ref": "expected_outputs/expected_m3_issues.json"
+    },
+    {
+      "case_id": "m3_custom_n_plus_one_repository_001",
+      "module": "M3",
+      "source": "Task-Link Custom",
+      "case_type": "test_performance",
+      "category": "n_plus_one",
+      "rule_id": "PERF-002",
+      "target_path": "m3_test_performance_cases/custom_performance_cases/n_plus_one_extended_cases/positive_repository_find_by_id",
+      "expected_output_ref": "expected_outputs/expected_m3_issues.json"
+    },
+    {
+      "case_id": "m3_custom_n_plus_one_db_execute_001",
+      "module": "M3",
+      "source": "Task-Link Custom",
+      "case_type": "test_performance",
+      "category": "n_plus_one",
+      "rule_id": "PERF-002",
+      "target_path": "m3_test_performance_cases/custom_performance_cases/n_plus_one_extended_cases/positive_db_execute_in_loop",
+      "expected_output_ref": "expected_outputs/expected_m3_issues.json"
+    },
+    {
+      "case_id": "m3_custom_n_plus_one_sqlalchemy_001",
+      "module": "M3",
+      "source": "Task-Link Custom",
+      "case_type": "test_performance",
+      "category": "n_plus_one",
+      "rule_id": "PERF-002",
+      "target_path": "m3_test_performance_cases/custom_performance_cases/n_plus_one_extended_cases/positive_sqlalchemy_query_in_loop",
+      "expected_output_ref": "expected_outputs/expected_m3_issues.json"
+    },
+    {
+      "case_id": "m3_custom_n_plus_one_nested_loop_001",
+      "module": "M3",
+      "source": "Task-Link Custom",
+      "case_type": "test_performance",
+      "category": "n_plus_one",
+      "rule_id": "PERF-002",
+      "target_path": "m3_test_performance_cases/custom_performance_cases/n_plus_one_extended_cases/positive_nested_loop_db_call",
+      "expected_output_ref": "expected_outputs/expected_m3_issues.json"
+    },
+    {
+      "case_id": "m3_custom_n_plus_one_negative_bulk_fetch_001",
+      "module": "M3",
+      "source": "Task-Link Custom",
+      "case_type": "test_performance",
+      "category": "n_plus_one",
+      "expected_rule_ids": [],
+      "target_path": "m3_test_performance_cases/custom_performance_cases/n_plus_one_extended_cases/negative_bulk_fetch_before_loop",
+      "expected_output_ref": "expected_outputs/expected_m3_issues.json"
+    },
+    {
+      "case_id": "m3_custom_n_plus_one_negative_no_db_001",
+      "module": "M3",
+      "source": "Task-Link Custom",
+      "case_type": "test_performance",
+      "category": "n_plus_one",
+      "expected_rule_ids": [],
+      "target_path": "m3_test_performance_cases/custom_performance_cases/n_plus_one_extended_cases/negative_loop_without_db_call",
+      "expected_output_ref": "expected_outputs/expected_m3_issues.json"
+    },
+    {
+      "case_id": "m3_custom_n_plus_one_negative_dict_get_001",
+      "module": "M3",
+      "source": "Task-Link Custom",
+      "case_type": "test_performance",
+      "category": "n_plus_one",
+      "expected_rule_ids": [],
+      "target_path": "m3_test_performance_cases/custom_performance_cases/n_plus_one_extended_cases/negative_local_dict_get",
+      "expected_output_ref": "expected_outputs/expected_m3_issues.json"
+    },
+    {
+      "case_id": "m3_custom_n_plus_one_negative_self_query_001",
+      "module": "M3",
+      "source": "Task-Link Custom",
+      "case_type": "test_performance",
+      "category": "n_plus_one",
+      "expected_rule_ids": [],
+      "target_path": "m3_test_performance_cases/custom_performance_cases/n_plus_one_extended_cases/negative_self_query_method",
       "expected_output_ref": "expected_outputs/expected_m3_issues.json"
     },
     {
@@ -902,6 +982,92 @@
       "target_path": "m2_owasp_benchmark_python_selected/testcode/BenchmarkTest00063.py",
       "expected_output_ref": "m2_owasp_benchmark_python_selected/expected_owasp_m2_issues.json",
       "expected_rule_ids": []
+    },
+    {
+      "case_id": "m3_mixed_001_order_service",
+      "module": "M3",
+      "source": "Task-Link Custom",
+      "case_type": "mixed_project",
+      "domain": "주문 서비스",
+      "rule_ids": [
+        "PERF-001",
+        "PERF-002",
+        "TEST-001"
+      ],
+      "target_path": "m3_mixed_project_cases/mixed_case_001",
+      "expected_output_ref": "m3_mixed_project_cases/mixed_case_001/expected_issue.json"
+    },
+    {
+      "case_id": "m3_mixed_002_profile_service",
+      "module": "M3",
+      "source": "Task-Link Custom",
+      "case_type": "mixed_project",
+      "domain": "유저 프로필",
+      "rule_ids": [
+        "TEST-003",
+        "TEST-004",
+        "PERF-003"
+      ],
+      "target_path": "m3_mixed_project_cases/mixed_case_002",
+      "expected_output_ref": "m3_mixed_project_cases/mixed_case_002/expected_issue.json"
+    },
+    {
+      "case_id": "m3_mixed_003_report_service",
+      "module": "M3",
+      "source": "Task-Link Custom",
+      "case_type": "mixed_project",
+      "domain": "리포트 서비스",
+      "rule_ids": [
+        "PERF-002",
+        "TEST-001",
+        "PERF-003"
+      ],
+      "target_path": "m3_mixed_project_cases/mixed_case_003",
+      "expected_output_ref": "m3_mixed_project_cases/mixed_case_003/expected_issue.json"
+    },
+    {
+      "case_id": "m3_mixed_004_pipeline_service",
+      "module": "M3",
+      "source": "Task-Link Custom",
+      "case_type": "mixed_project",
+      "domain": "데이터 파이프라인",
+      "rule_ids": [
+        "PERF-001",
+        "TEST-003",
+        "TEST-004"
+      ],
+      "target_path": "m3_mixed_project_cases/mixed_case_004",
+      "expected_output_ref": "m3_mixed_project_cases/mixed_case_004/expected_issue.json"
+    },
+    {
+      "case_id": "m3_mixed_005_notification_service",
+      "module": "M3",
+      "source": "Task-Link Custom",
+      "case_type": "mixed_project",
+      "domain": "알림 서비스",
+      "rule_ids": [
+        "PERF-002",
+        "PERF-003",
+        "TEST-001",
+        "TEST-003"
+      ],
+      "target_path": "m3_mixed_project_cases/mixed_case_005",
+      "expected_output_ref": "m3_mixed_project_cases/mixed_case_005/expected_issue.json"
+    },
+    {
+      "case_id": "m3_mixed_006_dashboard_service",
+      "module": "M3",
+      "source": "Task-Link Custom",
+      "case_type": "mixed_project",
+      "domain": "대시보드 분석",
+      "rule_ids": [
+        "PERF-001",
+        "PERF-002",
+        "TEST-004",
+        "PERF-003"
+      ],
+      "target_path": "m3_mixed_project_cases/mixed_case_006",
+      "expected_output_ref": "m3_mixed_project_cases/mixed_case_006/expected_issue.json"
     }
   ]
 }

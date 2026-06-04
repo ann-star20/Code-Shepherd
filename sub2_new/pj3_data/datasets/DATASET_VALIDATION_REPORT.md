@@ -1,17 +1,18 @@
 # Task-Link 데이터셋 완료 검증 보고서
 
-- **검증 일시**: 2026-06-03
-- **검증 방식**: 읽기/검증 전용 (파일 생성·수정·이동·삭제 없음)
+- **검증 일시**: 2026-06-04 (N+1 확장 케이스 추가 후 전체 매니페스트 재검증)
+- **검증 방식**: 읽기/검증 + 자동 정합성 스크립트 + pytest 실행 (`datasets/` 내부에서만 작업)
 - **검증 대상 루트**: `datasets/`
+- **검증 범위**: 전체 78개 케이스 (manifest 정합성 10항목 + 영역별 + pytest 8건)
 
 ---
 
 ## 1. 전체 판정
 
-> **PASS** (초기 PASS_WITH_WARNINGS → 문서 표기 수정 후 PASS)
+> **PASS**
 
 데이터 측면(필수 폴더/파일, JSON·CSV 파싱, manifest 정합성, expected output rule_id, true/false 균형)은 **모두 통과**.
-초기 검증에서 발견된 문서(`FILE_STRUCTURE.md`) 케이스 수 표기 오류 1건(W-1)은 사용자 요청으로 **수정 완료**.
+N+1 전용 확장 케이스 8종(positive 4 + negative 4) 추가 후 manifest(78) / expected_m3 / FILE_STRUCTURE 정합성, 8개 케이스 pytest 전부 통과.
 
 ---
 
@@ -19,13 +20,57 @@
 
 | 항목 | 수 |
 |------|----|
-| **전체 등록 케이스 (root manifest)** | **70** |
+| **전체 등록 케이스 (root manifest)** | **78** |
 | M2 custom security | 6 |
 | M2 OWASP BenchmarkPython selected | 50 |
 | M3 BugsInPy selected | 8 |
-| M3 custom test/performance | 6 |
+| M3 custom test/performance | 14 (기본 6 + N+1 확장 8) |
 
-manifest `source`별 분포: `Task-Link Custom` 12 (M2 6 + M3 6), `OWASP BenchmarkPython` 50, `BugsInPy` 8.
+manifest `source`별 분포: `Task-Link Custom` 20 (M2 6 + M3 14), `OWASP BenchmarkPython` 50, `BugsInPy` 8.
+
+### N+1 확장 케이스 (`n_plus_one_extended_cases/`) — ✅ PASS
+
+| 케이스 | case_id | 종류 | 기대 |
+|--------|---------|------|------|
+| positive_repository_find_by_id | m3_custom_n_plus_one_repository_001 | positive | PERF-002 |
+| positive_db_execute_in_loop | m3_custom_n_plus_one_db_execute_001 | positive | PERF-002 |
+| positive_sqlalchemy_query_in_loop | m3_custom_n_plus_one_sqlalchemy_001 | positive | PERF-002 |
+| positive_nested_loop_db_call | m3_custom_n_plus_one_nested_loop_001 | positive | PERF-002 |
+| negative_bulk_fetch_before_loop | m3_custom_n_plus_one_negative_bulk_fetch_001 | negative | [] |
+| negative_loop_without_db_call | m3_custom_n_plus_one_negative_no_db_001 | negative | [] |
+| negative_local_dict_get | m3_custom_n_plus_one_negative_dict_get_001 | negative | [] |
+| negative_self_query_method | m3_custom_n_plus_one_negative_self_query_001 | negative | [] |
+
+- 8개 모두 `app/` / `tests/` / `expected_issue.json` / `README.md` 존재 ✓
+- positive 4개 `expected_issues`에 PERF-002 1건, negative 4개 빈 배열 ✓
+- manifest `target_path` 8개 전부 실재, `expected_m3_issues.json` 8개 등록 일치 ✓
+- 8개 케이스 pytest **전부 통과** (8 passed) ✓
+- 기존 `n_plus_one_case` 및 M2/BugsInPy/OWASP 원본 미수정 ✓
+
+---
+
+## 2-1. 전체 매니페스트 재검증 (자동 스크립트, 2026-06-04)
+
+`dataset_manifest.json` 78개 케이스 전체를 대상으로 자동 정합성 스크립트를 실행한 결과 **10개 항목 전부 PASS**.
+
+| # | 검증 항목 | 방법 | 결과 |
+|---|-----------|------|------|
+| 1 | 카운트 정합성 | `total_case_count` vs 실제 `cases` 길이 | `78 == 78` ✅ |
+| 2 | case_id 중복 | 전체 case_id 유일성 | 중복 없음 ✅ |
+| 3 | source 분포 | 그룹 카운트 | Task-Link Custom 20 / OWASP 50 / BugsInPy 8 ✅ |
+| 4 | module 분포 | 그룹 카운트 | M2 56 / M3 22 ✅ |
+| 5 | target_path 실재 | 78개 경로 `os.path.exists` | 누락 없음 (전부 실재) ✅ |
+| 6 | expected_output_ref 실재 | 참조 파일 존재 확인 | 누락 없음 ✅ |
+| 7 | module/source 허용값 | M2/M3 · 3개 source 화이트리스트 | 위반 없음 ✅ |
+| 8 | M3 custom ↔ expected_m3 교차 | 14 vs 14, 누락/잉여 | 완전 일치 ✅ |
+| 9 | manifest rule_id ↔ expected issue_ids | positive=rule_id, negative=[] 비교 | 불일치 없음 ✅ |
+| 10 | 각 case `expected_issue.json` ↔ expected_m3 | issue id 집합 비교 | 불일치 없음 ✅ |
+
+추가 확인:
+- **OWASP true/false 균형**: cmdi·hash·pathtraver·sqli·xss 모두 `true=5 / false=5` (전체 true 25 / false 25) ✅
+- **정답 JSON 파싱**: `expected_m2_issues.json`, `expected_owasp_m2_issues.json` 정상 파싱 ✅
+
+> 콘솔 출력의 한글 깨짐은 Windows 콘솔 인코딩(cp949) 표시 문제일 뿐 검증 로직·결과에는 영향 없음.
 
 ---
 
@@ -65,10 +110,12 @@ manifest `source`별 분포: `Task-Link Custom` 12 (M2 6 + M3 6), `OWASP Benchma
 - `bug_patch.txt`·`run_test.sh` 비어있지 않음
 - `expected_m3_issues.json` JSON 파싱 정상
 
-### 6. M3 custom test/performance — ✅ PASS (문서 표기 W-1 수정 완료)
-- 6개 케이스 모두 존재 (complexity_case, edge_case_missing_case, low_coverage_case, memory_leak_case, missing_test_function_case, n_plus_one_case)
+### 6. M3 custom test/performance — ✅ PASS
+- 기본 6개 케이스 모두 존재 (complexity_case, edge_case_missing_case, low_coverage_case, memory_leak_case, missing_test_function_case, n_plus_one_case)
+- N+1 확장 8개 케이스 추가 (`n_plus_one_extended_cases/`, 섹션 2 참고)
 - 각 케이스 `app/` / `tests/` / `expected_issue.json` / `README.md` 존재
 - rule_id 매핑 일치: complexity→PERF-001, edge_case_missing→TEST-003, low_coverage→TEST-001, memory_leak→PERF-003, missing_test_function→TEST-004, n_plus_one→PERF-002
+- N+1 확장 positive 4→PERF-002, negative 4→[] 일치
 
 ---
 
@@ -78,7 +125,7 @@ manifest `source`별 분포: `Task-Link Custom` 12 (M2 6 + M3 6), `OWASP Benchma
 
 ## 8. 경로 불일치 목록
 
-없음. (root manifest 70개 `target_path` 전부 실재, `expected_output_ref` 전부 실재)
+없음. (root manifest 78개 `target_path` 전부 실재, `expected_output_ref` 전부 실재)
 
 ## 9. JSON/CSV 파싱 오류 목록
 
@@ -88,7 +135,7 @@ manifest `source`별 분포: `Task-Link Custom` 12 (M2 6 + M3 6), `OWASP Benchma
 
 없음. case_id 중복 없음, module 값 모두 M2/M3, source 값 모두 허용값(Task-Link Custom / OWASP BenchmarkPython / BugsInPy).
 
-등록 수 검증: M2 custom=6 ✓, OWASP=50 ✓, BugsInPy=8 ✓, M3 perf=6 ✓.
+등록 수 검증: M2 custom=6 ✓, OWASP=50 ✓, BugsInPy=8 ✓, M3 perf=14 (기본 6 + N+1 확장 8) ✓.
 
 ## 11. expected output 불일치 목록
 
@@ -119,8 +166,10 @@ manifest `source`별 분포: `Task-Link Custom` 12 (M2 6 + M3 6), `OWASP Benchma
 |------|------|------|
 | 1 | 루트 필수 파일 + 3개 JSON 파싱 | ✅ |
 | 2 | M2 custom 폴더/파일/필드/rule_id | ✅ |
+| 2-1 | 전체 매니페스트 자동 재검증 10항목 (78 케이스) | ✅ |
 | 3 | M2 OWASP 폴더·파일·CSV·testcode·매핑·정답 | ✅ |
 | 4 | M3 BugsInPy 폴더·metadata·비어있지 않음 | ✅ |
-| 5 | M3 custom perf 폴더/파일/rule_id | ✅ (문서 표기만 ⚠️) |
+| 5 | M3 custom perf 폴더/파일/rule_id (+ N+1 확장 8) | ✅ |
 | 6 | root manifest 정합성 (target_path/중복/module/source) | ✅ |
 | 7 | expected_outputs rule_id 형식 + OWASP 별도 정답 | ✅ |
+| 8 | N+1 확장 8 케이스 pytest (8 passed) | ✅ |
