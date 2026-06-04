@@ -1,3 +1,15 @@
+<!-- CLAUDE.md -->
+## 세션 시작 규칙
+
+모든 세션 시작 시 **첫 번째 액션**으로 아래를 실행한다:
+
+```bash
+echo "Phase1-Task1-schema" > ~/.claude/.current_task
+```
+
+작업명 형식: `Phase{번호}-Task{번호}-{설명}`
+현재 Phase: 1
+현재 Task: PRD §8 개발 순서 참고
 
 ## Skill routing
 
