@@ -14,7 +14,9 @@
       "rule_id": "SEC-006",
       "suggestion": "Load secrets from environment variables or a secrets manager.",
       "resolution_example": "import os\nADMIN_TOKEN = os.environ[\"ADMIN_TOKEN\"]",
-      "similar_issues": ["SEC-005"]
+      "similar_issues": [
+        "SEC-005"
+      ]
     },
     {
       "id": "SEC-001",
@@ -27,7 +29,9 @@
       "rule_id": "SEC-001",
       "suggestion": "Use parameterized queries instead of string interpolation.",
       "resolution_example": "sql = \"SELECT * FROM users WHERE name = ?\"\ndb.query(sql, params=(username,))",
-      "similar_issues": ["SEC-004"]
+      "similar_issues": [
+        "SEC-004"
+      ]
     },
     {
       "id": "SEC-003",
@@ -40,7 +44,9 @@
       "rule_id": "SEC-003",
       "suggestion": "Resolve the path and verify it starts with BASE_DIR before accessing.",
       "resolution_example": "path = (BASE_DIR / filename).resolve()\nif not str(path).startswith(str(BASE_DIR.resolve())):\n    raise ValueError('Access denied')",
-      "similar_issues": ["SEC-001"]
+      "similar_issues": [
+        "SEC-001"
+      ]
     },
     {
       "id": "SEC-005",
@@ -53,7 +59,9 @@
       "rule_id": "SEC-005",
       "suggestion": "Use bcrypt, argon2, or scrypt for password hashing.",
       "resolution_example": "import bcrypt\nsalt = bcrypt.gensalt()\nhashed = bcrypt.hashpw(password.encode(), salt)",
-      "similar_issues": ["SEC-006"]
+      "similar_issues": [
+        "SEC-006"
+      ]
     },
     {
       "id": "AUTH-001",
@@ -66,7 +74,31 @@
       "rule_id": "AUTH-001",
       "suggestion": "Check that current_user_id matches target_user_id or that the user has admin privileges before deletion.",
       "resolution_example": "if current_user_id != target_user_id and current_user_id not in self.admins:\n    raise PermissionError('Not authorized')",
-      "similar_issues": ["AUTH-002"]
+      "similar_issues": [
+        "AUTH-002"
+      ]
+    }
+  ],
+  "ecommerce_custom_issues": [
+    {
+      "rule_id": "ASEC-001",
+      "severity": "Critical",
+      "line": 25,
+      "file": "vulnerable.py",
+      "message": "SQL 문을 외부 입력과 동적으로 조합하고 있습니다 (SQL 인젝션 위험).",
+      "suggestion": "파라미터 바인딩(플레이스홀더)을 사용하세요. 사용자 입력을 SQL에 직접 넣지 마세요.",
+      "issue_type": "Vulnerability",
+      "concept_id": "SEC-001"
+    },
+    {
+      "rule_id": "ASEC-007",
+      "severity": "Major",
+      "line": 30,
+      "file": "vulnerable.py",
+      "message": "사용자 입력 기반 파일 경로로 파일을 엽니다 (경로 탐색 위험). 영수증/송장 다운로드 주의.",
+      "suggestion": "(BASE / name).resolve() 후 base 경로로 시작하는지 검증하세요.",
+      "issue_type": "Vulnerability",
+      "concept_id": "SEC-003"
     }
   ]
 }

@@ -1,6 +1,6 @@
 # Task-Link 데이터셋 완료 검증 보고서
 
-- **검증 일시**: 2026-06-04 (M2 mixed 보안 케이스 6종 추가 후 전체 매니페스트 재검증)
+- **검증 일시**: 2026-06-04 (M2 mixed 6종에 A커머스 커스텀 규칙 매핑 `ecommerce_custom_issues` 부가 후 재검증)
 - **검증 방식**: 읽기/검증 + 자동 정합성 스크립트 + pytest 실행 (`datasets/` 내부에서만 작업)
 - **검증 대상 루트**: `datasets/`
 - **검증 범위**: 전체 90개 케이스 (manifest 정합성 10항목 + 영역별 + pytest 8건)
@@ -47,6 +47,29 @@ manifest `module`별 분포: M2 62 / M3 28. `source`별 분포: `Task-Link Custo
 - 각 `expected_issue.json`의 `rule_id` 집합 = manifest `rule_ids` 완전 일치 ✓
 - manifest `target_path` 6개 전부 실재, `expected_output_ref` 6개 전부 실재 ✓
 - 기존 단일 보안 케이스 6종 미수정 ✓
+
+### M2 mixed 케이스 — A커머스 전용 커스텀 규칙 매핑 (`ecommerce_custom_issues`) — ✅ PASS
+
+기존 mixed_case_01~06 의 `expected_issue.json` 에 A커머스(e-commerce) 전용 커스텀 규칙
+탐지 기대값을 **추가 필드** `ecommerce_custom_issues` 로 부가했다. 기존 `expected_issues`
+(SEC-*/AUTH-*) 배열과 manifest 는 **전혀 수정하지 않은 비파괴(additive) 변경**이며,
+케이스 수는 90 그대로다. 근거 규칙: `docs/dev2-custom-rules-security-scan.md`,
+`docs/dev2-custom-rules-static-analysis.md`.
+
+| 케이스 | 추가 e-commerce 규칙 (rule_id) | concept_id 매핑 |
+|--------|-------------------------------|------------------|
+| mixed_case_01 | ASEC-005, ASEC-001, ASA-007 | SEC-006, SEC-001, — |
+| mixed_case_02 | ASEC-007, ASEC-008 | SEC-003, SEC-004 |
+| mixed_case_03 | ASEC-005, ASEC-001, ASA-007 | SEC-006, SEC-001, — |
+| mixed_case_04 | ASEC-005, ASEC-008, ASA-007 | SEC-006, SEC-004, — |
+| mixed_case_05 | ASEC-001, ASEC-008 | SEC-001, SEC-004 |
+| mixed_case_06 | ASEC-001, ASEC-007 | SEC-001, SEC-003 |
+
+- 각 케이스에 도메인 매칭되는 e-commerce 규칙 2~3개씩 부가 (총 15개 매핑) ✓
+- 6개 `expected_issue.json` 전부 JSON 파싱 정상, 기존 `expected_issues` 배열 보존 ✓
+- `ASEC-*`/`AAUTH-*` 는 평가셋 `SEC-*`/`AUTH-*` 와 `concept_id` 로 개념 매핑 (M4 학습 연계) ✓
+- `ASA-007`(외부 키/URL 하드코딩)은 정적분석 커스텀 규칙으로 concept 매핑 없음(—) ✓
+- manifest `rule_ids`(SEC-*/AUTH-*)·`target_path`·`expected_output_ref` 미변경 → 정합성 영향 없음 ✓
 
 ### N+1 확장 케이스 (`n_plus_one_extended_cases/`) — ✅ PASS
 
@@ -188,6 +211,7 @@ manifest `module`별 분포: M2 62 / M3 28. `source`별 분포: `Task-Link Custo
 |------|------|------|
 | 1 | 루트 필수 파일 + 3개 JSON 파싱 | ✅ |
 | 2 | M2 custom 폴더/파일/필드/rule_id (단일 6 + mixed 6) | ✅ |
+| 2-a | M2 mixed 6종 A커머스 커스텀 규칙 매핑(`ecommerce_custom_issues`, 비파괴) | ✅ |
 | 2-1 | 전체 매니페스트 자동 재검증 10항목 (90 케이스) | ✅ |
 | 3 | M2 OWASP 폴더·파일·CSV·testcode·매핑·정답 | ✅ |
 | 4 | M3 BugsInPy 폴더·metadata·비어있지 않음 | ✅ |

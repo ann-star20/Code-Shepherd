@@ -14,7 +14,9 @@
       "rule_id": "SEC-006",
       "suggestion": "Load secrets from environment variables or a secrets manager.",
       "resolution_example": "import os\nJWT_SECRET = os.environ[\"JWT_SECRET\"]",
-      "similar_issues": ["SEC-005"]
+      "similar_issues": [
+        "SEC-005"
+      ]
     },
     {
       "id": "SEC-001",
@@ -27,7 +29,9 @@
       "rule_id": "SEC-001",
       "suggestion": "Use parameterized queries instead of string interpolation.",
       "resolution_example": "sql = \"SELECT * FROM users WHERE name = ?\"\ndb.query(sql, params=(username,))",
-      "similar_issues": ["SEC-004"]
+      "similar_issues": [
+        "SEC-004"
+      ]
     },
     {
       "id": "SEC-005",
@@ -40,7 +44,9 @@
       "rule_id": "SEC-005",
       "suggestion": "Use bcrypt, argon2, or scrypt for password hashing.",
       "resolution_example": "import bcrypt\nsalt = bcrypt.gensalt()\nhashed = bcrypt.hashpw(password.encode(), salt)",
-      "similar_issues": ["SEC-006"]
+      "similar_issues": [
+        "SEC-006"
+      ]
     },
     {
       "id": "AUTH-001",
@@ -53,7 +59,40 @@
       "rule_id": "AUTH-001",
       "suggestion": "Check that current_user_id matches target_user_id or that the user has admin privileges before deletion.",
       "resolution_example": "if current_user_id != target_user_id and current_user_id not in self.admins:\n    raise PermissionError('Not authorized')",
-      "similar_issues": ["AUTH-002"]
+      "similar_issues": [
+        "AUTH-002"
+      ]
+    }
+  ],
+  "ecommerce_custom_issues": [
+    {
+      "rule_id": "ASEC-005",
+      "severity": "Critical",
+      "line": 4,
+      "file": "vulnerable.py",
+      "message": "하드코딩된 시크릿 감지: 하드코딩 시크릿 할당.",
+      "suggestion": "os.environ[...]/시크릿 매니저로 이동하세요. .env 커밋 금지(.gitignore 확인).",
+      "issue_type": "Vulnerability",
+      "concept_id": "SEC-006"
+    },
+    {
+      "rule_id": "ASEC-001",
+      "severity": "Critical",
+      "line": 24,
+      "file": "vulnerable.py",
+      "message": "SQL 문을 외부 입력과 동적으로 조합하고 있습니다 (SQL 인젝션 위험).",
+      "suggestion": "파라미터 바인딩(플레이스홀더)을 사용하세요. 사용자 입력을 SQL에 직접 넣지 마세요.",
+      "issue_type": "Vulnerability",
+      "concept_id": "SEC-001"
+    },
+    {
+      "rule_id": "ASA-007",
+      "severity": "Minor",
+      "line": 4,
+      "file": "vulnerable.py",
+      "message": "외부 연동 설정 'JWT_SECRET'이(가) 리터럴로 고정되어 있습니다.",
+      "suggestion": "os.getenv(\"PG_API_URL\", \"https://mock-pg.local\") 패턴으로 환경변수/시크릿 매니저를 쓰세요.",
+      "issue_type": "Code Smell"
     }
   ]
 }
