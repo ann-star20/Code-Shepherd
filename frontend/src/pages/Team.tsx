@@ -20,13 +20,13 @@ interface Team {
 
 interface Member {
   id: number;
-  user_id: number;
+  user_id: string;
   role: "lead" | "member";
   joined_at: string;
 }
 
 interface UserResult {
-  id: number;
+  id: string;
   login: string;
   name: string | null;
   avatar_url: string | null;
@@ -70,7 +70,7 @@ export default function Team() {
   });
 
   const addMember = useMutation({
-    mutationFn: ({ userId }: { userId: number }) =>
+    mutationFn: ({ userId }: { userId: string }) =>
       teamsApi.addMember(selectedTeamId!, userId),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["team-members", selectedTeamId] });
@@ -80,7 +80,7 @@ export default function Team() {
   });
 
   const removeMember = useMutation({
-    mutationFn: (userId: number) =>
+    mutationFn: (userId: string) =>
       teamsApi.removeMember(selectedTeamId!, userId),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["team-members", selectedTeamId] });
@@ -88,7 +88,7 @@ export default function Team() {
   });
 
   const updateRole = useMutation({
-    mutationFn: ({ userId, role }: { userId: number; role: string }) =>
+    mutationFn: ({ userId, role }: { userId: string; role: string }) =>
       teamsApi.updateMemberRole(selectedTeamId!, userId, role),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["team-members", selectedTeamId] });

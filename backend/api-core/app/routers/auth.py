@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import uuid
+
 from fastapi import APIRouter, Depends, HTTPException, Request, status
 from fastapi.responses import RedirectResponse
 from pydantic import BaseModel
@@ -40,25 +42,38 @@ class RefreshRequest(BaseModel):
 async def github_authorize():
     """GitHub OAuth 시작 — authorization URL로 리다이렉트."""
     settings = get_settings()
+    from urllib.parse import quote
+
+    redirect_uri = quote(settings.github_oauth_redirect_uri, safe="")
     authorize_url = (
         "https://github.com/login/oauth/authorize"
         f"?client_id={settings.github_oauth_client_id}"
+        f"&redirect_uri={redirect_uri}"
         "&scope=read:user"
     )
     return RedirectResponse(url=authorize_url)
 
 
 @router.get("/callback", response_model=TokenResponse)
+@router.get("/github/callback", response_model=TokenResponse)
 async def github_callback(
     code: str,
     db: AsyncSession = Depends(get_session),
 ):
     """GitHub OAuth 콜백 — code → access_token → 프로필 → upsert → JWT 발급."""
-    token_data = await github_exchange_code(code)
+    try:
+        token_data = await github_exchange_code(code)
+    except Exception as exc:
+        logger.exception("github_token_exchange_failed")
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail="GitHub token exchange failed",
+        ) from exc
+
     if "error" in token_data:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail=token_data.get("error_description", "OAuth error"),
+            detail=token_data.get("error_description", token_data.get("error", "OAuth error")),
         )
 
     access_token = token_data.get("access_token")
@@ -68,13 +83,20 @@ async def github_callback(
             detail="No access token in response",
         )
 
-    profile = await github_get_user_profile(access_token)
-    user = await upsert_user(db, profile)
+    try:
+        profile = await github_get_user_profile(access_token)
+        user = await upsert_user(db, profile)
+    except Exception as exc:
+        logger.exception("oauth_callback_persist_failed")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Failed to save user after GitHub login",
+        ) from exc
 
     tokens = issue_tokens(user)
-    await create_session(db, user.id, tokens["jti"])
+    await create_session(db, user.user_id, tokens["jti"])
 
-    logger.info("user_logged_in", user_id=user.id, login=user.login)
+    logger.info("user_logged_in", user_id=str(user.user_id), login=user.login)
     return TokenResponse(
         access_token=tokens["access_token"],
         refresh_token=tokens["refresh_token"],
@@ -90,16 +112,19 @@ async def get_me(
     from ..models.user import User
     from sqlalchemy import select
 
-    result = await db.execute(select(User).where(User.id == int(payload["sub"])))
+    user_id = uuid.UUID(payload["sub"])
+    result = await db.execute(select(User).where(User.user_id == user_id))
     user = result.scalar_one_or_none()
     if user is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User not found")
     return {
-        "id": user.id,
+        "id": str(user.user_id),
         "login": user.login,
         "name": user.name,
         "avatar_url": user.avatar_url,
-        "created_at": user.created_at,
+        "team": user.team,
+        "skill_level": user.skill_level,
+        "created_at": user.joined_at,
     }
 
 
@@ -138,13 +163,14 @@ async def refresh_token(
     from ..models.user import User
     from sqlalchemy import select
 
-    result = await db.execute(select(User).where(User.id == int(payload["sub"])))
+    user_id = uuid.UUID(payload["sub"])
+    result = await db.execute(select(User).where(User.user_id == user_id))
     user = result.scalar_one_or_none()
     if user is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User not found")
 
     tokens = issue_tokens(user)
-    await create_session(db, user.id, tokens["jti"])
+    await create_session(db, user.user_id, tokens["jti"])
     return TokenResponse(
         access_token=tokens["access_token"],
         refresh_token=tokens["refresh_token"],

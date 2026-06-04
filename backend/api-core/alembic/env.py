@@ -16,7 +16,7 @@ from shared.config import get_settings
 from shared.db import Base
 
 # 모든 모델을 임포트해 Base.metadata에 등록
-from app.models import User, Team, TeamMember, UserSession  # noqa: F401
+from app.models import AuthSession, User  # noqa: F401
 
 config = context.config
 

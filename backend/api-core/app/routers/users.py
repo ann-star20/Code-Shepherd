@@ -21,7 +21,7 @@ async def list_users(
     users = await search_users(db, search)
     return [
         {
-            "id": u.id,
+            "id": str(u.user_id),
             "login": u.login,
             "name": u.name,
             "avatar_url": u.avatar_url,

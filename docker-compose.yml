@@ -4,29 +4,7 @@ networks:
   code-shepherd:
     driver: bridge
 
-volumes:
-  secrets:
-
 services:
-  cloud-sql-proxy:
-    image: gcr.io/cloud-sql-connectors/cloud-sql-proxy:2.11
-    command:
-      - "--address=0.0.0.0"
-      - "--port=5432"
-      - "${CLOUDSQL_INSTANCE_CONNECTION_NAME}"
-    environment:
-      GOOGLE_APPLICATION_CREDENTIALS: /secrets/sa-key.json
-    volumes:
-      - ./secrets:/secrets:ro
-    networks:
-      - code-shepherd
-    restart: unless-stopped
-    healthcheck:
-      test: ["CMD", "nc", "-z", "localhost", "5432"]
-      interval: 10s
-      timeout: 5s
-      retries: 5
-
   api-core:
     build:
       context: ./backend
@@ -34,14 +12,9 @@ services:
     ports:
       - "8000:8000"
     env_file: .env
-    environment:
-      DB_HOST: cloud-sql-proxy
     volumes:
       - ./backend/_shared:/app/_shared:ro
       - ./backend/api-core:/app/service
-    depends_on:
-      cloud-sql-proxy:
-        condition: service_healthy
     networks:
       - code-shepherd
     restart: unless-stopped
@@ -126,6 +99,7 @@ services:
     build:
       context: ./frontend
       dockerfile: Dockerfile
+      target: dev
     ports:
       - "5173:5173"
     env_file: .env

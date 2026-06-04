@@ -33,6 +33,9 @@ class Settings(BaseSettings):
     jwt_refresh_token_expire_days: int = Field(default=30)
     github_oauth_client_id: str = Field(default="")
     github_oauth_client_secret: str = Field(default="")
+    github_oauth_redirect_uri: str = Field(
+        default="http://localhost:5173/auth/callback"
+    )
 
     # Orchestrator
     github_webhook_secret: str = Field(default="")

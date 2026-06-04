@@ -37,6 +37,8 @@ apiClient.interceptors.response.use(
 
 export const authApi = {
   getAuthorizeUrl: () => `${BASE_URL}/auth/authorize`,
+  exchangeCallback: (code: string) =>
+    apiClient.get("/auth/callback", { params: { code } }),
   getMe: () => apiClient.get("/auth/me"),
   logout: () => apiClient.post("/auth/logout"),
   refresh: (refreshToken: string) =>
@@ -57,11 +59,11 @@ export const teamsApi = {
   update: (id: number, name: string) => apiClient.patch(`/teams/${id}`, { name }),
   delete: (id: number) => apiClient.delete(`/teams/${id}`),
   getMembers: (id: number) => apiClient.get(`/teams/${id}/members`),
-  addMember: (teamId: number, userId: number, role = "member") =>
+  addMember: (teamId: number, userId: string, role = "member") =>
     apiClient.post(`/teams/${teamId}/members`, { user_id: userId, role }),
-  removeMember: (teamId: number, userId: number) =>
+  removeMember: (teamId: number, userId: string) =>
     apiClient.delete(`/teams/${teamId}/members/${userId}`),
-  updateMemberRole: (teamId: number, userId: number, role: string) =>
+  updateMemberRole: (teamId: number, userId: string, role: string) =>
     apiClient.patch(`/teams/${teamId}/members/${userId}`, { role }),
   getPRs: (teamId: number) => apiClient.get(`/teams/${teamId}/prs`),
   approvePR: (prId: string) => apiClient.post(`/prs/${prId}/approve`),

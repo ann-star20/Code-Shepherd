@@ -58,3 +58,11 @@ Thumbs.db
 # Logs
 *.log
 logs/
+
+# Local docs (not for remote)
+prompt.md
+PRD_조직지식관리_온보딩_플랫폼.md
+
+# TypeScript build info
+*.tsbuildinfo
+frontend/vite.config.d.ts

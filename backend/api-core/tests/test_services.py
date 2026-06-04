@@ -1,14 +1,11 @@
-"""서비스 레이어 직접 테스트 — 커버리지 보강."""
+"""서비스 레이어 직접 테스트 — users.team 기반."""
 
 from __future__ import annotations
 
 import pytest
 from fastapi import HTTPException
 
-from app.models.team import Team, TeamMember
-from app.models.user import User
 from app.services.team_service import (
-    _count_leads,
     _require_lead,
     _require_member,
     add_member,
@@ -22,172 +19,139 @@ from app.services.team_service import (
     update_member_role,
     update_team,
 )
+from app.services.team_utils import team_id_from_name
 
+from .helpers import make_user
 
-async def _add_user(db, user_id: int, login: str) -> User:
-    u = User(id=user_id, github_id=user_id * 1000, login=login, name=login.title())
-    db.add(u)
-    await db.flush()
-    return u
-
-
-async def _add_team_with_lead(db, lead_id: int, name: str = "Test Team") -> Team:
-    return await create_team(db, name, lead_id)
-
-
-# ---------------------------------------------------------------------------
-# get_teams_for_user
-# ---------------------------------------------------------------------------
 
 @pytest.mark.asyncio
 async def test_get_teams_for_user_returns_user_teams(db_session):
-    await _add_user(db_session, 1, "alice")
-    team = await _add_team_with_lead(db_session, 1)
-    teams = await get_teams_for_user(db_session, 1)
+    lead = await make_user(db_session, login="alice")
+    team = await create_team(db_session, "Alice Team", lead.user_id)
+    teams = await get_teams_for_user(db_session, lead.user_id)
     assert any(t.id == team.id for t in teams)
 
 
 @pytest.mark.asyncio
 async def test_get_teams_for_user_excludes_others(db_session):
-    await _add_user(db_session, 2, "bob")
-    await _add_user(db_session, 3, "charlie")
-    team = await _add_team_with_lead(db_session, 2)
-    teams = await get_teams_for_user(db_session, 3)
+    lead = await make_user(db_session, login="bob")
+    other = await make_user(db_session, login="charlie")
+    team = await create_team(db_session, "Bob Team", lead.user_id)
+    teams = await get_teams_for_user(db_session, other.user_id)
     assert not any(t.id == team.id for t in teams)
 
 
-# ---------------------------------------------------------------------------
-# get_team_or_404
-# ---------------------------------------------------------------------------
-
 @pytest.mark.asyncio
 async def test_get_team_or_404_found(db_session):
-    await _add_user(db_session, 4, "dave")
-    team = await _add_team_with_lead(db_session, 4)
+    lead = await make_user(db_session, login="dave")
+    team = await create_team(db_session, "Dave Team", lead.user_id)
     found = await get_team_or_404(db_session, team.id)
-    assert found.id == team.id
+    assert found.name == team.name
 
 
 @pytest.mark.asyncio
 async def test_get_team_or_404_not_found(db_session):
     with pytest.raises(HTTPException) as exc:
-        await get_team_or_404(db_session, 9999)
+        await get_team_or_404(db_session, 999999999)
     assert exc.value.status_code == 404
 
 
-# ---------------------------------------------------------------------------
-# create_team
-# ---------------------------------------------------------------------------
-
 @pytest.mark.asyncio
 async def test_create_team_creator_becomes_lead(db_session):
-    await _add_user(db_session, 5, "emma")
-    team = await create_team(db_session, "Emma's Team", 5)
-    members = await get_members(db_session, team.id, 5)
-    lead = next(m for m in members if m.user_id == 5)
-    assert lead.role == "lead"
+    lead = await make_user(db_session, login="emma")
+    team = await create_team(db_session, "Emma's Team", lead.user_id)
+    members = await get_members(db_session, team.id, lead.user_id)
+    creator = next(m for m in members if m.user_id == lead.user_id)
+    assert creator.role == "lead"
 
-
-# ---------------------------------------------------------------------------
-# update_team
-# ---------------------------------------------------------------------------
 
 @pytest.mark.asyncio
 async def test_update_team_by_lead(db_session):
-    await _add_user(db_session, 6, "frank")
-    team = await create_team(db_session, "Old Name", 6)
-    updated = await update_team(db_session, team.id, 6, "New Name")
+    lead = await make_user(db_session, login="frank")
+    team = await create_team(db_session, "Old Name", lead.user_id)
+    updated = await update_team(db_session, team.id, lead.user_id, "New Name")
     assert updated.name == "New Name"
+    assert updated.id == team_id_from_name("New Name")
 
 
 @pytest.mark.asyncio
 async def test_update_team_by_non_lead_raises(db_session):
-    await _add_user(db_session, 7, "grace")
-    await _add_user(db_session, 8, "henry")
-    team = await create_team(db_session, "Grace's Team", 7)
-    await add_member(db_session, team.id, 7, 8)
+    lead = await make_user(db_session, login="grace")
+    member = await make_user(db_session, login="henry")
+    team = await create_team(db_session, "Grace's Team", lead.user_id)
+    await add_member(db_session, team.id, lead.user_id, member.user_id)
     with pytest.raises(HTTPException) as exc:
-        await update_team(db_session, team.id, 8, "Bad Update")
+        await update_team(db_session, team.id, member.user_id, "Bad Update")
     assert exc.value.status_code == 403
 
 
-# ---------------------------------------------------------------------------
-# delete_team
-# ---------------------------------------------------------------------------
-
 @pytest.mark.asyncio
-async def test_delete_team_soft_deletes(db_session):
-    await _add_user(db_session, 9, "iris")
-    team = await create_team(db_session, "Iris Team", 9)
-    await delete_team(db_session, team.id, 9)
+async def test_delete_team_clears_members(db_session):
+    lead = await make_user(db_session, login="iris")
+    team = await create_team(db_session, "Iris Team", lead.user_id)
+    await delete_team(db_session, team.id, lead.user_id)
     with pytest.raises(HTTPException):
         await get_team_or_404(db_session, team.id)
 
 
-# ---------------------------------------------------------------------------
-# add_member / remove_member
-# ---------------------------------------------------------------------------
-
 @pytest.mark.asyncio
 async def test_add_member_success(db_session):
-    await _add_user(db_session, 10, "jack")
-    await _add_user(db_session, 11, "kate")
-    team = await create_team(db_session, "JK Team", 10)
-    member = await add_member(db_session, team.id, 10, 11)
-    assert member.role == "member"
+    lead = await make_user(db_session, login="jack")
+    member = await make_user(db_session, login="kate")
+    team = await create_team(db_session, "JK Team", lead.user_id)
+    added = await add_member(db_session, team.id, lead.user_id, member.user_id)
+    assert added.role == "member"
 
 
 @pytest.mark.asyncio
 async def test_remove_member_success(db_session):
-    await _add_user(db_session, 12, "liam")
-    await _add_user(db_session, 13, "mia")
-    team = await create_team(db_session, "LM Team", 12)
-    await add_member(db_session, team.id, 12, 13)
-    await remove_member(db_session, team.id, 12, 13)
-    members = await get_members(db_session, team.id, 12)
-    assert not any(m.user_id == 13 for m in members)
+    lead = await make_user(db_session, login="liam")
+    member = await make_user(db_session, login="mia")
+    team = await create_team(db_session, "LM Team", lead.user_id)
+    await add_member(db_session, team.id, lead.user_id, member.user_id)
+    await remove_member(db_session, team.id, lead.user_id, member.user_id)
+    members = await get_members(db_session, team.id, lead.user_id)
+    assert not any(m.user_id == member.user_id for m in members)
 
 
 @pytest.mark.asyncio
 async def test_remove_nonexistent_member_raises(db_session):
-    await _add_user(db_session, 14, "noah")
-    team = await create_team(db_session, "Noah Team", 14)
+    lead = await make_user(db_session, login="noah")
+    team = await create_team(db_session, "Noah Team", lead.user_id)
+    import uuid
+
     with pytest.raises(HTTPException) as exc:
-        await remove_member(db_session, team.id, 14, 9999)
+        await remove_member(db_session, team.id, lead.user_id, uuid.uuid4())
     assert exc.value.status_code == 404
 
 
-# ---------------------------------------------------------------------------
-# update_member_role
-# ---------------------------------------------------------------------------
-
 @pytest.mark.asyncio
 async def test_update_role_member_to_lead(db_session):
-    await _add_user(db_session, 15, "olivia")
-    await _add_user(db_session, 16, "paul")
-    team = await create_team(db_session, "OP Team", 15)
-    await add_member(db_session, team.id, 15, 16)
-    updated = await update_member_role(db_session, team.id, 15, 16, "lead")
+    lead = await make_user(db_session, login="olivia")
+    member = await make_user(db_session, login="paul")
+    team = await create_team(db_session, "OP Team", lead.user_id)
+    await add_member(db_session, team.id, lead.user_id, member.user_id)
+    updated = await update_member_role(
+        db_session, team.id, lead.user_id, member.user_id, "lead"
+    )
     assert updated.role == "lead"
 
 
 @pytest.mark.asyncio
 async def test_update_role_nonexistent_member_raises(db_session):
-    await _add_user(db_session, 17, "quinn")
-    team = await create_team(db_session, "Q Team", 17)
+    lead = await make_user(db_session, login="quinn")
+    team = await create_team(db_session, "Q Team", lead.user_id)
+    import uuid
+
     with pytest.raises(HTTPException) as exc:
-        await update_member_role(db_session, team.id, 17, 9999, "lead")
+        await update_member_role(db_session, team.id, lead.user_id, uuid.uuid4(), "lead")
     assert exc.value.status_code == 404
 
 
-# ---------------------------------------------------------------------------
-# search_users
-# ---------------------------------------------------------------------------
-
 @pytest.mark.asyncio
 async def test_search_users_by_login(db_session):
-    await _add_user(db_session, 18, "rachel")
-    await _add_user(db_session, 19, "samantha")
+    await make_user(db_session, login="rachel")
+    await make_user(db_session, login="samantha")
     results = await search_users(db_session, "rachel")
     assert any(u.login == "rachel" for u in results)
     assert not any(u.login == "samantha" for u in results)
@@ -195,31 +159,27 @@ async def test_search_users_by_login(db_session):
 
 @pytest.mark.asyncio
 async def test_search_users_empty_query_returns_all(db_session):
-    await _add_user(db_session, 20, "tim")
+    await make_user(db_session, login="tim")
     results = await search_users(db_session, "")
     assert len(results) >= 1
 
 
-# ---------------------------------------------------------------------------
-# _require_member / _require_lead
-# ---------------------------------------------------------------------------
-
 @pytest.mark.asyncio
 async def test_require_member_raises_for_non_member(db_session):
-    await _add_user(db_session, 21, "uma")
-    await _add_user(db_session, 22, "victor")
-    team = await create_team(db_session, "UV Team", 21)
+    lead = await make_user(db_session, login="uma")
+    outsider = await make_user(db_session, login="victor")
+    team = await create_team(db_session, "UV Team", lead.user_id)
     with pytest.raises(HTTPException) as exc:
-        await _require_member(db_session, team.id, 22)
+        await _require_member(db_session, "UV Team", outsider.user_id)
     assert exc.value.status_code == 403
 
 
 @pytest.mark.asyncio
 async def test_require_lead_raises_for_member(db_session):
-    await _add_user(db_session, 23, "wendy")
-    await _add_user(db_session, 24, "xavier")
-    team = await create_team(db_session, "WX Team", 23)
-    await add_member(db_session, team.id, 23, 24)
+    lead = await make_user(db_session, login="wendy")
+    member = await make_user(db_session, login="xavier")
+    team = await create_team(db_session, "WX Team", lead.user_id)
+    await add_member(db_session, team.id, lead.user_id, member.user_id)
     with pytest.raises(HTTPException) as exc:
-        await _require_lead(db_session, team.id, 24)
+        await _require_lead(db_session, "WX Team", member.user_id)
     assert exc.value.status_code == 403

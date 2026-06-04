@@ -4,35 +4,16 @@ from __future__ import annotations
 
 import pytest
 
-from shared.auth import create_access_token
+from .helpers import make_token, make_user
 
 
 async def _setup_users(db_session):
-    """테스트용 유저 3명 생성."""
-    from app.models.user import User
-    from app.models.session import UserSession
-    from datetime import datetime, UTC, timedelta
-    import uuid
-
-    users = [
-        User(id=10, github_id=1010, login="alice", name="Alice Smith"),
-        User(id=11, github_id=1011, login="bob_dev", name="Bob Jones"),
-        User(id=12, github_id=1012, login="charlie", name=None),
-    ]
-    for u in users:
-        db_session.add(u)
-    await db_session.flush()
-
-    # 인증용 세션
-    jti = str(uuid.uuid4())
-    token = create_access_token(subject=10, extra_claims={"jti": jti})
-    sess = UserSession(
-        user_id=10,
-        token_jti=jti,
-        expires_at=datetime.now(UTC) + timedelta(hours=1),
-    )
-    db_session.add(sess)
+    alice = await make_user(db_session, login="alice")
+    bob = await make_user(db_session, login="bob_dev")
+    bob.name = "Bob Jones"
+    await make_user(db_session, login="charlie")
     await db_session.commit()
+    token, _ = await make_token(db_session, alice)
     return token
 
 
@@ -48,7 +29,6 @@ async def test_search_users_returns_matching(client, db_session):
 
 @pytest.mark.asyncio
 async def test_search_users_no_sensitive_fields(client, db_session):
-    """응답에 github_id 등 민감정보 없음."""
     token = await _setup_users(db_session)
     resp = await client.get("/users?search=", headers={"Authorization": f"Bearer {token}"})
     assert resp.status_code == 200

@@ -9,24 +9,26 @@ import httpx
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from shared.auth import create_access_token, create_refresh_token, decode_token
+from shared.auth import create_access_token, create_refresh_token
 from shared.config import get_settings
 
-from ..models.session import UserSession
+from ..models.session import AuthSession
 from ..models.user import User
 
 
 async def github_exchange_code(code: str) -> dict:
     """GitHub OAuth code를 access_token으로 교환."""
     settings = get_settings()
+    data = {
+        "client_id": settings.github_oauth_client_id,
+        "client_secret": settings.github_oauth_client_secret,
+        "code": code,
+        "redirect_uri": settings.github_oauth_redirect_uri,
+    }
     async with httpx.AsyncClient() as client:
         resp = await client.post(
             "https://github.com/login/oauth/access_token",
-            data={
-                "client_id": settings.github_oauth_client_id,
-                "client_secret": settings.github_oauth_client_secret,
-                "code": code,
-            },
+            data=data,
             headers={"Accept": "application/json"},
         )
         resp.raise_for_status()
@@ -48,57 +50,68 @@ async def github_get_user_profile(access_token: str) -> dict:
 
 
 async def upsert_user(session: AsyncSession, github_profile: dict) -> User:
-    """GitHub 프로필로 users 테이블에 upsert."""
+    """GitHub 프로필로 통합 DDL `users` 테이블에 upsert."""
+    github_login = github_profile["login"]
     result = await session.execute(
-        select(User).where(User.github_id == github_profile["id"])
+        select(User).where(User.github_id == github_login)
     )
     user = result.scalar_one_or_none()
+    display_name = github_profile.get("name") or github_login
+
     if user is None:
         user = User(
-            github_id=github_profile["id"],
-            login=github_profile["login"],
-            name=github_profile.get("name"),
-            avatar_url=github_profile.get("avatar_url"),
+            github_id=github_login,
+            name=display_name,
+            email=github_profile.get("email"),
+            github_url=github_profile.get("avatar_url") or github_profile.get("html_url"),
+            diagnosis_source="github",
         )
         session.add(user)
     else:
-        user.login = github_profile["login"]
-        user.name = github_profile.get("name")
-        user.avatar_url = github_profile.get("avatar_url")
+        user.name = display_name
+        if github_profile.get("email"):
+            user.email = github_profile["email"]
+        profile_url = github_profile.get("avatar_url") or github_profile.get("html_url")
+        if profile_url:
+            user.github_url = profile_url
+
     await session.commit()
     await session.refresh(user)
     return user
 
 
 def issue_tokens(user: User) -> dict[str, str]:
-    """access + refresh 토큰 쌍 발급. JTI는 세션 관리에 사용."""
+    """access + refresh 토큰 쌍 발급."""
     jti = str(uuid.uuid4())
     access = create_access_token(
-        subject=user.id,
+        subject=user.user_id,
         extra_claims={"jti": jti, "login": user.login},
     )
-    refresh = create_refresh_token(subject=user.id)
-    return {"access_token": access, "refresh_token": refresh, "token_type": "bearer", "jti": jti}
+    refresh = create_refresh_token(subject=user.user_id)
+    return {
+        "access_token": access,
+        "refresh_token": refresh,
+        "token_type": "bearer",
+        "jti": jti,
+    }
 
 
 async def create_session(
-    db_session: AsyncSession, user_id: int, jti: str
-) -> UserSession:
-    """새 세션 레코드 생성."""
+    db_session: AsyncSession, user_id: uuid.UUID, jti: str
+) -> AuthSession:
     settings = get_settings()
     expires_at = datetime.now(UTC) + timedelta(
         minutes=settings.jwt_access_token_expire_minutes
     )
-    sess = UserSession(user_id=user_id, token_jti=jti, expires_at=expires_at)
+    sess = AuthSession(user_id=user_id, token_jti=jti, expires_at=expires_at)
     db_session.add(sess)
     await db_session.commit()
     return sess
 
 
 async def revoke_session(db_session: AsyncSession, jti: str) -> bool:
-    """세션 무효화 (로그아웃). 세션이 없으면 False 반환."""
     result = await db_session.execute(
-        select(UserSession).where(UserSession.token_jti == jti)
+        select(AuthSession).where(AuthSession.token_jti == jti)
     )
     sess = result.scalar_one_or_none()
     if sess is None:
@@ -109,11 +122,10 @@ async def revoke_session(db_session: AsyncSession, jti: str) -> bool:
 
 
 async def is_session_valid(db_session: AsyncSession, jti: str) -> bool:
-    """세션이 유효한지(존재 & 미취소) 확인."""
     result = await db_session.execute(
-        select(UserSession).where(
-            UserSession.token_jti == jti,
-            UserSession.is_revoked.is_(False),
+        select(AuthSession).where(
+            AuthSession.token_jti == jti,
+            AuthSession.is_revoked.is_(False),
         )
     )
     return result.scalar_one_or_none() is not None
