@@ -138,6 +138,45 @@ class M4CurriculumResponse(BaseModel):
 
 
 # ---------------------------------------------------------------------------
+# m5 — GraphDB + YouTube (독립 모듈)
+# ---------------------------------------------------------------------------
+
+class M5ExtractRequest(BaseModel):
+    task_id: str = Field(..., description="UUID — 트리거 단위 추적 키")
+    doc_id: str = Field(..., description="그래프 노드 연결 키 (필수)")
+    source: Literal["upload", "manual"] = "upload"
+    trace_id: str | None = None
+
+
+class M5ExtractResponse(BaseModel):
+    task_id: str
+    doc_id: str
+    status: Literal["accepted", "processing", "done", "failed"] = "accepted"
+    entity_count: int = 0
+    relationship_count: int = 0
+    message: str = "Stub — not implemented"
+
+
+class YoutubeVideoItem(BaseModel):
+    title: str
+    url: str
+    video_id: str | None = None
+
+
+class M5YoutubeRecommendRequest(BaseModel):
+    task_id: str
+    keywords: list[str] = Field(default_factory=list)
+    doc_id: str | None = None
+    trace_id: str | None = None
+
+
+class M5YoutubeRecommendResponse(BaseModel):
+    task_id: str
+    videos: list[YoutubeVideoItem] = Field(default_factory=list)
+    message: str = "Stub — not implemented"
+
+
+# ---------------------------------------------------------------------------
 # 트리거 공통
 # ---------------------------------------------------------------------------
 

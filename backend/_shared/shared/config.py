@@ -45,6 +45,12 @@ class Settings(BaseSettings):
     m2_url: str = Field(default="http://m2:8003")
     m3_url: str = Field(default="http://m3:8004")
     m4_url: str = Field(default="http://m4:8005")
+    m5_url: str = Field(default="http://m5:8006")
+
+    # Neo4j (Module 5 — 로컬 compose 또는 Aura)
+    neo4j_uri: str = Field(default="bolt://neo4j:7687")
+    neo4j_user: str = Field(default="neo4j")
+    neo4j_password: str = Field(default="codeshepherd")
 
     @property
     def database_url(self) -> str:

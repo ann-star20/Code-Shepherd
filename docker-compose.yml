@@ -95,6 +95,38 @@ services:
     restart: unless-stopped
     command: uv run uvicorn app.main:app --host 0.0.0.0 --port 8005 --reload
 
+  neo4j:
+    image: neo4j:5-community
+    ports:
+      - "7474:7474"
+      - "7687:7687"
+    environment:
+      NEO4J_AUTH: neo4j/${NEO4J_PASSWORD:-codeshepherd}
+    volumes:
+      - neo4j_data:/data
+    networks:
+      - code-shepherd
+    restart: unless-stopped
+
+  m5:
+    build:
+      context: ./backend
+      dockerfile: m5/Dockerfile
+    ports:
+      - "8006:8006"
+    env_file: .env
+    environment:
+      NEO4J_URI: bolt://neo4j:7687
+    volumes:
+      - ./backend/_shared:/app/_shared:ro
+      - ./backend/m5:/app/service
+    networks:
+      - code-shepherd
+    depends_on:
+      - neo4j
+    restart: unless-stopped
+    command: uv run uvicorn app.main:app --host 0.0.0.0 --port 8006 --reload
+
   frontend:
     build:
       context: ./frontend
@@ -110,3 +142,6 @@ services:
       - code-shepherd
     restart: unless-stopped
     command: npm run dev -- --host 0.0.0.0
+
+volumes:
+  neo4j_data:

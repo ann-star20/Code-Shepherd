@@ -13,7 +13,8 @@ code-shepherd/
 │   ├── m0/            # KMS 인제스트 스텁 (포트 8002)
 │   ├── m2/            # 정적 분석·보안 스캔 스텁 (포트 8003)
 │   ├── m3/            # 테스트 검증·성능 분석 스텁 (포트 8004)
-│   └── m4/            # 커리큘럼·평가 스텁 (포트 8005)
+│   ├── m4/            # 커리큘럼·평가 스텁 (포트 8005)
+│   └── m5/            # GraphDB + YouTube 독립 모듈 스텁 (포트 8006)
 ├── frontend/          # React + Vite + TypeScript (포트 5173)
 ├── docker-compose.yml
 ├── .env.example
@@ -50,6 +51,8 @@ curl http://localhost:8002/health   # m0
 curl http://localhost:8003/health   # m2
 curl http://localhost:8004/health   # m3
 curl http://localhost:8005/health   # m4
+curl http://localhost:8006/health   # m5
+curl http://localhost:7474          # neo4j browser (compose)
 ```
 
 ### 백엔드 테스트 (서비스별)
@@ -61,6 +64,7 @@ docker compose run --rm m0 uv run pytest
 docker compose run --rm m2 uv run pytest
 docker compose run --rm m3 uv run pytest
 docker compose run --rm m4 uv run pytest
+docker compose run --rm m5 uv run pytest
 ```
 
 ### 프론트엔드 테스트
@@ -84,6 +88,7 @@ docker compose run --rm api-core uv run alembic upgrade head
 | `m2` | 팀원 | 정적 분석·보안 스캔 |
 | `m3` | 팀원 | 테스트 검증·성능 분석 |
 | `m4` | 팀원 | 커리큘럼·판정·피드백 루프 |
+| `m5` | 팀원 | 엔티티/관계 추출 → Neo4j, YouTube 학습 자료 추천 (Module 1과 독립) |
 
 ## 환경 변수
 
