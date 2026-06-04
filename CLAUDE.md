@@ -1,31 +1,25 @@
 <!-- CLAUDE.md -->
-## 세션 시작 규칙
+## 컨텍스트 주입 규칙
 
-모든 세션 시작 시 **첫 번째 액션**으로 아래를 실행한다:
+태스크별로 필요한 PRD 파일만 로드한다.
+PRD 전체를 한 번에 로드하지 않는다.
 
-```bash
-echo "Phase1-Task1-schema" > ~/.claude/.current_task
-```
+| 태스크 유형 | 로드할 파일 |
+|------------|------------|
+| 도메인 모델·유즈케이스 | PRD-domain.md |
+| DB 스키마·Cypher | PRD-schema.md |
+| 테스트 작성 | PRD-qa.md |
+| 인프라·Docker | PRD-infra.md |
+| 폴더·아키텍처 확인 | PRD-arch.md |
 
-작업명 형식: `Phase{번호}-Task{번호}-{설명}`
-현재 Phase: 1
-현재 Task: PRD §8 개발 순서 참고
+## 세션 비용 관리
 
-## Skill routing
+- 한 세션 = 태스크 1개 (G1~G10 각각 독립 세션)
+- 세션 시작 전: /cost 확인
+- $20 초과 시: /compact 실행 후 계속
+- $50 초과 시: 세션 종료 후 새 세션으로 다음 태스크 시작
 
-When the user's request matches an available skill, invoke it via the Skill tool. When in doubt, invoke the skill.
+## /compact 타이밍
 
-Key routing rules:
-- Product ideas/brainstorming → invoke /office-hours
-- Strategy/scope → invoke /plan-ceo-review
-- Architecture → invoke /plan-eng-review
-- Design system/plan review → invoke /design-consultation or /plan-design-review
-- Full review pipeline → invoke /autoplan
-- Bugs/errors → invoke /investigate
-- QA/testing site behavior → invoke /qa or /qa-only
-- Code review/diff check → invoke /review
-- Visual polish → invoke /design-review
-- Ship/deploy/PR → invoke /ship or /land-and-deploy
-- Save progress → invoke /context-save
-- Resume context → invoke /context-restore
-- Author a backlog-ready spec/issue → invoke /spec
+구현 GREEN 확인 직후, 커밋 전에 /compact 실행
+→ 대화 이력 압축, 생성된 코드는 파일에 이미 저장됨
