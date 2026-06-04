@@ -1,0 +1,17 @@
+{
+  "case_id": "m3_custom_n_plus_one_nested_loop_001",
+  "module": "M3",
+  "source": "Task-Link Custom",
+  "expected_issues": [
+    {
+      "id": "PERF-002",
+      "rule_id": "PERF-002",
+      "title": "N+1 query pattern",
+      "severity": "Major",
+      "target_file": "app/report_service.py",
+      "target_function": "build_team_member_report",
+      "evidence": "member_repository.find_by_id is called inside a nested for-loop.",
+      "recommendation": "Collect all member ids first and fetch them in bulk before the loops."
+    }
+  ]
+}

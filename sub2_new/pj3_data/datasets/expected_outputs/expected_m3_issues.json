@@ -15,6 +15,38 @@
       "expected_issue_ids": ["PERF-002"]
     },
     {
+      "case_id": "m3_custom_n_plus_one_repository_001",
+      "expected_issue_ids": ["PERF-002"]
+    },
+    {
+      "case_id": "m3_custom_n_plus_one_db_execute_001",
+      "expected_issue_ids": ["PERF-002"]
+    },
+    {
+      "case_id": "m3_custom_n_plus_one_sqlalchemy_001",
+      "expected_issue_ids": ["PERF-002"]
+    },
+    {
+      "case_id": "m3_custom_n_plus_one_nested_loop_001",
+      "expected_issue_ids": ["PERF-002"]
+    },
+    {
+      "case_id": "m3_custom_n_plus_one_negative_bulk_fetch_001",
+      "expected_issue_ids": []
+    },
+    {
+      "case_id": "m3_custom_n_plus_one_negative_no_db_001",
+      "expected_issue_ids": []
+    },
+    {
+      "case_id": "m3_custom_n_plus_one_negative_dict_get_001",
+      "expected_issue_ids": []
+    },
+    {
+      "case_id": "m3_custom_n_plus_one_negative_self_query_001",
+      "expected_issue_ids": []
+    },
+    {
       "case_id": "m3_custom_complexity_001",
       "expected_issue_ids": ["PERF-001"]
     },

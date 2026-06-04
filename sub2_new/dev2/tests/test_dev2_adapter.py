@@ -18,7 +18,7 @@ import pytest
 
 # ── 경로 설정 ─────────────────────────────────────────────────────────────────
 _HERE = Path(__file__).parent
-_GW = _HERE.parent / "webhook-gateway"
+_GW = _HERE.parent / "webhook-gateway_2"
 _DEV2_PARENT = _HERE.parent.parent  # sub2_new/
 
 for _p in (str(_GW), str(_DEV2_PARENT)):

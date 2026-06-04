@@ -1,7 +1,7 @@
 {
   "dataset_root": "datasets/",
   "purpose": "Task-Link M2/M3 evaluation dataset manifest",
-  "total_case_count": 70,
+  "total_case_count": 78,
   "cases": [
     {
       "case_id": "bugsinpy_black_3",
@@ -111,6 +111,86 @@
       "category": "n_plus_one",
       "rule_id": "PERF-002",
       "target_path": "m3_test_performance_cases/custom_performance_cases/n_plus_one_case",
+      "expected_output_ref": "expected_outputs/expected_m3_issues.json"
+    },
+    {
+      "case_id": "m3_custom_n_plus_one_repository_001",
+      "module": "M3",
+      "source": "Task-Link Custom",
+      "case_type": "test_performance",
+      "category": "n_plus_one",
+      "rule_id": "PERF-002",
+      "target_path": "m3_test_performance_cases/custom_performance_cases/n_plus_one_extended_cases/positive_repository_find_by_id",
+      "expected_output_ref": "expected_outputs/expected_m3_issues.json"
+    },
+    {
+      "case_id": "m3_custom_n_plus_one_db_execute_001",
+      "module": "M3",
+      "source": "Task-Link Custom",
+      "case_type": "test_performance",
+      "category": "n_plus_one",
+      "rule_id": "PERF-002",
+      "target_path": "m3_test_performance_cases/custom_performance_cases/n_plus_one_extended_cases/positive_db_execute_in_loop",
+      "expected_output_ref": "expected_outputs/expected_m3_issues.json"
+    },
+    {
+      "case_id": "m3_custom_n_plus_one_sqlalchemy_001",
+      "module": "M3",
+      "source": "Task-Link Custom",
+      "case_type": "test_performance",
+      "category": "n_plus_one",
+      "rule_id": "PERF-002",
+      "target_path": "m3_test_performance_cases/custom_performance_cases/n_plus_one_extended_cases/positive_sqlalchemy_query_in_loop",
+      "expected_output_ref": "expected_outputs/expected_m3_issues.json"
+    },
+    {
+      "case_id": "m3_custom_n_plus_one_nested_loop_001",
+      "module": "M3",
+      "source": "Task-Link Custom",
+      "case_type": "test_performance",
+      "category": "n_plus_one",
+      "rule_id": "PERF-002",
+      "target_path": "m3_test_performance_cases/custom_performance_cases/n_plus_one_extended_cases/positive_nested_loop_db_call",
+      "expected_output_ref": "expected_outputs/expected_m3_issues.json"
+    },
+    {
+      "case_id": "m3_custom_n_plus_one_negative_bulk_fetch_001",
+      "module": "M3",
+      "source": "Task-Link Custom",
+      "case_type": "test_performance",
+      "category": "n_plus_one",
+      "expected_rule_ids": [],
+      "target_path": "m3_test_performance_cases/custom_performance_cases/n_plus_one_extended_cases/negative_bulk_fetch_before_loop",
+      "expected_output_ref": "expected_outputs/expected_m3_issues.json"
+    },
+    {
+      "case_id": "m3_custom_n_plus_one_negative_no_db_001",
+      "module": "M3",
+      "source": "Task-Link Custom",
+      "case_type": "test_performance",
+      "category": "n_plus_one",
+      "expected_rule_ids": [],
+      "target_path": "m3_test_performance_cases/custom_performance_cases/n_plus_one_extended_cases/negative_loop_without_db_call",
+      "expected_output_ref": "expected_outputs/expected_m3_issues.json"
+    },
+    {
+      "case_id": "m3_custom_n_plus_one_negative_dict_get_001",
+      "module": "M3",
+      "source": "Task-Link Custom",
+      "case_type": "test_performance",
+      "category": "n_plus_one",
+      "expected_rule_ids": [],
+      "target_path": "m3_test_performance_cases/custom_performance_cases/n_plus_one_extended_cases/negative_local_dict_get",
+      "expected_output_ref": "expected_outputs/expected_m3_issues.json"
+    },
+    {
+      "case_id": "m3_custom_n_plus_one_negative_self_query_001",
+      "module": "M3",
+      "source": "Task-Link Custom",
+      "case_type": "test_performance",
+      "category": "n_plus_one",
+      "expected_rule_ids": [],
+      "target_path": "m3_test_performance_cases/custom_performance_cases/n_plus_one_extended_cases/negative_self_query_method",
       "expected_output_ref": "expected_outputs/expected_m3_issues.json"
     },
     {

@@ -1,7 +1,6 @@
 # Task-Link 데이터 파이프라인 구조
 
-문서 기준 루트: `C:\Users\USER\Desktop\pj3_data`
-(실제 콘텐츠 루트: `pj3_data/pj3_data/` — 본 문서는 이 프로젝트 루트를 기준으로 기술한다.)
+문서 기준 루트: `C:\Users\user\Documents\GitHub\Task-Link\sub2_new\pj3_data`
 
 이 저장소는 **평가용 데이터셋(`datasets/`)을 생산하기 위한 파이프라인**이다.
 원천 데이터(OWASP / BugsInPy)를 입력받아, 스펙(프롬프트) 정의에 따라 케이스를 선별·가공하고,
@@ -34,64 +33,62 @@ _repo_cache/           ─┘                                 ┘               
 ## 전체 디렉토리 트리
 
 ```text
-pj3_data/                                   # ← 문서 기준 루트(C:\Users\USER\Desktop\pj3_data)
-└── pj3_data/                               # 프로젝트 루트 (git 저장소)
-    │
-    ├── ■ Stage 0 — 원천 소스 (raw upstream)
-    ├── BenchmarkPython-main/               # OWASP Benchmark for Python 원본
-    │   ├── testcode/                        #   BenchmarkTest*.py 전체 1230개
-    │   ├── expectedresults-0.1.csv          #   원본 정답 라벨 1230행
-    │   ├── data/ helpers/ results/          #   원본 스크립트/리소스
-    │   ├── scripts/ templates/ testfiles/
-    │   ├── app.py  createScorecards.sh
-    │   ├── requirements.txt  README.md  LICENSE
-    │   └── OWASP Benchmark for Python.URL
-    │
-    ├── BugsInPy-master/                    # BugsInPy 실제 버그 벤치마크 원본
-    │   ├── framework/                       #   버그 재현 프레임워크(체크아웃/테스트 도구)
-    │   └── projects/                        #   17개 프로젝트 (ansible, black, cookiecutter,
-    │                                        #   fastapi, httpie, keras, luigi, matplotlib,
-    │                                        #   pandas, PySnooper, ...)
-    │
-    ├── _repo_cache/                        # 파이프라인 작업용 clone 캐시
-    │   └── tqdm/                            #   (BugsInPy 케이스 체크아웃 캐시)
-    │
-    ├── ■ Stage 1 — 파이프라인 정의 (spec / prompt)
-    ├── m2_prompt.md                        # M2 보안 데이터 전반 요청 프롬프트
-    ├── owasp_benchmarkpython_m2_dataset_request.md  # OWASP→M2 선별 요청
-    ├── bugsinpy_claude_code_request.md     # BugsInPy→M3 선별 요청
-    ├── task_link_dataset_validation_prompt.md       # ▶ Stage 3 검증 지시서
-    │
-    ├── m2_dataset_split_files_v2/          # [M2 custom] 보안 케이스 생성 스펙
-    │   ├── 01_claude_code_prompt_m2_security_cases_v2.md
-    │   ├── 02_m2_security_folder_structure_v2.md
-    │   └── 03_m2_custom_security_code_spec_v2.md
-    │
-    ├── m2_plus/                            # [M2 OWASP add-on] OWASP 매핑 스펙
-    │   ├── 01_claude_code_prompt_m2_owasp_addon_v2.md
-    │   ├── 02_m2_owasp_addon_folder_structure_v2.md
-    │   └── 03_m2_owasp_mapping_spec_v2.md
-    │
-    ├── m3_dataset_split_files/             # [M3 custom] 테스트/성능 케이스 생성 스펙
-    │   ├── 01_claude_code_prompt_m3_custom_cases.md
-    │   ├── 02_m3_custom_folder_structure.md
-    │   └── 03_m3_custom_performance_code_spec.md
-    │
-    ├── ■ Stage 2 — 산출물 (curated dataset)
-    ├── datasets/                           # ▶▶ 최종 평가 데이터셋 (총 70 케이스)
-    │   ├── dataset_manifest.json            #   통합 매니페스트 (70 cases)
-    │   ├── expected_outputs/                #   custom 정답 모음 (M2/M3)
-    │   ├── m2_custom_security_cases/        #   M2 보안 custom 6
-    │   ├── m2_owasp_benchmark_python_selected/  # M2 OWASP 선별 50
-    │   ├── m3_bugsinpy_selected/            #   M3 BugsInPy 선별 8
-    │   ├── m3_test_performance_cases/       #   M3 테스트/성능 custom 6
-    │   ├── FILE_STRUCTURE.md                #   datasets 상세 구조 문서
-    │   └── DATASET_VALIDATION_REPORT.md     #   ◀ Stage 3 검증 결과
-    │
-    ├── ■ 설정 / 작업공간
-    ├── .claude/
-    │   └── settings.local.json
-    └── pj3_data.code-workspace
+pj3_data/                                   # ← 문서 기준 루트(sub2_new/pj3_data/)
+│
+├── ■ Stage 0 — 원천 소스 (raw upstream)
+├── BenchmarkPython-main/               # OWASP Benchmark for Python 원본
+│   ├── testcode/                        #   BenchmarkTest*.py 전체 1230개
+│   ├── expectedresults-0.1.csv          #   원본 정답 라벨 1230행
+│   ├── data/ helpers/ scripts/          #   원본 스크립트/리소스
+│   ├── templates/
+│   ├── results/                         #   실행 결과 (Bandit SARIF, Bearer JSON)
+│   │   ├── BenchmarkPython-Bandit.sarif
+│   │   └── Benchmark-Bearer-v1.51.1.json
+│   ├── app.py  createScorecards.sh
+│   ├── requirements.txt  README.md  LICENSE
+│   └── OWASP Benchmark for Python.URL
+│
+├── BugsInPy-master/                    # BugsInPy 실제 버그 벤치마크 원본
+│   ├── Dockerfile                       #   컨테이너 실행 환경
+│   ├── framework/                       #   버그 재현 프레임워크(체크아웃/테스트 도구)
+│   └── projects/                        #   17개 프로젝트 (ansible, black, cookiecutter,
+│                                        #   fastapi, httpie, keras, luigi, matplotlib,
+│                                        #   pandas, PySnooper, ...)
+│
+├── ■ Stage 1 — 파이프라인 정의 (spec / prompt)
+├── m2_prompt.md                        # M2 보안 데이터 전반 요청 프롬프트
+├── owasp_benchmarkpython_m2_dataset_request.md  # OWASP→M2 선별 요청
+├── bugsinpy_claude_code_request.md     # BugsInPy→M3 선별 요청
+├── task_link_dataset_validation_prompt.md       # ▶ Stage 3 검증 지시서
+├── task_link_next_steps_after_dataset.md        # 데이터셋 완성 후 다음 단계 정의
+│
+├── m2_dataset_split_files_v2/          # [M2 custom] 보안 케이스 생성 스펙
+│   ├── 01_claude_code_prompt_m2_security_cases_v2.md
+│   ├── 02_m2_security_folder_structure_v2.md
+│   └── 03_m2_custom_security_code_spec_v2.md
+│
+├── m2_plus/                            # [M2 OWASP add-on] OWASP 매핑 스펙
+│   ├── 01_claude_code_prompt_m2_owasp_addon_v2.md
+│   ├── 02_m2_owasp_addon_folder_structure_v2.md
+│   └── 03_m2_owasp_mapping_spec_v2.md
+│
+├── m3_dataset_split_files/             # [M3 custom] 테스트/성능 케이스 생성 스펙
+│   ├── 01_claude_code_prompt_m3_custom_cases.md
+│   ├── 02_m3_custom_folder_structure.md
+│   └── 03_m3_custom_performance_code_spec.md
+│
+├── ■ Stage 2 — 산출물 (curated dataset)
+├── datasets/                           # ▶▶ 최종 평가 데이터셋 (총 70 케이스)
+│   ├── dataset_manifest.json            #   통합 매니페스트 (70 cases)
+│   ├── expected_outputs/                #   custom 정답 모음 (M2/M3)
+│   ├── m2_custom_security_cases/        #   M2 보안 custom 6
+│   ├── m2_owasp_benchmark_python_selected/  # M2 OWASP 선별 50
+│   ├── m3_bugsinpy_selected/            #   M3 BugsInPy 선별 8
+│   ├── m3_test_performance_cases/       #   M3 테스트/성능 custom 6
+│   ├── FILE_STRUCTURE.md                #   datasets 상세 구조 문서
+│   └── DATASET_VALIDATION_REPORT.md     #   ◀ Stage 3 검증 결과
+│
+└── pj3_data.code-workspace
 ```
 
 > 상세한 `datasets/` 내부 구조는 [`datasets/FILE_STRUCTURE.md`](datasets/FILE_STRUCTURE.md) 참조.

@@ -1,0 +1,17 @@
+{
+  "case_id": "m3_custom_n_plus_one_sqlalchemy_001",
+  "module": "M3",
+  "source": "Task-Link Custom",
+  "expected_issues": [
+    {
+      "id": "PERF-002",
+      "rule_id": "PERF-002",
+      "title": "N+1 query pattern",
+      "severity": "Major",
+      "target_file": "app/product_service.py",
+      "target_function": "get_product_names",
+      "evidence": "session.query(Product).filter(...).first() is called inside a for-loop.",
+      "recommendation": "Fetch products in a single query with Product.id.in_(product_ids) before the loop."
+    }
+  ]
+}
