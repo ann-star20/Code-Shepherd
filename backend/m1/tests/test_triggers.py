@@ -54,7 +54,22 @@ STUB_M4_RESPONSE = {
 # HMAC 서명 검증
 # ---------------------------------------------------------------------------
 
+def _mock_api_core_ingest(mock):
+    mock.post("http://api-core:8000/internal/pr-ingest").mock(
+        return_value=Response(
+            200,
+            json={
+                "pr_id": "00000000-0000-0000-0000-000000000001",
+                "team_id": "00000000-0000-0000-0000-000000000002",
+                "created": True,
+                "status": "ingested",
+            },
+        )
+    )
+
+
 def _mock_all_modules(mock):
+    _mock_api_core_ingest(mock)
     mock.post("http://m2:8003/analyze/static").mock(return_value=Response(200, json=STUB_M2_RESPONSE))
     mock.post("http://m2:8003/analyze/security").mock(return_value=Response(200, json={**STUB_M2_RESPONSE, "agent": "security_scan"}))
     mock.post("http://m3:8004/verify/tests").mock(return_value=Response(200, json=STUB_M3_RESPONSE))
@@ -101,14 +116,50 @@ async def test_missing_signature_rejected(client):
     assert resp.status_code == 401
 
 
+@pytest.mark.asyncio
+async def test_pr_trigger_skipped_when_ingest_404(client):
+    """등록되지 않은 repo → ingest 404 → 스킵(모듈 미호출)."""
+    with respx.mock as mock:
+        mock.post("http://api-core:8000/internal/pr-ingest").mock(
+            return_value=Response(404, json={"detail": "No team registered"})
+        )
+        sig = _sign(PR_PAYLOAD)
+        resp = await client.post(
+            "/triggers/pr",
+            content=PR_PAYLOAD,
+            headers={"X-Hub-Signature-256": sig, "Content-Type": "application/json"},
+        )
+    assert resp.status_code == 200
+    assert resp.json()["status"] == "skipped"
+
+
 # ---------------------------------------------------------------------------
 # 라우팅 디스패치 — PR 트리거는 m2·m3·m4 호출
 # ---------------------------------------------------------------------------
 
 @pytest.mark.asyncio
+async def test_pr_trigger_calls_api_core_ingest(client):
+    """PR 트리거 수신 시 api-core pr-ingest 호출."""
+    with respx.mock as mock:
+        ingest = mock.post("http://api-core:8000/internal/pr-ingest").mock(
+            return_value=Response(200, json={"status": "ingested", "created": True})
+        )
+        _mock_all_modules(mock)
+        sig = _sign(PR_PAYLOAD)
+        resp = await client.post(
+            "/triggers/pr",
+            content=PR_PAYLOAD,
+            headers={"X-Hub-Signature-256": sig, "Content-Type": "application/json"},
+        )
+    assert resp.status_code == 200
+    assert ingest.called
+
+
+@pytest.mark.asyncio
 async def test_pr_trigger_calls_m2_m3_m4(client):
     """PR 트리거 수신 시 m2(static+security), m3(tests+perf), m4(evaluate) 호출."""
     with respx.mock as mock:
+        _mock_api_core_ingest(mock)
         m2_static = mock.post("http://m2:8003/analyze/static").mock(
             return_value=Response(200, json=STUB_M2_RESPONSE)
         )

@@ -55,16 +55,20 @@ export const usersApi = {
 
 export const teamsApi = {
   list: () => apiClient.get("/teams"),
-  create: (name: string) => apiClient.post("/teams", { name }),
-  update: (id: number, name: string) => apiClient.patch(`/teams/${id}`, { name }),
-  delete: (id: number) => apiClient.delete(`/teams/${id}`),
-  getMembers: (id: number) => apiClient.get(`/teams/${id}/members`),
-  addMember: (teamId: number, userId: string, role = "member") =>
+  create: (name: string, github_repo: string) =>
+    apiClient.post("/teams", { name, github_repo }),
+  update: (
+    id: string,
+    data: { name?: string; github_repo?: string }
+  ) => apiClient.patch(`/teams/${id}`, data),
+  delete: (id: string) => apiClient.delete(`/teams/${id}`),
+  getMembers: (id: string) => apiClient.get(`/teams/${id}/members`),
+  addMember: (teamId: string, userId: string, role = "member") =>
     apiClient.post(`/teams/${teamId}/members`, { user_id: userId, role }),
-  removeMember: (teamId: number, userId: string) =>
+  removeMember: (teamId: string, userId: string) =>
     apiClient.delete(`/teams/${teamId}/members/${userId}`),
-  updateMemberRole: (teamId: number, userId: string, role: string) =>
+  updateMemberRole: (teamId: string, userId: string, role: string) =>
     apiClient.patch(`/teams/${teamId}/members/${userId}`, { role }),
-  getPRs: (teamId: number) => apiClient.get(`/teams/${teamId}/prs`),
+  getPRs: (teamId: string) => apiClient.get(`/teams/${teamId}/prs`),
   approvePR: (prId: string) => apiClient.post(`/prs/${prId}/approve`),
 };

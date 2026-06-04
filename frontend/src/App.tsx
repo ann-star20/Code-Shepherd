@@ -14,6 +14,7 @@ import {
 } from "react-router-dom";
 import { authApi } from "./lib/api";
 import { AuthProvider, useAuth } from "./lib/auth";
+import { TeamProvider } from "./contexts/TeamContext";
 import AppLayout from "./layouts/AppLayout";
 
 // Pages
@@ -22,9 +23,11 @@ import DashboardHome from "./pages/DashboardHome";
 import Team from "./pages/Team";
 import Settings from "./pages/Settings";
 import KmsPlaceholder from "./pages/kms/Placeholder";
+import KmsManagePlaceholder from "./pages/kms/ManagePlaceholder";
 import ReviewPlaceholder from "./pages/review/Placeholder";
 import LearningPlaceholder from "./pages/learning/Placeholder";
-import GraphPlaceholder from "./pages/graph/Placeholder";
+import YoutubePlaceholder from "./pages/youtube/Placeholder";
+import ApprovalsPlaceholder from "./pages/approvals/Placeholder";
 
 function ProtectedRoute() {
   const { isAuthenticated, isLoading } = useAuth();
@@ -63,14 +66,22 @@ function AppRoutes() {
       <Route path="/auth/callback" element={<OAuthCallback />} />
 
       <Route element={<ProtectedRoute />}>
-        <Route element={<AppLayout />}>
+        <Route
+          element={
+            <TeamProvider>
+              <AppLayout />
+            </TeamProvider>
+          }
+        >
           <Route path="/" element={<DashboardHome />} />
           <Route path="/team" element={<Team />} />
           <Route path="/settings" element={<Settings />} />
           <Route path="/kms" element={<KmsPlaceholder />} />
+          <Route path="/kms/manage" element={<KmsManagePlaceholder />} />
           <Route path="/review" element={<ReviewPlaceholder />} />
           <Route path="/learning" element={<LearningPlaceholder />} />
-          <Route path="/graph" element={<GraphPlaceholder />} />
+          <Route path="/youtube" element={<YoutubePlaceholder />} />
+          <Route path="/approvals" element={<ApprovalsPlaceholder />} />
         </Route>
       </Route>
 

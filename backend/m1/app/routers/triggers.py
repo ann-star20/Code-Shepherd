@@ -22,6 +22,7 @@ from shared.contracts import (
 )
 from shared.logging import get_logger
 
+from ..clients.api_core_client import call_api_core_pr_ingest
 from ..clients.module_clients import (
     call_m0_ingest,
     call_m2_analyze_security,
@@ -71,12 +72,20 @@ async def receive_pr_webhook(
     except Exception:
         raw = {}
 
+    pr_number = raw.get("number") or raw.get("pull_request", {}).get("number")
+    pull_request = raw.get("pull_request") or {}
+    author_login = (
+        pull_request.get("user", {}).get("login")
+        or raw.get("sender", {}).get("login")
+    )
+    repository = raw.get("repository", {}).get("full_name")
+
     trigger = PRTriggerPayload(
         action=raw.get("action", "opened"),
-        pr_id=str(raw.get("number", "")),
-        pr_diff=raw.get("pull_request", {}).get("diff_url", ""),
-        sender_login=raw.get("sender", {}).get("login"),
-        repository=raw.get("repository", {}).get("full_name"),
+        pr_id=str(pr_number or ""),
+        pr_diff=pull_request.get("diff_url", ""),
+        sender_login=author_login,
+        repository=repository,
         trace_id=str(uuid.uuid4()),
     )
 
@@ -85,7 +94,35 @@ async def receive_pr_webhook(
         action=trigger.action,
         pr_id=trigger.pr_id,
         trace_id=trigger.trace_id,
+        repository=repository,
     )
+
+    if not repository or not author_login or not pr_number:
+        return {
+            "status": "skipped",
+            "reason": "missing repository, author, or PR number",
+            "trace_id": trigger.trace_id,
+        }
+
+    try:
+        ingest_result = await call_api_core_pr_ingest(
+            {
+                "repository_full_name": repository,
+                "sender_github_login": author_login,
+                "pr_number": int(pr_number),
+                "pr_url": pull_request.get("html_url"),
+                "action": trigger.action,
+                "pull_request": pull_request,
+            }
+        )
+    except HTTPException as exc:
+        if exc.status_code == 404:
+            return {
+                "status": "skipped",
+                "reason": exc.detail,
+                "trace_id": trigger.trace_id,
+            }
+        raise
 
     task_id = str(uuid.uuid4())
     analysis_req = M2AnalyzeRequest(
@@ -127,7 +164,12 @@ async def receive_pr_webhook(
             trace_id=trigger.trace_id,
             verdict=eval_result.verdict,
         )
-        return {"task_id": task_id, "trace_id": trigger.trace_id, "status": "dispatched"}
+        return {
+            "task_id": task_id,
+            "trace_id": trigger.trace_id,
+            "status": "dispatched",
+            "ingest": ingest_result,
+        }
 
     except Exception as exc:
         logger.error("pr_trigger_dispatch_error", task_id=task_id, error=str(exc))

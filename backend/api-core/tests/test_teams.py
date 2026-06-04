@@ -7,16 +7,28 @@ import pytest
 from .helpers import make_token, make_user
 
 
-async def _create_team_with_lead(client, db_session, lead_login: str):
+async def _create_team_with_lead(
+    client,
+    db_session,
+    lead_login: str,
+    *,
+    repo_slug: str | None = None,
+):
     lead = await make_user(db_session, login=lead_login)
     token, _ = await make_token(db_session, lead)
+    slug = repo_slug or lead_login.replace("_", "-")
     resp = await client.post(
         "/teams",
-        json={"name": f"{lead_login}'s Team"},
+        json={
+            "name": f"{lead_login}'s Team",
+            "github_repo": f"org-{slug}/repo-{slug}",
+        },
         headers={"Authorization": f"Bearer {token}"},
     )
     assert resp.status_code == 201
-    return resp.json()["id"], token, lead
+    data = resp.json()
+    assert "github_repo" in data
+    return data["id"], token, lead
 
 
 @pytest.mark.asyncio
@@ -182,6 +194,48 @@ async def test_member_gets_self_scope_prs(client, db_session):
     )
     assert resp.status_code == 200
     assert resp.json()["scope"] == "self"
+
+
+@pytest.mark.asyncio
+async def test_create_team_requires_valid_github_repo(client, db_session):
+    lead = await make_user(db_session, login="repo_fmt")
+    token, _ = await make_token(db_session, lead)
+
+    resp = await client.post(
+        "/teams",
+        json={"name": "Bad Repo Team", "github_repo": "not-valid"},
+        headers={"Authorization": f"Bearer {token}"},
+    )
+    assert resp.status_code == 422
+
+
+@pytest.mark.asyncio
+async def test_duplicate_github_repo_rejected(client, db_session):
+    _, token1, _ = await _create_team_with_lead(
+        client, db_session, "repo_a", repo_slug="shared"
+    )
+
+    lead2 = await make_user(db_session, login="repo_b")
+    token2, _ = await make_token(db_session, lead2)
+    resp = await client.post(
+        "/teams",
+        json={"name": "Other Team", "github_repo": "org-shared/repo-shared"},
+        headers={"Authorization": f"Bearer {token2}"},
+    )
+    assert resp.status_code == 409
+
+
+@pytest.mark.asyncio
+async def test_lead_can_update_github_repo(client, db_session):
+    team_id, token, _ = await _create_team_with_lead(client, db_session, "upd_repo")
+
+    resp = await client.patch(
+        f"/teams/{team_id}",
+        json={"github_repo": "org-upd-repo/new-repo"},
+        headers={"Authorization": f"Bearer {token}"},
+    )
+    assert resp.status_code == 200
+    assert resp.json()["github_repo"] == "org-upd-repo/new-repo"
 
 
 @pytest.mark.asyncio

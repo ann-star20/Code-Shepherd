@@ -40,6 +40,10 @@ class Settings(BaseSettings):
     # Orchestrator
     github_webhook_secret: str = Field(default="")
 
+    # Internal service-to-service (m1 → api-core)
+    api_core_url: str = Field(default="http://api-core:8000")
+    internal_service_token: str = Field(default="dev-internal-token")
+
     # Service URLs
     m0_url: str = Field(default="http://m0:8002")
     m2_url: str = Field(default="http://m2:8003")

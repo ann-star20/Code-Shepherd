@@ -6,11 +6,13 @@ import { http, HttpResponse } from "msw";
 
 const BASE = "/api";
 
+const MOCK_TEAM_ID = "11111111-1111-1111-1111-111111111111";
+const MOCK_TEAM_ID_2 = "22222222-2222-2222-2222-222222222222";
+
 export const handlers = [
-  // Auth
   http.get(`${BASE}/auth/me`, () =>
     HttpResponse.json({
-      id: 1,
+      id: "1",
       login: "testuser",
       name: "Test User",
       avatar_url: null,
@@ -21,30 +23,63 @@ export const handlers = [
     HttpResponse.json({ detail: "Logged out successfully" })
   ),
 
-  // Teams
   http.get(`${BASE}/teams`, () =>
-    HttpResponse.json([{ id: 1, name: "Alpha Team", created_at: "2026-01-01T00:00:00Z" }])
+    HttpResponse.json([
+      {
+        id: MOCK_TEAM_ID,
+        name: "Alpha Team",
+        github_repo: "alpha-org/alpha-repo",
+        created_at: "2026-01-01T00:00:00Z",
+      },
+    ])
   ),
   http.post(`${BASE}/teams`, async ({ request }) => {
-    const body = (await request.json()) as { name: string };
-    return HttpResponse.json({ id: 2, name: body.name, created_at: new Date().toISOString() }, { status: 201 });
+    const body = (await request.json()) as { name: string; github_repo: string };
+    return HttpResponse.json(
+      {
+        id: MOCK_TEAM_ID_2,
+        name: body.name,
+        github_repo: body.github_repo,
+        created_at: new Date().toISOString(),
+      },
+      { status: 201 }
+    );
   }),
   http.get(`${BASE}/teams/:id/members`, () =>
     HttpResponse.json([
-      { id: 1, user_id: 1, role: "lead", joined_at: "2026-01-01T00:00:00Z" },
+      {
+        id: "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa",
+        user_id: "1",
+        role: "lead",
+        joined_at: "2026-01-01T00:00:00Z",
+      },
     ])
   ),
   http.get(`${BASE}/teams/:id/prs`, ({ params }) => {
-    return HttpResponse.json({ team_id: params.id, scope: "team", prs: [] });
+    return HttpResponse.json({
+      team_id: params.id,
+      scope: "team",
+      prs: [
+        {
+          id: "pr-1",
+          user_id: "1",
+          author_login: "testuser",
+          github_pr_number: 42,
+          github_pr_url: "https://github.com/alpha-org/alpha-repo/pull/42",
+          status: "open",
+          submitted_at: "2026-01-01T00:00:00Z",
+          is_lgtm: false,
+        },
+      ],
+    });
   }),
 
-  // Users
   http.get(`${BASE}/users`, ({ request }) => {
     const url = new URL(request.url);
     const search = url.searchParams.get("search") ?? "";
     const users = [
-      { id: 1, login: "alice", name: "Alice", avatar_url: null },
-      { id: 2, login: "bob", name: "Bob", avatar_url: null },
+      { id: "1", login: "alice", name: "Alice", avatar_url: null },
+      { id: "2", login: "bob", name: "Bob", avatar_url: null },
     ].filter(
       (u) =>
         u.login.includes(search) ||
@@ -54,14 +89,12 @@ export const handlers = [
   }),
 ];
 
-// lead 역할 시뮬레이션용 핸들러 (테스트에서 오버라이드)
 export const leadHandlers = [
   http.get(`${BASE}/teams/:id/prs`, () =>
     HttpResponse.json({ scope: "team", prs: [] })
   ),
 ];
 
-// member 역할 시뮬레이션용 핸들러
 export const memberHandlers = [
   http.get(`${BASE}/teams/:id/prs`, () =>
     HttpResponse.json({ scope: "self", prs: [] })

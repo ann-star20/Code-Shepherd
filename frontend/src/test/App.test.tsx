@@ -13,7 +13,9 @@ import Login from "../pages/Login";
 import KmsPlaceholder from "../pages/kms/Placeholder";
 import ReviewPlaceholder from "../pages/review/Placeholder";
 import LearningPlaceholder from "../pages/learning/Placeholder";
-import GraphPlaceholder from "../pages/graph/Placeholder";
+import YoutubePlaceholder from "../pages/youtube/Placeholder";
+import ApprovalsPlaceholder from "../pages/approvals/Placeholder";
+import KmsManagePlaceholder from "../pages/kms/ManagePlaceholder";
 
 function createQueryClient() {
   return new QueryClient({
@@ -68,12 +70,25 @@ describe("Placeholder pages", () => {
   it("Learning placeholder shows 준비 중", () => {
     renderWithProviders(<LearningPlaceholder />);
     expect(screen.getByTestId("placeholder-learning")).toBeInTheDocument();
+    expect(screen.getByText(/커리큘럼 추천/)).toBeInTheDocument();
     expect(screen.getByText(/준비 중/)).toBeInTheDocument();
   });
 
-  it("Graph placeholder shows 준비 중", () => {
-    renderWithProviders(<GraphPlaceholder />);
-    expect(screen.getByTestId("placeholder-graph")).toBeInTheDocument();
+  it("Youtube placeholder shows 준비 중", () => {
+    renderWithProviders(<YoutubePlaceholder />);
+    expect(screen.getByTestId("placeholder-youtube")).toBeInTheDocument();
+    expect(screen.getByText(/준비 중/)).toBeInTheDocument();
+  });
+
+  it("Approvals placeholder shows 준비 중", () => {
+    renderWithProviders(<ApprovalsPlaceholder />);
+    expect(screen.getByTestId("placeholder-approvals")).toBeInTheDocument();
+    expect(screen.getByText(/준비 중/)).toBeInTheDocument();
+  });
+
+  it("KMS manage placeholder shows 준비 중", () => {
+    renderWithProviders(<KmsManagePlaceholder />);
+    expect(screen.getByTestId("placeholder-kms-manage")).toBeInTheDocument();
     expect(screen.getByText(/준비 중/)).toBeInTheDocument();
   });
 });

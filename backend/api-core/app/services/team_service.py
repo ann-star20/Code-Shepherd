@@ -1,26 +1,17 @@
-"""팀 서비스 — 통합 DDL `users.team` 기반 (teams/team_members 테이블 없음)."""
+"""팀 서비스 — teams / team_members SSOT, users.team 동기화."""
 
 from __future__ import annotations
 
 import uuid
-from datetime import UTC, datetime, timedelta
 
 from fastapi import HTTPException, status
-from sqlalchemy import func, select, update
+from sqlalchemy import delete, select, update
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from ..models.team import Team, TeamMember
 from ..models.user import User
-from .team_utils import MemberView, TeamView, member_row_id, team_id_from_name
-
-
-async def _resolve_team_name(db: AsyncSession, team_id: int) -> str:
-    result = await db.execute(
-        select(User.team).where(User.team.is_not(None)).distinct()
-    )
-    for (team_name,) in result.all():
-        if team_name and team_id_from_name(team_name) == team_id:
-            return team_name
-    raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Team not found")
+from .team_utils import MemberView, TeamView, normalize_github_repo
 
 
 async def _get_user(db: AsyncSession, user_id: uuid.UUID) -> User:
@@ -31,196 +22,301 @@ async def _get_user(db: AsyncSession, user_id: uuid.UUID) -> User:
     return user
 
 
-async def _team_members(db: AsyncSession, team_name: str) -> list[User]:
-    result = await db.execute(
-        select(User).where(User.team == team_name).order_by(User.joined_at.asc())
-    )
-    return list(result.scalars().all())
-
-
-async def _lead_user_id(db: AsyncSession, team_name: str) -> uuid.UUID:
-    members = await _team_members(db, team_name)
-    if not members:
+async def _get_team_or_404(db: AsyncSession, team_id: uuid.UUID) -> Team:
+    result = await db.execute(select(Team).where(Team.team_id == team_id))
+    team = result.scalar_one_or_none()
+    if team is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Team not found")
-    return members[0].user_id
+    return team
 
 
-def _member_role(user: User, lead_id: uuid.UUID) -> str:
-    return "lead" if user.user_id == lead_id else "member"
-
-
-def _to_member_view(team_name: str, user: User, lead_id: uuid.UUID) -> MemberView:
-    return MemberView(
-        id=member_row_id(team_name, user.user_id),
-        user_id=user.user_id,
-        role=_member_role(user, lead_id),
-        joined_at=user.joined_at,
+def _to_team_view(team: Team) -> TeamView:
+    return TeamView(
+        id=team.team_id,
+        name=team.name,
+        github_repo_full_name=team.github_repo_full_name,
+        created_at=team.created_at,
     )
+
+
+def _to_member_view(member: TeamMember) -> MemberView:
+    return MemberView(
+        id=member.id,
+        user_id=member.user_id,
+        role=member.team_role,
+        joined_at=member.joined_at,
+    )
+
+
+async def _user_membership(
+    db: AsyncSession, team_id: uuid.UUID, user_id: uuid.UUID
+) -> TeamMember | None:
+    result = await db.execute(
+        select(TeamMember).where(
+            TeamMember.team_id == team_id,
+            TeamMember.user_id == user_id,
+        )
+    )
+    return result.scalar_one_or_none()
+
+
+async def _sync_users_team_name(
+    db: AsyncSession, team_id: uuid.UUID, team_name: str
+) -> None:
+    member_ids = await db.scalars(
+        select(TeamMember.user_id).where(TeamMember.team_id == team_id)
+    )
+    for uid in member_ids.all():
+        await db.execute(update(User).where(User.user_id == uid).values(team=team_name))
+
+
+async def _clear_users_team_for_team(db: AsyncSession, team_name: str) -> None:
+    await db.execute(update(User).where(User.team == team_name).values(team=None))
 
 
 async def get_teams_for_user(db: AsyncSession, user_id: uuid.UUID) -> list[TeamView]:
-    user = await _get_user(db, user_id)
-    if not user.team:
-        return []
-    return [
-        TeamView(
-            id=team_id_from_name(user.team),
-            name=user.team,
-            created_at=user.joined_at,
-        )
-    ]
-
-
-async def get_team_or_404(db: AsyncSession, team_id: int) -> TeamView:
-    team_name = await _resolve_team_name(db, team_id)
-    members = await _team_members(db, team_name)
-    return TeamView(
-        id=team_id,
-        name=team_name,
-        created_at=members[0].joined_at,
+    result = await db.execute(
+        select(Team)
+        .join(TeamMember, TeamMember.team_id == Team.team_id)
+        .where(TeamMember.user_id == user_id)
+        .order_by(Team.created_at.asc())
     )
+    return [_to_team_view(t) for t in result.scalars().all()]
 
 
-async def create_team(db: AsyncSession, name: str, creator_id: uuid.UUID) -> TeamView:
+async def get_team_or_404(db: AsyncSession, team_id: uuid.UUID) -> TeamView:
+    team = await _get_team_or_404(db, team_id)
+    return _to_team_view(team)
+
+
+async def create_team(
+    db: AsyncSession, name: str, github_repo: str, creator_id: uuid.UUID
+) -> TeamView:
+    team_name = name.strip()
+    if not team_name:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail="Team name is required",
+        )
+
+    try:
+        repo = normalize_github_repo(github_repo)
+    except ValueError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail=str(exc),
+        ) from exc
+
     creator = await _get_user(db, creator_id)
-    if creator.team:
+
+    existing_membership = await db.execute(
+        select(TeamMember).where(TeamMember.user_id == creator_id)
+    )
+    if existing_membership.scalar_one_or_none() is not None:
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
             detail="User already belongs to a team",
         )
-    creator.team = name
-    await db.commit()
-    await db.refresh(creator)
-    return TeamView(
-        id=team_id_from_name(name),
-        name=name,
-        created_at=creator.joined_at,
+
+    team = Team(name=team_name, github_repo_full_name=repo)
+    db.add(team)
+    try:
+        await db.flush()
+    except IntegrityError as exc:
+        await db.rollback()
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Team name or GitHub repository already registered",
+        ) from exc
+
+    membership = TeamMember(
+        team_id=team.team_id,
+        user_id=creator_id,
+        team_role="lead",
     )
+    db.add(membership)
+    creator.team = team_name
+    await db.commit()
+    await db.refresh(team)
+    return _to_team_view(team)
 
 
 async def update_team(
-    db: AsyncSession, team_id: int, requester_id: uuid.UUID, new_name: str
+    db: AsyncSession,
+    team_id: uuid.UUID,
+    requester_id: uuid.UUID,
+    *,
+    new_name: str | None = None,
+    new_github_repo: str | None = None,
 ) -> TeamView:
-    team_name = await _resolve_team_name(db, team_id)
-    await _require_lead(db, team_name, requester_id)
-    await db.execute(
-        update(User).where(User.team == team_name).values(team=new_name)
-    )
-    await db.commit()
-    members = await _team_members(db, new_name)
-    return TeamView(
-        id=team_id_from_name(new_name),
-        name=new_name,
-        created_at=members[0].joined_at,
-    )
+    team = await _get_team_or_404(db, team_id)
+    await _require_lead(db, team_id, requester_id)
+
+    if new_name is not None:
+        stripped = new_name.strip()
+        if not stripped:
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                detail="Team name is required",
+            )
+        team.name = stripped
+
+    if new_github_repo is not None:
+        try:
+            team.github_repo_full_name = normalize_github_repo(new_github_repo)
+        except ValueError as exc:
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                detail=str(exc),
+            ) from exc
+
+    try:
+        await db.flush()
+        await _sync_users_team_name(db, team_id, team.name)
+        await db.commit()
+        await db.refresh(team)
+    except IntegrityError as exc:
+        await db.rollback()
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Team name or GitHub repository already registered",
+        ) from exc
+
+    return _to_team_view(team)
 
 
-async def delete_team(db: AsyncSession, team_id: int, requester_id: uuid.UUID) -> None:
-    team_name = await _resolve_team_name(db, team_id)
-    await _require_lead(db, team_name, requester_id)
-    await db.execute(update(User).where(User.team == team_name).values(team=None))
+async def delete_team(
+    db: AsyncSession, team_id: uuid.UUID, requester_id: uuid.UUID
+) -> None:
+    team = await _get_team_or_404(db, team_id)
+    await _require_lead(db, team_id, requester_id)
+    await _clear_users_team_for_team(db, team.name)
+    await db.execute(delete(Team).where(Team.team_id == team_id))
     await db.commit()
 
 
 async def get_members(
-    db: AsyncSession, team_id: int, requester_id: uuid.UUID
+    db: AsyncSession, team_id: uuid.UUID, requester_id: uuid.UUID
 ) -> list[MemberView]:
-    team_name = await _resolve_team_name(db, team_id)
-    await _require_member(db, team_name, requester_id)
-    lead_id = await _lead_user_id(db, team_name)
-    members = await _team_members(db, team_name)
-    return [_to_member_view(team_name, m, lead_id) for m in members]
+    await _get_team_or_404(db, team_id)
+    await _require_member(db, team_id, requester_id)
+    result = await db.execute(
+        select(TeamMember)
+        .where(TeamMember.team_id == team_id)
+        .order_by(TeamMember.joined_at.asc())
+    )
+    return [_to_member_view(m) for m in result.scalars().all()]
 
 
 async def add_member(
     db: AsyncSession,
-    team_id: int,
+    team_id: uuid.UUID,
     requester_id: uuid.UUID,
     target_user_id: uuid.UUID,
     role: str = "member",
 ) -> MemberView:
-    team_name = await _resolve_team_name(db, team_id)
-    await _require_lead(db, team_name, requester_id)
+    team = await _get_team_or_404(db, team_id)
+    await _require_lead(db, team_id, requester_id)
+
+    if role not in ("lead", "member"):
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail="role must be 'lead' or 'member'",
+        )
 
     target = await _get_user(db, target_user_id)
-    if target.team == team_name:
-        raise HTTPException(
-            status_code=status.HTTP_409_CONFLICT,
-            detail="User is already a member of this team",
-        )
-    if target.team and target.team != team_name:
+
+    existing = await db.execute(
+        select(TeamMember).where(TeamMember.user_id == target_user_id)
+    )
+    existing_row = existing.scalar_one_or_none()
+    if existing_row is not None:
+        if existing_row.team_id == team_id:
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail="User is already a member of this team",
+            )
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
             detail="User already belongs to another team",
         )
 
-    target.team = team_name
-    if role == "lead":
-        target.joined_at = datetime.now(UTC) - timedelta(days=3650)
+    membership = TeamMember(
+        team_id=team_id,
+        user_id=target_user_id,
+        team_role=role,
+    )
+    db.add(membership)
+    target.team = team.name
     await db.commit()
-    await db.refresh(target)
-
-    lead_id = await _lead_user_id(db, team_name)
-    return _to_member_view(team_name, target, lead_id)
+    await db.refresh(membership)
+    return _to_member_view(membership)
 
 
 async def remove_member(
-    db: AsyncSession, team_id: int, requester_id: uuid.UUID, target_user_id: uuid.UUID
+    db: AsyncSession, team_id: uuid.UUID, requester_id: uuid.UUID, target_user_id: uuid.UUID
 ) -> None:
-    team_name = await _resolve_team_name(db, team_id)
-    await _require_lead(db, team_name, requester_id)
+    await _get_team_or_404(db, team_id)
+    await _require_lead(db, team_id, requester_id)
 
-    target = await _get_user(db, target_user_id)
-    if target.team != team_name:
+    membership = await _user_membership(db, team_id, target_user_id)
+    if membership is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Member not found")
 
-    lead_id = await _lead_user_id(db, team_name)
-    if target.user_id == lead_id:
-        members = await _team_members(db, team_name)
-        if len(members) <= 1:
+    if membership.team_role == "lead":
+        result = await db.execute(
+            select(TeamMember).where(
+                TeamMember.team_id == team_id, TeamMember.team_role == "lead"
+            )
+        )
+        if len(result.scalars().all()) <= 1:
             raise HTTPException(
                 status_code=status.HTTP_409_CONFLICT,
                 detail="Cannot remove the last lead from a team",
             )
 
+    target = await _get_user(db, target_user_id)
+    await db.delete(membership)
     target.team = None
     await db.commit()
 
 
 async def update_member_role(
     db: AsyncSession,
-    team_id: int,
+    team_id: uuid.UUID,
     requester_id: uuid.UUID,
     target_user_id: uuid.UUID,
     new_role: str,
 ) -> MemberView:
-    team_name = await _resolve_team_name(db, team_id)
-    await _require_lead(db, team_name, requester_id)
+    await _get_team_or_404(db, team_id)
+    await _require_lead(db, team_id, requester_id)
 
-    target = await _get_user(db, target_user_id)
-    if target.team != team_name:
+    if new_role not in ("lead", "member"):
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail="role must be 'lead' or 'member'",
+        )
+
+    membership = await _user_membership(db, team_id, target_user_id)
+    if membership is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Member not found")
 
-    lead_id = await _lead_user_id(db, team_name)
-    if target.user_id == lead_id and new_role == "member":
-        members = await _team_members(db, team_name)
-        leads = [m for m in members if _member_role(m, lead_id) == "lead"]
-        if len(leads) <= 1:
+    if membership.team_role == "lead" and new_role == "member":
+        result = await db.execute(
+            select(TeamMember).where(
+                TeamMember.team_id == team_id, TeamMember.team_role == "lead"
+            )
+        )
+        if len(result.scalars().all()) <= 1:
             raise HTTPException(
                 status_code=status.HTTP_409_CONFLICT,
                 detail="Cannot demote the last lead",
             )
-        target.joined_at = datetime.now(UTC)
-    elif new_role == "lead":
-        min_joined = await db.scalar(
-            select(func.min(User.joined_at)).where(User.team == team_name)
-        )
-        target.joined_at = (min_joined or datetime.now(UTC)) - timedelta(seconds=1)
 
+    membership.team_role = new_role
     await db.commit()
-    await db.refresh(target)
-    new_lead_id = await _lead_user_id(db, team_name)
-    return _to_member_view(team_name, target, new_lead_id)
+    await db.refresh(membership)
+    return _to_member_view(membership)
 
 
 async def search_users(db: AsyncSession, query: str) -> list[User]:
@@ -237,31 +333,33 @@ async def search_users(db: AsyncSession, query: str) -> list[User]:
     return list(result.scalars().all())
 
 
-async def _require_member(db: AsyncSession, team_name: str, user_id: uuid.UUID) -> User:
-    user = await _get_user(db, user_id)
-    if user.team != team_name:
+async def _require_member(
+    db: AsyncSession, team_id: uuid.UUID, user_id: uuid.UUID
+) -> TeamMember:
+    membership = await _user_membership(db, team_id, user_id)
+    if membership is None:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="You are not a member of this team",
         )
-    return user
+    return membership
 
 
-async def _require_lead(db: AsyncSession, team_name: str, user_id: uuid.UUID) -> User:
-    user = await _require_member(db, team_name, user_id)
-    lead_id = await _lead_user_id(db, team_name)
-    if user.user_id != lead_id:
+async def _require_lead(
+    db: AsyncSession, team_id: uuid.UUID, user_id: uuid.UUID
+) -> TeamMember:
+    membership = await _require_member(db, team_id, user_id)
+    if membership.team_role != "lead":
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Only team leads can perform this action",
         )
-    return user
+    return membership
 
 
 async def get_membership(
-    db: AsyncSession, team_id: int, user_id: uuid.UUID
+    db: AsyncSession, team_id: uuid.UUID, user_id: uuid.UUID
 ) -> MemberView:
-    team_name = await _resolve_team_name(db, team_id)
-    user = await _require_member(db, team_name, user_id)
-    lead_id = await _lead_user_id(db, team_name)
-    return _to_member_view(team_name, user, lead_id)
+    await _get_team_or_404(db, team_id)
+    membership = await _require_member(db, team_id, user_id)
+    return _to_member_view(membership)

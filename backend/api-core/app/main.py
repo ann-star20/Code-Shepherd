@@ -6,7 +6,7 @@ from fastapi import FastAPI
 
 from shared.logging import TraceIDMiddleware, configure_logging
 
-from .routers import auth, health, teams, users
+from .routers import auth, health, internal, teams, users
 
 
 @asynccontextmanager
@@ -23,3 +23,4 @@ app.include_router(health.router, tags=["health"])
 app.include_router(auth.router, prefix="/auth", tags=["auth"])
 app.include_router(users.router, prefix="/users", tags=["users"])
 app.include_router(teams.router, prefix="/teams", tags=["teams"])
+app.include_router(internal.router, prefix="/internal", tags=["internal"])
