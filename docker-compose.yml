@@ -1,118 +1,138 @@
-# ============================================================
-# Code-Shepherd — 전체 스택 로컬 실행
-#
-# 시작:  docker compose up -d
-# 중지:  docker compose down
-# 로그:  docker compose logs -f api
-# 초기화: docker compose down -v   (볼륨 포함 전체 삭제)
-#
-# 필수 사전 작업:
-#   cp .env.example .env
-#   (필요한 API 키들을 .env에서 설정)
-#
-# GCS 인증 (Storage):
-#   gcloud auth application-default login
-#   → ~/.config/gcloud/application_default_credentials.json 생성됨
-# ============================================================
+version: "3.9"
+
+networks:
+  code-shepherd:
+    driver: bridge
+
+volumes:
+  secrets:
 
 services:
-
-  # ----------------------------------------------------------
-  # Neo4j 5 (그래프 DB — Module 5 엔티티/관계)
-  # ----------------------------------------------------------
-  neo4j:
-    image: neo4j:5
-    container_name: kms-neo4j
-    restart: unless-stopped
+  cloud-sql-proxy:
+    image: gcr.io/cloud-sql-connectors/cloud-sql-proxy:2.11
+    command:
+      - "--address=0.0.0.0"
+      - "--port=5432"
+      - "${CLOUDSQL_INSTANCE_CONNECTION_NAME}"
     environment:
-      NEO4J_AUTH: neo4j/password
-      NEO4J_PLUGINS: '["apoc"]'
-    ports:
-      - "7474:7474"   # Browser UI
-      - "7687:7687"   # Bolt
+      GOOGLE_APPLICATION_CREDENTIALS: /secrets/sa-key.json
     volumes:
-      - neo4jdata:/data
-    healthcheck:
-      test: ["CMD-SHELL", "wget -qO- http://localhost:7474 || exit 1"]
-      interval: 15s
-      timeout: 10s
-      retries: 5
-
-  # ----------------------------------------------------------
-  # Ollama (로컬 LLM + 임베딩 — bge-m3 1024차원)
-  # GPU가 없으면 CPU 모드로 실행 (느리지만 동작함)
-  # M1/M2/M3 Mac에서는 host.docker.internal로 로컬 Ollama 사용 권장
-  # ----------------------------------------------------------
-  ollama:
-    image: ollama/ollama:latest
-    container_name: kms-ollama
+      - ./secrets:/secrets:ro
+    networks:
+      - code-shepherd
     restart: unless-stopped
-    ports:
-      - "11434:11434"
-    volumes:
-      - ollamadata:/root/.ollama
-
-  # ----------------------------------------------------------
-  # KMS API (FastAPI + LangGraph 파이프라인)
-  # PostgreSQL: .env의 POSTGRES_URL = Google Cloud SQL 사용
-  # Storage: GCS (Application Default Credentials 인증)
-  # ----------------------------------------------------------
-  api:
-    build:
-      context: .
-      dockerfile: Dockerfile
-    image: kms-api:latest
-    container_name: kms-api
-    restart: unless-stopped
-    env_file: .env
-    environment:
-      NEO4J_URI: bolt://neo4j:7687
-      NEO4J_USER: neo4j
-      NEO4J_PASSWORD: password
-      OLLAMA_BASE_URL: http://ollama:11434
-      CORS_ORIGINS: http://localhost:5173,http://localhost:3000
-      STORAGE_BACKEND: gcs
-      GCS_BUCKET: tasklink-kms-storage-dev   # 팀 공유 버킷 (버킷명은 비밀 아님)
-      GOOGLE_APPLICATION_CREDENTIALS: /root/.config/gcloud/application_default_credentials.json
-    ports:
-      - "8001:8001"
-    depends_on:
-      neo4j:
-        condition: service_healthy
-    volumes:
-      - ./src:/app/src:ro
-      - apidata:/app/data
-      - ${APPDATA}/gcloud:/root/.config/gcloud:ro
     healthcheck:
-      test: ["CMD-SHELL", "curl -f http://localhost:8001/health || exit 1"]
-      interval: 15s
+      test: ["CMD", "nc", "-z", "localhost", "5432"]
+      interval: 10s
       timeout: 5s
       retries: 5
 
-  # ----------------------------------------------------------
-  # Frontend (Vite 개발 서버)
-  # 프로덕션 배포 시 target: build + nginx 이미지로 교체
-  # ----------------------------------------------------------
-  frontend:
-    image: node:20-alpine
-    container_name: kms-frontend
-    restart: unless-stopped
-    working_dir: /app
-    command: sh -c "npm install && npm run dev -- --host 0.0.0.0"
+  api-core:
+    build:
+      context: ./backend
+      dockerfile: api-core/Dockerfile
+    ports:
+      - "8000:8000"
+    env_file: .env
     environment:
-      VITE_API_URL: ""           # 브라우저 기준 비워두면 현재 호스트(localhost:5173) 사용
-      API_TARGET: http://api:8001  # Vite 프록시가 api 컨테이너로 요청 전달
+      DB_HOST: cloud-sql-proxy
+    volumes:
+      - ./backend/_shared:/app/_shared:ro
+      - ./backend/api-core:/app/service
+    depends_on:
+      cloud-sql-proxy:
+        condition: service_healthy
+    networks:
+      - code-shepherd
+    restart: unless-stopped
+    command: uv run uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
+
+  m1:
+    build:
+      context: ./backend
+      dockerfile: m1/Dockerfile
+    ports:
+      - "8001:8001"
+    env_file: .env
+    volumes:
+      - ./backend/_shared:/app/_shared:ro
+      - ./backend/m1:/app/service
+    networks:
+      - code-shepherd
+    restart: unless-stopped
+    command: uv run uvicorn app.main:app --host 0.0.0.0 --port 8001 --reload
+
+  m0:
+    build:
+      context: ./backend
+      dockerfile: m0/Dockerfile
+    ports:
+      - "8002:8002"
+    env_file: .env
+    volumes:
+      - ./backend/_shared:/app/_shared:ro
+      - ./backend/m0:/app/service
+    networks:
+      - code-shepherd
+    restart: unless-stopped
+    command: uv run uvicorn app.main:app --host 0.0.0.0 --port 8002 --reload
+
+  m2:
+    build:
+      context: ./backend
+      dockerfile: m2/Dockerfile
+    ports:
+      - "8003:8003"
+    env_file: .env
+    volumes:
+      - ./backend/_shared:/app/_shared:ro
+      - ./backend/m2:/app/service
+    networks:
+      - code-shepherd
+    restart: unless-stopped
+    command: uv run uvicorn app.main:app --host 0.0.0.0 --port 8003 --reload
+
+  m3:
+    build:
+      context: ./backend
+      dockerfile: m3/Dockerfile
+    ports:
+      - "8004:8004"
+    env_file: .env
+    volumes:
+      - ./backend/_shared:/app/_shared:ro
+      - ./backend/m3:/app/service
+    networks:
+      - code-shepherd
+    restart: unless-stopped
+    command: uv run uvicorn app.main:app --host 0.0.0.0 --port 8004 --reload
+
+  m4:
+    build:
+      context: ./backend
+      dockerfile: m4/Dockerfile
+    ports:
+      - "8005:8005"
+    env_file: .env
+    volumes:
+      - ./backend/_shared:/app/_shared:ro
+      - ./backend/m4:/app/service
+    networks:
+      - code-shepherd
+    restart: unless-stopped
+    command: uv run uvicorn app.main:app --host 0.0.0.0 --port 8005 --reload
+
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
     ports:
       - "5173:5173"
+    env_file: .env
     volumes:
       - ./frontend:/app
-      - frontend_nm:/app/node_modules
-    depends_on:
-      api:
-        condition: service_healthy
-
-volumes:
-  neo4jdata:
-  ollamadata:
-  apidata:
-  frontend_nm:
+      - /app/node_modules
+    networks:
+      - code-shepherd
+    restart: unless-stopped
+    command: npm run dev -- --host 0.0.0.0

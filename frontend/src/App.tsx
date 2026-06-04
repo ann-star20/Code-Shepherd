@@ -1,66 +1,93 @@
-import { useState } from "react";
-import { DocumentUpload } from "./components/DocumentUpload";
-import { HitlQueue } from "./components/HitlQueue";
-import { ChatBot } from "./components/ChatBot";
+/**
+ * 라우터 + 인증 가드
+ */
 
-type Page = "upload" | "hitl" | "chat";
+import { BrowserRouter, Navigate, Outlet, Route, Routes } from "react-router-dom";
+import { AuthProvider, useAuth } from "./lib/auth";
+import AppLayout from "./layouts/AppLayout";
 
-export default function App() {
-  const [page, setPage] = useState<Page>("upload");
+// Pages
+import Login from "./pages/Login";
+import DashboardHome from "./pages/DashboardHome";
+import Team from "./pages/Team";
+import Settings from "./pages/Settings";
+import KmsPlaceholder from "./pages/kms/Placeholder";
+import ReviewPlaceholder from "./pages/review/Placeholder";
+import LearningPlaceholder from "./pages/learning/Placeholder";
+import GraphPlaceholder from "./pages/graph/Placeholder";
+
+function ProtectedRoute() {
+  const { isAuthenticated, isLoading } = useAuth();
+  if (isLoading) {
+    return (
+      <div className="flex items-center justify-center h-screen">
+        <div className="text-notion-text-secondary text-sm">로딩 중...</div>
+      </div>
+    );
+  }
+  if (!isAuthenticated) {
+    return <Navigate to="/login" replace />;
+  }
+  return <Outlet />;
+}
+
+function AppRoutes() {
+  const { isAuthenticated, isLoading } = useAuth();
+
+  if (isLoading) {
+    return (
+      <div className="flex items-center justify-center h-screen">
+        <div className="text-notion-text-secondary text-sm">로딩 중...</div>
+      </div>
+    );
+  }
 
   return (
-    <div style={{ minHeight: "100vh", background: "#f1f5f9", padding: "0 16px" }}>
-      <header style={{
-        background: "#fff",
-        borderBottom: "1px solid #e5e7eb",
-        padding: "14px 32px",
-        display: "flex",
-        alignItems: "center",
-        gap: 24,
-        marginBottom: 0,
-      }}>
-        <h1 style={{ margin: 0, fontSize: 18, fontWeight: 700, color: "#1e293b", flex: "none" }}>
-          KMS — 지식 관리 시스템
-        </h1>
-        <nav style={{ display: "flex", gap: 4 }}>
-          <NavBtn active={page === "upload"} onClick={() => setPage("upload")}>문서 업로드</NavBtn>
-          <NavBtn active={page === "hitl"}   onClick={() => setPage("hitl")}>HITL 검토 큐</NavBtn>
-          <NavBtn active={page === "chat"}   onClick={() => setPage("chat")}>💬 지식 챗봇</NavBtn>
-        </nav>
-      </header>
-      <div style={{ display: page === "upload" ? "block" : "none" }}>
-        <DocumentUpload isVisible={page === "upload"} />
-      </div>
-      <div style={{ display: page === "hitl" ? "block" : "none" }}>
-        <HitlQueue />
-      </div>
-      <div style={{ display: page === "chat" ? "block" : "none" }}>
-        <ChatBot />
-      </div>
-    </div>
+    <Routes>
+      <Route
+        path="/login"
+        element={isAuthenticated ? <Navigate to="/" replace /> : <Login />}
+      />
+
+      {/* OAuth callback — 토큰을 받아 저장 후 대시보드로 */}
+      <Route path="/auth/callback" element={<OAuthCallback />} />
+
+      <Route element={<ProtectedRoute />}>
+        <Route element={<AppLayout />}>
+          <Route path="/" element={<DashboardHome />} />
+          <Route path="/team" element={<Team />} />
+          <Route path="/settings" element={<Settings />} />
+          <Route path="/kms" element={<KmsPlaceholder />} />
+          <Route path="/review" element={<ReviewPlaceholder />} />
+          <Route path="/learning" element={<LearningPlaceholder />} />
+          <Route path="/graph" element={<GraphPlaceholder />} />
+        </Route>
+      </Route>
+
+      <Route path="*" element={<Navigate to="/" replace />} />
+    </Routes>
   );
 }
 
-function NavBtn({ active, onClick, children }: {
-  active: boolean;
-  onClick: () => void;
-  children: React.ReactNode;
-}) {
+function OAuthCallback() {
+  const params = new URLSearchParams(window.location.search);
+  const accessToken = params.get("access_token");
+  const refreshToken = params.get("refresh_token");
+
+  if (accessToken) {
+    localStorage.setItem("access_token", accessToken);
+    if (refreshToken) localStorage.setItem("refresh_token", refreshToken);
+  }
+
+  return <Navigate to="/" replace />;
+}
+
+export default function App() {
   return (
-    <button
-      onClick={onClick}
-      style={{
-        padding: "6px 14px",
-        borderRadius: 8,
-        border: "none",
-        background: active ? "#6366f1" : "transparent",
-        color: active ? "#fff" : "#6b7280",
-        fontWeight: active ? 600 : 400,
-        fontSize: 14,
-        cursor: "pointer",
-      }}
-    >
-      {children}
-    </button>
+    <BrowserRouter>
+      <AuthProvider>
+        <AppRoutes />
+      </AuthProvider>
+    </BrowserRouter>
   );
 }
