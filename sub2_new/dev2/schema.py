@@ -110,8 +110,8 @@ class Issue(BaseModel):
     status: Literal["Open", "Accepted", "False Positive"] = "Open"
     similar_issues: list[dict] = []
     # ── M4 매핑 필드 (신규, 모두 optional) ──────────────────────────────────────
-    concept: str = ""                        # 상위 보안 개념명. 예: "SQL Injection"
-    mistake_type: str = ""                   # 하위 실수 유형. 예: "raw_query"
+    keyword: str = ""                        # 상위 보안 개념명. 예: "SQL Injection"
+    sub_category: str = ""                   # 하위 실수 유형. 예: "raw_query"
     concept_id: str = ""                     # 그래프 DB Concept ID. 예: "sql_injection"
     mistake_type_concept_id: str = ""        # 하위 ID. 예: "sql_injection.raw_query"
     confidence_score: float = 0.0            # 분류 신뢰도 0.0~1.0

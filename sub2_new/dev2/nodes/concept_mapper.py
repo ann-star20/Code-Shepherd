@@ -29,53 +29,53 @@ from dev2.schema import LearningContext
 RULE_CONCEPT_MAP: dict[str, dict] = {
     # SQL Injection
     "B608": {
-        "concept": "SQL Injection",
-        "mistake_type": "raw_query",
+        "keyword": "SQL Injection",
+        "sub_category": "raw_query",
         "concept_id": "sql_injection",
         "mistake_type_concept_id": "sql_injection.raw_query",
         "confidence_score": 0.92,
     },
     "SEC-B608": {
-        "concept": "SQL Injection",
-        "mistake_type": "raw_query",
+        "keyword": "SQL Injection",
+        "sub_category": "raw_query",
         "concept_id": "sql_injection",
         "mistake_type_concept_id": "sql_injection.raw_query",
         "confidence_score": 0.92,
     },
     # XSS
     "B703": {  # Django mark_safe
-        "concept": "XSS",
-        "mistake_type": "mark_safe_misuse",
+        "keyword": "XSS",
+        "sub_category": "mark_safe_misuse",
         "concept_id": "xss",
         "mistake_type_concept_id": "xss.mark_safe_misuse",
         "confidence_score": 0.90,
     },
     "B308": {  # mark_safe
-        "concept": "XSS",
-        "mistake_type": "mark_safe_misuse",
+        "keyword": "XSS",
+        "sub_category": "mark_safe_misuse",
         "concept_id": "xss",
         "mistake_type_concept_id": "xss.mark_safe_misuse",
         "confidence_score": 0.88,
     },
     # CSRF
     "B506": {
-        "concept": "CSRF",
-        "mistake_type": "csrf_exempt_misuse",
+        "keyword": "CSRF",
+        "sub_category": "csrf_exempt_misuse",
         "concept_id": "csrf",
         "mistake_type_concept_id": "csrf.csrf_exempt_misuse",
         "confidence_score": 0.88,
     },
     # 인증/인가
     "B105": {  # hardcoded password
-        "concept": "AUTH_VULNERABILITY",
-        "mistake_type": "hardcoded_credential",
+        "keyword": "AUTH_VULNERABILITY",
+        "sub_category": "hardcoded_credential",
         "concept_id": "auth_vulnerability",
         "mistake_type_concept_id": "auth_vulnerability.hardcoded_credential",
         "confidence_score": 0.95,
     },
     "B106": {
-        "concept": "AUTH_VULNERABILITY",
-        "mistake_type": "hardcoded_credential",
+        "keyword": "AUTH_VULNERABILITY",
+        "sub_category": "hardcoded_credential",
         "concept_id": "auth_vulnerability",
         "mistake_type_concept_id": "auth_vulnerability.hardcoded_credential",
         "confidence_score": 0.95,
@@ -86,57 +86,57 @@ RULE_CONCEPT_MAP: dict[str, dict] = {
 # (compiled pattern, mapping dict) 리스트 — 순서대로 매칭
 _MESSAGE_PATTERNS: list[tuple[re.Pattern, dict]] = [
     (re.compile(r"sql\s*inject|parameteriz|raw.query|string.format.*sql|%.*sql", re.I), {
-        "concept": "SQL Injection",
-        "mistake_type": "no_parameterize",
+        "keyword": "SQL Injection",
+        "sub_category": "no_parameterize",
         "concept_id": "sql_injection",
         "mistake_type_concept_id": "sql_injection.no_parameterize",
         "confidence_score": 0.75,
     }),
     (re.compile(r"mark_safe|safe\s+filter|autoescape.*off|innerHTML|inner_html", re.I), {
-        "concept": "XSS",
-        "mistake_type": "mark_safe_misuse",
+        "keyword": "XSS",
+        "sub_category": "mark_safe_misuse",
         "concept_id": "xss",
         "mistake_type_concept_id": "xss.mark_safe_misuse",
         "confidence_score": 0.78,
     }),
     (re.compile(r"xss|cross.site.script", re.I), {
-        "concept": "XSS",
-        "mistake_type": "general",
+        "keyword": "XSS",
+        "sub_category": "general",
         "concept_id": "xss",
         "mistake_type_concept_id": "xss.general",
         "confidence_score": 0.65,
     }),
     (re.compile(r"csrf_exempt|csrf.token|cross.site.request", re.I), {
-        "concept": "CSRF",
-        "mistake_type": "csrf_exempt_misuse",
+        "keyword": "CSRF",
+        "sub_category": "csrf_exempt_misuse",
         "concept_id": "csrf",
         "mistake_type_concept_id": "csrf.csrf_exempt_misuse",
         "confidence_score": 0.80,
     }),
     (re.compile(r"csrf", re.I), {
-        "concept": "CSRF",
-        "mistake_type": "general",
+        "keyword": "CSRF",
+        "sub_category": "general",
         "concept_id": "csrf",
         "mistake_type_concept_id": "csrf.general",
         "confidence_score": 0.60,
     }),
     (re.compile(r"login_required|permission.required|is_authenticated|@login", re.I), {
-        "concept": "AUTH_VULNERABILITY",
-        "mistake_type": "no_login_required",
+        "keyword": "AUTH_VULNERABILITY",
+        "sub_category": "no_login_required",
         "concept_id": "auth_vulnerability",
         "mistake_type_concept_id": "auth_vulnerability.no_login_required",
         "confidence_score": 0.82,
     }),
     (re.compile(r"direct.object|insecure.*access|object.*permission", re.I), {
-        "concept": "AUTH_VULNERABILITY",
-        "mistake_type": "insecure_direct_object",
+        "keyword": "AUTH_VULNERABILITY",
+        "sub_category": "insecure_direct_object",
         "concept_id": "auth_vulnerability",
         "mistake_type_concept_id": "auth_vulnerability.insecure_direct_object",
         "confidence_score": 0.72,
     }),
     (re.compile(r"hardcoded.password|hardcoded.secret|hardcoded.credential", re.I), {
-        "concept": "AUTH_VULNERABILITY",
-        "mistake_type": "hardcoded_credential",
+        "keyword": "AUTH_VULNERABILITY",
+        "sub_category": "hardcoded_credential",
         "concept_id": "auth_vulnerability",
         "mistake_type_concept_id": "auth_vulnerability.hardcoded_credential",
         "confidence_score": 0.85,
@@ -160,9 +160,9 @@ def _lookup_concept(rule_id: str, message: str) -> dict:
     for pattern, mapping in _MESSAGE_PATTERNS:
         if pattern.search(message):
             result = mapping.copy()
-            # confidence < 0.8 → mistake_type을 "general"로 강등
+            # confidence < 0.8 → sub_category를 "general"로 강등
             if result["confidence_score"] < _CONFIDENCE_THRESHOLD:
-                result["mistake_type"] = "general"
+                result["sub_category"] = "general"
                 result["mistake_type_concept_id"] = f"{result['concept_id']}.general"
             return result
 
@@ -296,15 +296,15 @@ def _collect_file_lines(pr_diff: str, target_file: str) -> list[tuple[int, str]]
     return lines
 
 
-def _build_context_summary(concept: str, message: str) -> str:
+def _build_context_summary(keyword: str, message: str) -> str:
     """
     규칙 기반 맥락 요약 생성 (LLM 호출 없음).
 
-    concept 매핑이 있으면 사전 정의 문장을, 없으면 message 기반 문장을,
+    keyword 매핑이 있으면 사전 정의 문장을, 없으면 message 기반 문장을,
     둘 다 없으면 일반 문장을 반환한다. 절대 빈 문자열을 반환하지 않는다.
     """
-    if concept and concept in _CONTEXT_SUMMARY_BY_CONCEPT:
-        return _CONTEXT_SUMMARY_BY_CONCEPT[concept]
+    if keyword and keyword in _CONTEXT_SUMMARY_BY_CONCEPT:
+        return _CONTEXT_SUMMARY_BY_CONCEPT[keyword]
     if message:
         return f"{message.strip()} — 정적 분석/보안 스캔에서 지적된 코드 맥락입니다."
     return "정적 분석/보안 스캔에서 지적된 코드 맥락입니다."
@@ -315,7 +315,7 @@ def build_code_context(
     target_file: str,
     target_line: int,
     code_snippet: str,
-    concept: str,
+    keyword: str,
     message: str,
 ) -> dict:
     """
@@ -353,7 +353,7 @@ def build_code_context(
         "context_before": before,
         "issue_line": issue_line,
         "context_after": after,
-        "context_summary": _build_context_summary(concept, message),
+        "context_summary": _build_context_summary(keyword, message),
     }
 
 
@@ -376,7 +376,7 @@ def _detect(text: str, *needles: str) -> bool:
 
 def build_taxonomy(
     rule_id: str,
-    mistake_type: str,
+    sub_category: str,
     message: str,
     code_snippet: str,
     issue_type: str,
@@ -400,30 +400,30 @@ def build_taxonomy(
         }
 
     # ── SQL Injection ────────────────────────────────────────────────────────
-    if rid == "B608" or mistake_type == "raw_query":
+    if rid == "B608" or sub_category == "raw_query":
         return tx("Security", "Injection", "SQL Injection", "Raw Query String Formatting")
-    if mistake_type == "no_parameterize":
+    if sub_category == "no_parameterize":
         return tx("Security", "Injection", "SQL Injection", "Missing Parameterized Query")
 
     # ── XSS ──────────────────────────────────────────────────────────────────
-    if _detect(text, "mark_safe") or mistake_type == "mark_safe_misuse":
+    if _detect(text, "mark_safe") or sub_category == "mark_safe_misuse":
         return tx("Security", "XSS", "Cross-Site Scripting", "mark_safe Misuse")
-    if _detect(text, "|safe", "| safe") or mistake_type == "safe_filter_misuse":
+    if _detect(text, "|safe", "| safe") or sub_category == "safe_filter_misuse":
         return tx("Security", "XSS", "Cross-Site Scripting", "Template Safe Filter Misuse")
-    if _detect(text, "innerHTML") or mistake_type == "inner_html_direct":
+    if _detect(text, "innerHTML") or sub_category == "inner_html_direct":
         return tx("Security", "XSS", "Cross-Site Scripting", "Direct innerHTML Assignment")
 
     # ── CSRF ─────────────────────────────────────────────────────────────────
-    if _detect(text, "csrf_exempt") or mistake_type == "csrf_exempt_misuse":
+    if _detect(text, "csrf_exempt") or sub_category == "csrf_exempt_misuse":
         return tx("Security", "CSRF", "Cross-Site Request Forgery", "csrf_exempt Misuse")
-    if mistake_type == "no_csrf_token":
+    if sub_category == "no_csrf_token":
         return tx("Security", "CSRF", "Cross-Site Request Forgery", "Missing CSRF Token")
 
     # ── 인증 / 인가 ───────────────────────────────────────────────────────────
-    if mistake_type == "no_login_required":
+    if sub_category == "no_login_required":
         return tx("Security", "Authentication & Authorization",
                   "Missing Authentication Check", "Missing login_required")
-    if mistake_type == "no_permission_check":
+    if sub_category == "no_permission_check":
         return tx("Security", "Authentication & Authorization",
                   "Authorization Bypass", "Missing Object Permission Check")
 
@@ -512,15 +512,15 @@ def enrich_with_concept_mapping(
 
     enriched = dict(issue)  # 원본 수정 방지
 
-    # ── concept 매핑 (이미 있으면 보존) ──────────────────────────────────────
-    if not enriched.get("concept"):
+    # ── keyword 매핑 (이미 있으면 보존) ──────────────────────────────────────
+    if not enriched.get("keyword"):
         mapping = _lookup_concept(rule_id, message)
         snippet = extract_snippet(pr_diff, file, line)
         if not snippet:
             snippet = "snippet_unavailable"
         enriched.update({
-            "concept":                 mapping.get("concept", ""),
-            "mistake_type":            mapping.get("mistake_type", ""),
+            "keyword":                 mapping.get("keyword", ""),
+            "sub_category":            mapping.get("sub_category", ""),
             "concept_id":              mapping.get("concept_id", ""),
             "mistake_type_concept_id": mapping.get("mistake_type_concept_id", ""),
             "confidence_score":        mapping.get("confidence_score", 0.0),
@@ -528,21 +528,21 @@ def enrich_with_concept_mapping(
             "learning_context":        infer_learning_context(file, tech_stack),
         })
 
-    # 이후 단계에서 쓸 확정값 (concept이 미리 있던 경우도 안전하게 조회)
-    concept = enriched.get("concept", "")
-    mistake_type = enriched.get("mistake_type", "")
+    # 이후 단계에서 쓸 확정값 (keyword가 미리 있던 경우도 안전하게 조회)
+    keyword = enriched.get("keyword", "")
+    sub_category = enriched.get("sub_category", "")
     snippet = enriched.get("code_snippet") or extract_snippet(pr_diff, file, line)
     if not snippet:
         snippet = "snippet_unavailable"
 
     # ── code_context (M4 개인화 피드백용) ────────────────────────────────────
     enriched["code_context"] = build_code_context(
-        pr_diff, file, line, snippet, concept, message,
+        pr_diff, file, line, snippet, keyword, message,
     )
 
     # ── taxonomy (M4 개인화 피드백용) ────────────────────────────────────────
     enriched["taxonomy"] = build_taxonomy(
-        rule_id, mistake_type, message, snippet, issue_type,
+        rule_id, sub_category, message, snippet, issue_type,
         enriched["code_context"]["issue_line"],
     )
 

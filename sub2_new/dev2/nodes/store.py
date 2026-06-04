@@ -60,7 +60,7 @@ _ISSUE_FIELDS = frozenset({
     "severity", "issue_type", "line", "file", "message", "rule_id",
     "suggestion", "resolution_example", "status", "similar_issues",
     # M4 매핑 필드 (concept_mapper가 채움)
-    "concept", "mistake_type", "concept_id", "mistake_type_concept_id",
+    "keyword", "sub_category", "concept_id", "mistake_type_concept_id",
     "confidence_score", "code_snippet", "learning_context",
     # M4 개인화 피드백용 필드 (concept_mapper가 채움)
     "code_context", "taxonomy",

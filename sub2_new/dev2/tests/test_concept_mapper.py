@@ -27,37 +27,37 @@ from dev2.schema import (
 class TestLookupConcept:
     def test_b608_maps_to_sql_injection(self):
         result = _lookup_concept("B608", "SQL 인젝션 가능성")
-        assert result["concept"] == "SQL Injection"
-        assert result["mistake_type"] == "raw_query"
+        assert result["keyword"] == "SQL Injection"
+        assert result["sub_category"] == "raw_query"
         assert result["concept_id"] == "sql_injection"
         assert result["mistake_type_concept_id"] == "sql_injection.raw_query"
         assert result["confidence_score"] >= 0.9
 
     def test_b703_maps_to_xss(self):
         result = _lookup_concept("B703", "Django mark_safe 사용")
-        assert result["concept"] == "XSS"
-        assert result["mistake_type"] == "mark_safe_misuse"
+        assert result["keyword"] == "XSS"
+        assert result["sub_category"] == "mark_safe_misuse"
 
     def test_b506_maps_to_csrf(self):
         result = _lookup_concept("B506", "CSRF exempt 사용")
-        assert result["concept"] == "CSRF"
-        assert result["mistake_type"] == "csrf_exempt_misuse"
+        assert result["keyword"] == "CSRF"
+        assert result["sub_category"] == "csrf_exempt_misuse"
 
     def test_b105_maps_to_auth_vulnerability(self):
         result = _lookup_concept("B105", "하드코딩된 비밀번호")
-        assert result["concept"] == "AUTH_VULNERABILITY"
+        assert result["keyword"] == "AUTH_VULNERABILITY"
         assert result["confidence_score"] >= 0.9
 
     def test_unknown_rule_falls_back_to_message_pattern(self):
         # rule_id 없지만 message에 SQL injection 패턴 있음
         result = _lookup_concept("UNKNOWN-999", "parameterized query 미사용으로 SQL 인젝션 가능")
-        assert result["concept"] == "SQL Injection"
+        assert result["keyword"] == "SQL Injection"
 
     def test_low_confidence_message_gets_general_mistake_type(self):
-        # confidence < 0.8인 패턴은 mistake_type = "general"
+        # confidence < 0.8인 패턴은 sub_category = "general"
         result = _lookup_concept("UNKNOWN", "XSS 가능성 있음")
-        assert result["concept"] == "XSS"
-        assert result["mistake_type"] == "general"
+        assert result["keyword"] == "XSS"
+        assert result["sub_category"] == "general"
 
     def test_unmapped_returns_empty(self):
         result = _lookup_concept("SA-E501", "줄 너무 길다")
@@ -78,7 +78,7 @@ class TestConfidenceThreshold:
         # XSS 패턴 중 confidence 낮은 것
         result = _lookup_concept("UNKNOWN", "xss 위험")
         assert result["confidence_score"] < 0.8
-        assert result["mistake_type"] == "general"
+        assert result["sub_category"] == "general"
         assert result["mistake_type_concept_id"].endswith(".general")
 
 
@@ -176,8 +176,8 @@ class TestEnrichWithConceptMapping:
 
     def test_b608_gets_sql_injection_concept(self):
         result = enrich_with_concept_mapping(self.BASE_ISSUE, self.SAMPLE_DIFF, ["django"])
-        assert result["concept"] == "SQL Injection"
-        assert result["mistake_type"] == "raw_query"
+        assert result["keyword"] == "SQL Injection"
+        assert result["sub_category"] == "raw_query"
         assert result["concept_id"] == "sql_injection"
         assert result["mistake_type_concept_id"] == "sql_injection.raw_query"
 
@@ -215,10 +215,10 @@ class TestEnrichWithConceptMapping:
         assert result["llm_judged"] is True  # 내부 필드도 유지
 
     def test_already_mapped_issue_not_overwritten(self):
-        # concept이 이미 있으면 덮어쓰지 않음
-        issue_with_concept = {**self.BASE_ISSUE, "concept": "CUSTOM_CONCEPT"}
-        result = enrich_with_concept_mapping(issue_with_concept, "", [])
-        assert result["concept"] == "CUSTOM_CONCEPT"
+        # keyword가 이미 있으면 덮어쓰지 않음
+        issue_with_keyword = {**self.BASE_ISSUE, "keyword": "CUSTOM_CONCEPT"}
+        result = enrich_with_concept_mapping(issue_with_keyword, "", [])
+        assert result["keyword"] == "CUSTOM_CONCEPT"
 
     def test_unmapped_issue_has_empty_concept(self):
         lint_issue = {
@@ -228,7 +228,7 @@ class TestEnrichWithConceptMapping:
             "severity": "Minor",
         }
         result = enrich_with_concept_mapping(lint_issue, "", [])
-        assert result["concept"] == ""
+        assert result["keyword"] == ""
         assert result["confidence_score"] == 0.0
 
 
@@ -246,8 +246,8 @@ class TestAgentOutputPydantic:
             message="SQL 인젝션",
             rule_id="B608",
             suggestion="파라미터화된 쿼리",
-            concept="SQL Injection",
-            mistake_type="raw_query",
+            keyword="SQL Injection",
+            sub_category="raw_query",
             concept_id="sql_injection",
             mistake_type_concept_id="sql_injection.raw_query",
             confidence_score=0.92,
@@ -258,7 +258,7 @@ class TestAgentOutputPydantic:
                 domain_context="ecommerce",
             ),
         )
-        assert issue.concept == "SQL Injection"
+        assert issue.keyword == "SQL Injection"
         assert issue.learning_context.framework == "django"
 
     def test_issue_model_dump_includes_m4_fields(self):
@@ -274,8 +274,8 @@ class TestAgentOutputPydantic:
         )
         dumped = issue.model_dump()
         # M4 필드가 model_dump에 포함돼야 함
-        assert "concept" in dumped
-        assert "mistake_type" in dumped
+        assert "keyword" in dumped
+        assert "sub_category" in dumped
         assert "confidence_score" in dumped
         assert "code_snippet" in dumped
         assert "learning_context" in dumped
@@ -465,7 +465,7 @@ diff --git a/src/views.py b/src/views.py
         assert result["rule_id"] == "B608"
         assert result["llm_judged"] is True
         # 기존 M4 매핑 필드
-        assert result["concept"] == "SQL Injection"
+        assert result["keyword"] == "SQL Injection"
         assert result["code_snippet"] != ""
         assert isinstance(result["learning_context"], LearningContext)
         # 신규 M4 피드백 필드
@@ -478,7 +478,7 @@ diff --git a/src/views.py b/src/views.py
         fields = {
             "severity", "issue_type", "line", "file", "message", "rule_id",
             "suggestion", "resolution_example", "status", "similar_issues",
-            "concept", "mistake_type", "concept_id", "mistake_type_concept_id",
+            "keyword", "sub_category", "concept_id", "mistake_type_concept_id",
             "confidence_score", "code_snippet", "learning_context",
             "code_context", "taxonomy",
         }

@@ -292,7 +292,7 @@ async def llm_judge_node(state: Dev2State) -> dict:
             judged.append(result)
 
     # ── M4 개념 매핑 적용 ────────────────────────────────────────────────────────
-    # severity 재판단 완료 후 concept/mistake_type/code_snippet/learning_context 부여
+    # severity 재판단 완료 후 keyword/sub_category/code_snippet/learning_context 부여
     pr_diff: str = state.get("pr_diff", "")  # type: ignore[assignment]
     judged = [
         enrich_with_concept_mapping(j, pr_diff, tech_stack)
@@ -303,10 +303,10 @@ async def llm_judge_node(state: Dev2State) -> dict:
     llm_called = sum(1 for j in judged if j.get("llm_judged"))
     llm_skipped = sum(1 for j in judged if j.get("llm_model") is None)
     llm_fallback = sum(1 for j in judged if not j.get("llm_judged") and j.get("llm_model") is not None)
-    concept_mapped = sum(1 for j in judged if j.get("concept"))
+    concept_mapped = sum(1 for j in judged if j.get("keyword"))
 
     logger.info(
-        "llm_judge_node 완료: 총 %d개 — LLM 호출 %d개 / Minor 생략 %d개 / fallback %d개 / concept 매핑 %d개",
+        "llm_judge_node 완료: 총 %d개 — LLM 호출 %d개 / Minor 생략 %d개 / fallback %d개 / keyword 매핑 %d개",
         len(judged), llm_called, llm_skipped, llm_fallback, concept_mapped,
     )
 
