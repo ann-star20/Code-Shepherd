@@ -18,7 +18,7 @@ def _pg_dsn() -> str:
 @pytest.fixture
 async def asyncpg_pool():
     """asyncpg 커넥션 풀 — T06 레이스 컨디션 통합 테스트용."""
-    pool = await asyncpg.create_pool(_pg_dsn(), min_size=2, max_size=5)
+    pool = await asyncpg.create_pool(_pg_dsn(), min_size=2, max_size=5, ssl=False)
     yield pool
     await pool.close()
 
