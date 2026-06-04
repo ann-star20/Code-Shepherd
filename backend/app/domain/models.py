@@ -1,4 +1,5 @@
 """Domain models — 프레임워크 무관 순수 Python/Pydantic 엔티티."""
+
 import hashlib
 import re
 from enum import Enum
@@ -9,32 +10,37 @@ from pydantic import BaseModel, field_validator
 
 # ── 상태 Enum ──────────────────────────────────────────────────────────────
 
+
 class PipelineState(str, Enum):
     """documents.state 전이: PENDING→CRAWLING→EXTRACTED→APPROVED→COMMITTED|FAILED"""
-    PENDING    = "PENDING"
-    CRAWLING   = "CRAWLING"
-    EXTRACTED  = "EXTRACTED"
-    APPROVED   = "APPROVED"
-    COMMITTED  = "COMMITTED"
-    FAILED     = "FAILED"
+
+    PENDING = "PENDING"
+    CRAWLING = "CRAWLING"
+    EXTRACTED = "EXTRACTED"
+    APPROVED = "APPROVED"
+    COMMITTED = "COMMITTED"
+    FAILED = "FAILED"
 
 
 class StagingState(str, Enum):
     """staging_concepts.state 전이: DRAFT→APPROVED→COMMITTED | REJECTED"""
-    DRAFT      = "DRAFT"
-    APPROVED   = "APPROVED"
-    COMMITTED  = "COMMITTED"
-    REJECTED   = "REJECTED"
+
+    DRAFT = "DRAFT"
+    APPROVED = "APPROVED"
+    COMMITTED = "COMMITTED"
+    REJECTED = "REJECTED"
 
 
 class ConceptDomain(str, Enum):
     """LLM 추출 결과의 도메인 분류."""
-    SECURITY    = "security"
+
+    SECURITY = "security"
     PERFORMANCE = "performance"
-    BOTH        = "both"
+    BOTH = "both"
 
 
 # ── LLM 추출 결과 스키마 ────────────────────────────────────────────────────
+
 
 class ConceptExtractionSchema(BaseModel):
     """Extractor Agent가 Gemini로부터 받는 구조화 출력 스키마 (PRD §3.3.3).
@@ -43,18 +49,19 @@ class ConceptExtractionSchema(BaseModel):
     선택 필드: cwe_id, owasp_id, concept_type, aliases, security_mechanisms,
                affected_components, config_properties, root_cause
     """
-    concept_name:         str
-    concept_domain:       ConceptDomain
-    severity:             str
-    description_ko:       str
-    concept_type:         str | None = None
-    cwe_id:               str | None = None
-    owasp_id:             str | None = None
-    aliases:              list[str] = []
-    security_mechanisms:  list[str] = []
-    affected_components:  list[str] = []
-    config_properties:    list[dict] = []
-    root_cause:           str | None = None
+
+    concept_name: str
+    concept_domain: ConceptDomain
+    severity: str
+    description_ko: str
+    concept_type: str | None = None
+    cwe_id: str | None = None
+    owasp_id: str | None = None
+    aliases: list[str] = []
+    security_mechanisms: list[str] = []
+    affected_components: list[str] = []
+    config_properties: list[dict] = []
+    root_cause: str | None = None
 
     @field_validator("severity")
     @classmethod
@@ -66,6 +73,7 @@ class ConceptExtractionSchema(BaseModel):
 
 
 # ── 마스터 키 생성 ──────────────────────────────────────────────────────────
+
 
 def build_doc_id(prefix: str, url: str, content: str = "", etag: str = "") -> str:
     """문서 고유 식별자를 생성한다 (PRD §3.1.4).

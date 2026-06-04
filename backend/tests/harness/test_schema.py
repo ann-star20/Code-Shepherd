@@ -3,15 +3,17 @@
 T03: documents UPSERT 멱등성 — 동일 doc_id를 두 번 삽입해도 1행만 존재
 T04: Neo4j Tag Node MERGE 멱등성 — 동일 Cypher를 두 번 실행해도 노드 1개만 존재
 """
+
 import uuid
-import pytest
 
 
 # ── T03: PostgreSQL UPSERT 멱등성 ──────────────────────────────────────────
 
+
 def _ensure_tables(cursor):
     """테스트 실행 전 테이블이 없으면 생성."""
-    cursor.execute("""
+    cursor.execute(
+        """
         CREATE TABLE IF NOT EXISTS documents (
             id          SERIAL PRIMARY KEY,
             doc_id      VARCHAR(255) UNIQUE NOT NULL,
@@ -25,7 +27,8 @@ def _ensure_tables(cursor):
             created_at  TIMESTAMPTZ NOT NULL DEFAULT NOW(),
             updated_at  TIMESTAMPTZ NOT NULL DEFAULT NOW()
         )
-    """)
+    """
+    )
 
 
 def test_T03_document_upsert_idempotency(pg_cursor):
@@ -61,7 +64,9 @@ def test_T03_document_upsert_idempotency(pg_cursor):
     assert count == 1, f"UPSERT 후 행이 {count}개여야 1개"
 
     # Assert: 2회차 updated_at >= 1회차
-    assert second_updated >= first_updated, "2회차 updated_at이 1회차보다 이전일 수 없음"
+    assert (
+        second_updated >= first_updated
+    ), "2회차 updated_at이 1회차보다 이전일 수 없음"
 
 
 def test_T03_document_upsert_url_update(pg_cursor):

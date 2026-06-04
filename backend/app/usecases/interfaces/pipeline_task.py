@@ -1,4 +1,5 @@
 """PipelineTask Protocol — BackgroundTasks/Celery 교체 가능 추상 계약 (PRD §14.1)."""
+
 from typing import Protocol, runtime_checkable
 
 

@@ -3,6 +3,7 @@
 asyncio.gather + Semaphore(GEMINI_RPM_LIMIT)로 병렬 URL 처리.
 PipelineTask 프로토콜을 따르는 구현체를 주입받아 실행한다.
 """
+
 import asyncio
 from typing import Sequence
 

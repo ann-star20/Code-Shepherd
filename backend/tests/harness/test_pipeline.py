@@ -3,6 +3,7 @@
 T05: MockPipelineTask가 PipelineTask 프로토콜을 만족한다 (isinstance)
 T08: Semaphore(N)이 최대 N개 동시 실행을 강제한다
 """
+
 import asyncio
 import pytest
 
@@ -11,6 +12,7 @@ from app.usecases.run_pipeline import run_pipeline_batch, GEMINI_RPM_LIMIT
 
 
 # ── 테스트용 구현체 ────────────────────────────────────────────────────────
+
 
 class MockPipelineTask:
     """인메모리 실행 추적 — 실제 크롤/추출 없음."""
@@ -30,13 +32,16 @@ class MockPipelineTask:
 
 # ── T05: Protocol 준수 ────────────────────────────────────────────────────
 
+
 def test_T05_mock_task_satisfies_protocol():
     """Arrange: MockPipelineTask 인스턴스.
     Act: isinstance(task, PipelineTask).
     Assert: True — 구조적 서브타이핑 통과.
     """
     task = MockPipelineTask()
-    assert isinstance(task, PipelineTask), "MockPipelineTask는 PipelineTask Protocol을 충족해야 함"
+    assert isinstance(
+        task, PipelineTask
+    ), "MockPipelineTask는 PipelineTask Protocol을 충족해야 함"
 
 
 def test_T05_protocol_requires_execute():
@@ -44,6 +49,7 @@ def test_T05_protocol_requires_execute():
     Act: isinstance 검사.
     Assert: False — Protocol 불충족.
     """
+
     class NoExecute:
         pass
 
@@ -51,6 +57,7 @@ def test_T05_protocol_requires_execute():
 
 
 # ── T08: Semaphore 동시성 제한 ────────────────────────────────────────────
+
 
 @pytest.mark.anyio
 async def test_T08_semaphore_limits_concurrency():
@@ -71,7 +78,9 @@ async def test_T08_semaphore_limits_concurrency():
             await asyncio.sleep(0.01)
             active -= 1
 
-    pairs = [(f"https://example.com/{i}", f"EXT_url{i}_abc123{i:02d}") for i in range(5)]
+    pairs = [
+        (f"https://example.com/{i}", f"EXT_url{i}_abc123{i:02d}") for i in range(5)
+    ]
     results = await run_pipeline_batch("sess-001", pairs, CountingTask(), semaphore)
 
     assert all(r is None for r in results), "모든 태스크가 성공해야 함"
@@ -105,17 +114,17 @@ async def test_T08_partial_failure_returns_exceptions():
     fail_id = "EXT_fail_00000001"
     task = MockPipelineTask(fail_doc_ids={fail_id})
     pairs = [
-        ("https://example.com/ok",   "EXT_ok_00000001"),
+        ("https://example.com/ok", "EXT_ok_00000001"),
         ("https://example.com/fail", fail_id),
-        ("https://example.com/ok2",  "EXT_ok_00000002"),
+        ("https://example.com/ok2", "EXT_ok_00000002"),
     ]
 
     results = await run_pipeline_batch("sess-003", pairs, task)
 
     assert len(results) == 3
-    ok_results   = [r for r in results if r is None]
+    ok_results = [r for r in results if r is None]
     fail_results = [r for r in results if isinstance(r, Exception)]
-    assert len(ok_results)   == 2
+    assert len(ok_results) == 2
     assert len(fail_results) == 1
 
 
@@ -126,7 +135,10 @@ async def test_T08_default_semaphore_uses_gemini_rpm_limit():
     Assert: GEMINI_RPM_LIMIT개 URL이 모두 실행된다.
     """
     task = MockPipelineTask()
-    pairs = [(f"https://example.com/{i}", f"EXT_url{i}_de{i:06d}") for i in range(GEMINI_RPM_LIMIT)]
+    pairs = [
+        (f"https://example.com/{i}", f"EXT_url{i}_de{i:06d}")
+        for i in range(GEMINI_RPM_LIMIT)
+    ]
 
     results = await run_pipeline_batch("sess-004", pairs, task)
 

@@ -1,4 +1,5 @@
 """MockClient — DEV 모드 고정 스펙 반환 (네트워크 I/O 없음). PRD §16.5."""
+
 from app.domain.models import ConceptExtractionSchema, ConceptDomain
 from app.infrastructure.llm.interface import ILLMClient
 

@@ -1,14 +1,20 @@
 """레이어 D — LLM 인프라 추상화 테스트 (T09~T12). PRD §16."""
-import sys, pathlib
+
+import sys
+import pathlib
+
 sys.path.insert(0, str(pathlib.Path(__file__).parents[2]))
 
 import pytest
-from pydantic import ValidationError
 from app.domain.models import ConceptExtractionSchema, ConceptDomain
 from app.infrastructure.llm.interface import ILLMClient
 from app.infrastructure.llm.mock_client import MockClient
 from app.infrastructure.llm.factory import create_llm_client
-from app.infrastructure.llm.gemini_client import GeminiClient, LLMParseError, _parse_json_safely
+from app.infrastructure.llm.gemini_client import (
+    GeminiClient,
+    LLMParseError,
+    _parse_json_safely,
+)
 
 
 # ── T09: ILLMClient 인터페이스 계약 ──────────────────────────────────────────
@@ -39,9 +45,9 @@ async def test_mock_client_returns_fixed_concepts():
     assert len(results) == 4
     assert all(isinstance(r, ConceptExtractionSchema) for r in results)
     domains = {r.concept_domain for r in results}
-    assert ConceptDomain.SECURITY     in domains
-    assert ConceptDomain.PERFORMANCE  in domains
-    assert ConceptDomain.BOTH         in domains
+    assert ConceptDomain.SECURITY in domains
+    assert ConceptDomain.PERFORMANCE in domains
+    assert ConceptDomain.BOTH in domains
 
 
 def test_mock_client_tracing_disabled():
@@ -102,7 +108,7 @@ def test_parse_json_safely_invalid_json_raises():
 def test_parse_json_safely_partial_json_raises():
     """불완전한 JSON → LLMParseError 발생."""
     with pytest.raises(LLMParseError):
-        _parse_json_safely('{"concept_name": "XSS"')   # 닫는 괄호 없음
+        _parse_json_safely('{"concept_name": "XSS"')  # 닫는 괄호 없음
 
 
 # ── Mock 개념 데이터 정합성 검증 ──────────────────────────────────────────────

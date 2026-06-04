@@ -2,6 +2,7 @@
 
 SELECT FOR UPDATE SKIP LOCKED으로 동시 승인 요청 중 단 하나만 성공한다.
 """
+
 import asyncpg
 
 from app.usecases.exceptions import StagingConflictError

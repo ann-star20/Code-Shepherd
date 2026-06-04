@@ -2,6 +2,7 @@
 
 Usage: python backend/scripts/seed_neo4j.py
 """
+
 import json
 import os
 import sys
@@ -27,9 +28,9 @@ RETURN t.name AS tag
 
 
 def main():
-    uri  = os.getenv("NEO4J_URI",      "bolt://127.0.0.1:7687")
-    user = os.getenv("NEO4J_USER",     "neo4j")
-    pw   = os.getenv("NEO4J_PASSWORD", "pass1234!")
+    uri = os.getenv("NEO4J_URI", "bolt://127.0.0.1:7687")
+    user = os.getenv("NEO4J_USER", "neo4j")
+    pw = os.getenv("NEO4J_PASSWORD", "pass1234!")
 
     data = json.loads(SEED_FILE.read_text(encoding="utf-8"))
     driver = GraphDatabase.driver(uri, auth=(user, pw))

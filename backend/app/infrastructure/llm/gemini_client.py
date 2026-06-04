@@ -1,4 +1,5 @@
 """GeminiClient — PROD 모드 실제 Gemini API 호출. PRD §16.4."""
+
 from __future__ import annotations
 import json
 import re
@@ -29,7 +30,9 @@ def _parse_json_safely(raw: str) -> list[dict]:
     try:
         data = json.loads(text)
     except json.JSONDecodeError as exc:
-        raise LLMParseError(f"JSON 파싱 실패: {exc}. 원문 앞 200자: {raw[:200]}") from exc
+        raise LLMParseError(
+            f"JSON 파싱 실패: {exc}. 원문 앞 200자: {raw[:200]}"
+        ) from exc
 
     # 3. 단일 객체 → 리스트 변환
     if isinstance(data, dict):
@@ -52,6 +55,7 @@ class GeminiClient(ILLMClient):
         try:
             import google.generativeai as genai
             from langsmith import traceable  # noqa: F401
+
             genai.configure(api_key=api_key)
             self._model = genai.GenerativeModel("gemini-2.5-flash")
         except ImportError as exc:

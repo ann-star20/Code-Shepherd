@@ -1,4 +1,5 @@
 """ILLMClient — LLM 추출 클라이언트 추상 인터페이스 (DIP 계약). PRD §16.3."""
+
 from abc import ABC, abstractmethod
 from app.domain.models import ConceptExtractionSchema
 

@@ -1,4 +1,5 @@
 """pytest 픽스처 — DB 연결 픽스처 포함."""
+
 import os
 import pytest
 import psycopg2

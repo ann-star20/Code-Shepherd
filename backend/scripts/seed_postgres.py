@@ -2,6 +2,7 @@
 
 Usage: python backend/scripts/seed_postgres.py
 """
+
 import os
 import sys
 from pathlib import Path

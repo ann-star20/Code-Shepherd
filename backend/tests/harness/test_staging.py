@@ -2,6 +2,7 @@
 
 T06: 동시 approve 요청 → 단 하나만 성공, 나머지는 StagingConflictError
 """
+
 import asyncio
 import uuid
 import pytest
@@ -11,6 +12,7 @@ from app.usecases.exceptions import StagingConflictError
 
 
 # ── 테스트 헬퍼 ───────────────────────────────────────────────────────────
+
 
 async def _setup_session(conn, session_id: str, n_concepts: int = 3) -> str:
     """테스트용 document + staging_concepts(DRAFT) 행 삽입."""
@@ -43,6 +45,7 @@ async def _cleanup_session(conn, session_id: str, doc_id: str) -> None:
 
 # ── T06: 레이스 컨디션 — 단일 승인자 보장 ────────────────────────────────
 
+
 @pytest.mark.anyio
 async def test_T06_concurrent_approve_single_winner(asyncpg_pool):
     """Arrange: 3개 DRAFT 개념이 있는 세션.
@@ -66,8 +69,12 @@ async def test_T06_concurrent_approve_single_winner(asyncpg_pool):
         successes = [r for r in results if isinstance(r, int)]
         conflicts = [r for r in results if isinstance(r, StagingConflictError)]
 
-        assert len(successes) == 1, f"승인 성공이 {len(successes)}개 — 정확히 1개여야 함"
-        assert len(conflicts) == 1, f"StagingConflictError가 {len(conflicts)}개 — 정확히 1개여야 함"
+        assert (
+            len(successes) == 1
+        ), f"승인 성공이 {len(successes)}개 — 정확히 1개여야 함"
+        assert (
+            len(conflicts) == 1
+        ), f"StagingConflictError가 {len(conflicts)}개 — 정확히 1개여야 함"
         assert successes[0] == 3, f"승인된 행이 {successes[0]}개 — 3개여야 함"
 
     finally:
