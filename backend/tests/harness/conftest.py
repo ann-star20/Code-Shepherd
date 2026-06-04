@@ -4,7 +4,7 @@ import os
 import pytest
 import psycopg2
 import asyncpg
-from neo4j import GraphDatabase
+from neo4j import GraphDatabase, AsyncGraphDatabase
 
 
 def _pg_dsn() -> str:
@@ -50,6 +50,19 @@ def pg_cursor(pg_conn):
     yield cur
     pg_conn.rollback()
     cur.close()
+
+
+@pytest.fixture
+async def async_neo4j_driver():
+    """neo4j AsyncDriver — GraphWriter 통합 테스트용."""
+    uri = os.getenv("NEO4J_URI", "bolt://127.0.0.1:7687")
+    auth = (
+        os.getenv("NEO4J_USER", "neo4j"),
+        os.getenv("NEO4J_PASSWORD", "pass1234!"),
+    )
+    driver = AsyncGraphDatabase.driver(uri, auth=auth)
+    yield driver
+    await driver.close()
 
 
 @pytest.fixture(scope="session")
