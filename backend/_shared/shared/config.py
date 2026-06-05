@@ -56,6 +56,38 @@ class Settings(BaseSettings):
     neo4j_user: str = Field(default="neo4j")
     neo4j_password: str = Field(default="codeshepherd")
 
+    # LangSmith (Harness 추적)
+    langchain_tracing_v2: bool = Field(default=False)
+    langchain_api_key: str = Field(default="")
+    langchain_project: str = Field(default="onboarding-platform")
+
+    # LLM — Gemini (팀 통일 모델)
+    google_api_key: str = Field(default="")
+    gemini_model: str = Field(default="gemini-2.5-flash")
+    use_mock_llm: bool = Field(default=True)
+    openai_api_key: str = Field(default="")
+
+    # 임베딩 — Ollama bge-m3
+    ollama_base_url: str = Field(default="http://localhost:11434")
+    ollama_embedding_model: str = Field(default="bge-m3")
+    ollama_vision_model: str = Field(default="gemma3")
+    pgvector_dimension: int = Field(default=1024)
+    large_doc_chunk_threshold: int = Field(default=50)
+
+    # Storage — GCS
+    storage_backend: str = Field(default="local")   # "gcs" | "local"
+    gcs_bucket: str = Field(default="")
+    gcs_project: str = Field(default="")
+
+    # 에이전트 실행
+    agent_timeout_seconds: int = Field(default=30)
+
+    # KMS 파이프라인 품질 임계값
+    markdown_quality_threshold: float = Field(default=0.8)
+    gemini_fallback_image_ratio: float = Field(default=0.3)
+    upstage_api_key: str = Field(default="")
+    upstage_daily_limit: int = Field(default=100)
+
     @property
     def database_url(self) -> str:
         return (
