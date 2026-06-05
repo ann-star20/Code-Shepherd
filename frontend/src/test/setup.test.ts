@@ -1,11 +1,11 @@
-import { something } from "@/utils/nodeStyler";
+import { getDomainColor } from "@/utils/nodeStyler";
 import { readFileSync } from "fs";
 import { resolve } from "path";
 import { describe, it, expect } from "vitest";
 
 describe("F0 setup", () => {
   it("T_F0_alias: @/ path alias resolves without error", () => {
-    expect(something()).toBe("nodeStyler");
+    expect(getDomainColor("security")).toBe("#1D9E75");
   });
 
   it("T_F0_tailwind: globals.css contains all three @tailwind directives", () => {
