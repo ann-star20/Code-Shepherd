@@ -61,12 +61,13 @@ def _wrap_with_harness(
     stage: DocPipelineStage,
     agent_name: str,
     fn,
-    db_session_factory: async_sessionmaker[AsyncSession],
+    _factory: async_sessionmaker[AsyncSession],
     **fn_kwargs,
 ):
     """
     LangGraph 노드 함수를 AgentHarness로 감싼다.
     타임아웃 및 agent_traces 기록은 harness가 담당한다.
+    fn_kwargs에 db_session_factory를 포함하면 fn에도 전달된다 (stage6_store 등).
     """
     async def _node(state: DocPipelineState, **_) -> dict:
         trace_id = new_pipeline_trace(stage, UUID(state["doc_id"]))
@@ -74,7 +75,7 @@ def _wrap_with_harness(
             async with AgentHarness(
                 trace_id=trace_id,
                 agent_name=agent_name,
-                db_session_factory=db_session_factory,
+                db_session_factory=_factory,
                 doc_id=UUID(state["doc_id"]),
             ) as harness:
                 return await harness.run(fn, state, **fn_kwargs)
@@ -303,6 +304,7 @@ def build_pipeline(
             "StoreRouteAgent",
             stage6_store,
             db_session_factory,
+            db_session_factory=db_session_factory,
             storage=storage,
         ),
     )

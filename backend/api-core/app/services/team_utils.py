@@ -8,13 +8,19 @@ from dataclasses import dataclass
 from datetime import datetime
 
 GITHUB_REPO_PATTERN = re.compile(r"^[a-zA-Z0-9_.-]+/[a-zA-Z0-9_.-]+$")
+_GITHUB_URL_PATTERN = re.compile(
+    r"^https?://github\.com/([a-zA-Z0-9_.-]+/[a-zA-Z0-9_.-]+?)(?:\.git)?/?$"
+)
 
 
 def normalize_github_repo(value: str) -> str:
-    repo = value.strip()
+    repo = value.strip().rstrip("/")
+    url_match = _GITHUB_URL_PATTERN.match(repo)
+    if url_match:
+        repo = url_match.group(1)
     if not GITHUB_REPO_PATTERN.match(repo):
         raise ValueError(
-            "github_repo must be in 'owner/repo' format (alphanumeric, _, ., -)"
+            "github_repo must be in 'owner/repo' format (e.g. akdlemfla24-dotcom/my-repo)"
         )
     return repo
 

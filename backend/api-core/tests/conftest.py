@@ -2,6 +2,14 @@
 
 from __future__ import annotations
 
+import os
+
+# 테스트 전용 토큰 — .env의 실제 시크릿이 덮어쓰기 전에 고정값으로 설정
+os.environ["INTERNAL_SERVICE_TOKEN"] = "dev-internal-token"
+
+from shared.config import get_settings
+get_settings.cache_clear()   # lru_cache 초기화 → 위 env var 반영
+
 import pytest
 import pytest_asyncio
 from httpx import ASGITransport, AsyncClient
