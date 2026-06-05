@@ -39,6 +39,14 @@ dependencies = [
     # 텍스트 처리
     "tiktoken>=0.7.0",
     "markdown-it-py>=3.0.0",
+    # 파일 업로드
+    "python-multipart>=0.0.9",
+    # Retry / HTML 파싱
+    "tenacity>=8.2.0",
+    "beautifulsoup4>=4.12.0",
+    "lxml>=5.0.0",
+    # SQL 검증 (chat_api _validate_sql_v2)
+    "sqlglot>=23.0.0",
 ]
 
 [project.optional-dependencies]
