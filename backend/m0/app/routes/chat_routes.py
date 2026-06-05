@@ -165,7 +165,8 @@ def _validate_sql_v2(sql: str) -> bool:
 
     try:
         statements = sqlglot.parse(sql, dialect="postgres")
-    except sqlglot.errors.ParseError:
+    except sqlglot.errors.SqlglotError:
+        # ParseError + TokenError 등 sqlglot 계열 예외 모두 차단
         return False
 
     if len(statements) != 1:
@@ -176,6 +177,11 @@ def _validate_sql_v2(sql: str) -> bool:
         return False
 
     if not isinstance(stmt, exp.Select):
+        return False
+
+    # data-modifying 노드 차단 — CTE 이름을 허용 테이블명으로 위장한
+    # WITH x AS (DELETE/UPDATE/INSERT ...) SELECT ... 우회 방어
+    if next(stmt.find_all(exp.Insert, exp.Update, exp.Delete), None) is not None:
         return False
 
     if stmt.args.get("limit") is None:
