@@ -1,4 +1,5 @@
 import type { NodeStatus } from "@/types/concept";
+import type { ConceptNode } from "@/types/concept";
 import { apiClient } from "./api";
 
 export interface DiffSummary {
@@ -7,14 +8,15 @@ export interface DiffSummary {
   committed: number;
 }
 
-export interface StagingItem {
+export interface StagingRecord {
   id: string;
+  session_id?: string;
+  concept_json: ConceptNode;
   state: NodeStatus;
-  [key: string]: unknown;
 }
 
 export const stagingService = {
-  getDraft: async (sessionId: string): Promise<StagingItem[]> => {
+  getDraft: async (sessionId: string): Promise<StagingRecord[]> => {
     const { data } = await apiClient.get(`/staging/${sessionId}`);
     return data.items ?? data;
   },
