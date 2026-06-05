@@ -18,40 +18,165 @@
 
 ## 2. 시스템 아키텍처 — 모듈 연결 맵
 
-```
-                        ┌─────────────────────────────────────┐
-                        │        Module 1: Orchestrator        │
-                        │  (LangGraph StateGraph, 라우팅 허브)  │
-                        └──────────┬───────────────────────────┘
-                                   │ KMS 검색 필요 시
-              ┌────────────────────▼────────────────────┐
-              │        Module 0: KMS 지식 파이프라인      │
-              │  (문서 업로드 → 변환 → 검증 → 저장)       │
-              │  PostgreSQL + pgVector + GraphDB          │
-              └────────────────────┬────────────────────┘
-                        ▲          │ chunk_id / context 반환
-                        │          ▼
-          ┌─────────────┴──────────────────────────────────┐
-          │         asyncio.gather (병렬 실행)               │
-          ├───────────────────────┬────────────────────────┤
-          ▼                       ▼                         │
- ┌─────────────────┐   ┌──────────────────┐                │
- │   Module 2:     │   │   Module 3:      │                │
- │ 정적분석+보안    │   │ 테스트+성능분석   │                │
- │ (KMS 참조)      │   │ (KMS 참조)       │                │
- └────────┬────────┘   └────────┬─────────┘               │
-          └────────────┬────────┘                          │
-                       ▼                                   │
-          ┌─────────────────────────┐                      │
-          │   Module 4: 커리큘럼    │ (KMS 참조)           │
-          │   (이슈 기반 학습 추천)  │                      │
-          └─────────────────────────┘                      │
-                                                           │
-  ┌────────────────────────────────────────────────────────┘
-  │   Module 5: GraphDB + YouTube (독립 모듈, KMS 확장 가능)
-  │   별도 웹 UI → Neo4j Aura → 관계 그래프 + YouTube 추천
-  └──────────────────────────────────────────────────────────
-      doc_id / file_hash 공통 키로 향후 KMS 연결 가능
+```mermaid
+flowchart LR
+
+%% ── 사용자 입력 ──────────────────────────────────
+subgraph INPUT["👤 사용자 입력"]
+direction TB
+U1["🧑‍💻 신입 개발자\nGitHub PR 제출"]
+U2["📄 팀원\n사내 문서 업로드"]
+U3["💬 팀원\n자연어 질의"]
+U5["📁 Module 5\n별도 문서 업로드"]
+end
+
+%% ── Module 0: KMS 파이프라인 ─────────────────────
+subgraph MOD0["⚙️ Module 0 — KMS 사내 지식 파이프라인"]
+direction LR
+
+S1["🤖 Agent\nStage 1 · DocumentParserAgent\nUpstage → Gemini 폴백\n다중 Tool + 품질평가"]
+
+S2["🤖 Agent\nStage 2 · MarkdownValidateAgent\nretry loop ≤ 2회\n_apply_targeted_fix()"]
+
+HQ2{"Stage 2\nHITL 조건\n해당?"}
+
+HITL2["🔴 HITL ①\n품질 점수 < 0.8\n표/이미지 구조 손실\nOCR 누락/페이지 손실\n필수 섹션 누락\n\n→ 인간 수정 후 재검증"]
+
+S3["⚙️ Tool\nStage 3 · ChunkingTool\n512토큰 / overlap 128\nParent-Child 구조"]
+
+S4["⚙️ Tool\nStage 4 · ChunkValidateTool\n규칙 기반 검증"]
+
+HQ4{"Stage 4\nHITL 조건\n해당?"}
+
+HITL4["🔴 HITL ②\nChunk 길이 초과/미달\nParent-Child 연결 실패\nContext 맥락 검증 실패\nOverlap 부족\n\n→ 인간 조정 후 재검증"]
+
+S5["🧠 LLM\nStage 5 · MetadataExtractAgent\n카테고리/태그/엔티티"]
+
+S5B["🧠 LLM\nStage 5b · MetadataValidateAgent\n최종 게이트\n(검증 담당)"]
+
+HQ5{"Stage 5b\n신뢰도\n낮음?"}
+
+HITL5["🟡 HITL ③ 선택\n메타데이터 신뢰도 낮음\n카테고리 불명확\n엔티티/관계 보완 필요\n\n→ 인간 보완 후 승인"]
+
+S6["⚙️ Tool\nStage 6 · StoreRouteTool\n저장 & 라우팅"]
+
+S1 --> S2 --> HQ2
+HQ2 -- "조건 해당" --> HITL2
+HQ2 -- "Pass" --> S3
+HITL2 -- "승인 후 재처리" --> S2
+
+S3 --> S4 --> HQ4
+HQ4 -- "조건 해당" --> HITL4
+HQ4 -- "Pass" --> S5
+HITL4 -- "승인 후 재처리" --> S4
+
+S5 --> S5B --> HQ5
+HQ5 -- "신뢰도 낮음" --> HITL5
+HQ5 -- "Pass" --> S6
+HITL5 -- "보완 후 승인" --> S5B
+end
+
+%% ── 저장소 ────────────────────────────────────────
+subgraph STORE["🗄️ 저장소"]
+direction TB
+PG[("PostgreSQL\ndocuments / chunks\npr_reviews")]
+VEC[("pgVector\nchunk_embeddings\nbge-m3 1024차원")]
+GCS[("GCS\n원본 파일")]
+NEO[("Neo4j Aura\n엔티티/관계 그래프")]
+end
+
+%% ── Module 1: Orchestrator ───────────────────────
+subgraph MOD1["🎯 Module 1 — Orchestrator"]
+direction TB
+WH["⚙️ Tool\nWebhook 수신\nHMAC-SHA256 검증"]
+IC{"🤖 Agent\n의도 분류"}
+KS["⚙️ Tool\nKMS 검색\npgVector 코사인 유사도"]
+WH --> IC
+IC --> KS
+end
+
+%% ── Module 2/3: 병렬 분석 ────────────────────────
+subgraph MOD23["🔍 Module 2 / 3 — 병렬 분석 (asyncio.gather · 30초 타임아웃)"]
+direction TB
+SA["🤖 Agent\nModule 2 · 정적 분석\nESLint / Pylint"]
+SEC["🤖 Agent\nModule 2 · 보안 스캔\nSQL / XSS / CSRF / CVE"]
+TEST["🤖 Agent\nModule 3 · 테스트 검증\n커버리지 ≥ 80%"]
+PERF["🤖 Agent\nModule 3 · 성능 분석\nN+1 쿼리"]
+end
+
+%% ── Module 4: 커리큘럼 에이전트 ─────────────────
+subgraph MOD4["📚 Module 4 — 커리큘럼 에이전트"]
+direction TB
+EVAL{"🤖 Agent\n3-Way 판정"}
+LGTM["✅ LGTM\n시니어 승인 요청"]
+REWORK["🔁 Rework\n힌트 포함 재작업\n최대 3회"]
+ESC["🚨 Escalate\nCritical 즉시 에스컬레이션"]
+CURR["🧠 LLM\n커리큘럼 생성\n학습 자료 추천"]
+HIST["⚙️ Tool\n이력 저장\npr_reviews"]
+EVAL -- "나머지" --> LGTM
+EVAL -- "Major ≥ 3" --> REWORK
+EVAL -- "Critical ≥ 1" --> ESC
+EVAL --> CURR & HIST
+end
+
+%% ── Module 5 ─────────────────────────────────────
+subgraph MOD5["🕸️ Module 5 — GraphDB + YouTube (독립)"]
+direction TB
+ENT["🧠 LLM\n엔티티/관계 추출\ndoc_id 생성 필수"]
+YT["⚙️ Tool\nYouTube 추천\n키워드 기반 MVP"]
+ENT --> YT
+end
+
+%% ── 출력 ─────────────────────────────────────────
+subgraph OUTPUT["📤 출력"]
+direction TB
+GH["💬 GitHub\nPR 코멘트"]
+SL["🔔 Slack\n#team-security"]
+FE["🖥️ 프론트엔드\n대시보드"]
+end
+
+%% ── 연결 ─────────────────────────────────────────
+U2 --> S1
+S6 --> PG & VEC & GCS
+
+U1 & U3 --> WH
+KS -. "chunk_id 조회" .-> VEC
+IC -- "PR 리뷰" --> SA & SEC & TEST & PERF
+IC -- "KMS 질의" --> FE
+SA & SEC & TEST & PERF --> EVAL
+
+LGTM & REWORK --> GH
+ESC --> GH & SL
+HIST --> PG
+CURR -. "학습자료 검색" .-> VEC
+CURR --> FE
+
+U5 --> ENT
+ENT --> NEO
+YT --> FE
+
+%% ── 스타일 ───────────────────────────────────────
+style MOD0 fill:#e8f4f8,stroke:#2196F3,stroke-width:2px
+style MOD1 fill:#f3e8f8,stroke:#9C27B0,stroke-width:2px
+style MOD23 fill:#e8f8ee,stroke:#4CAF50,stroke-width:2px
+style MOD4 fill:#fff8e8,stroke:#FF9800,stroke-width:2px
+style MOD5 fill:#f8e8e8,stroke:#F44336,stroke-width:2px
+style STORE fill:#f5f5f5,stroke:#9E9E9E,stroke-width:2px
+
+style S1 fill:#dce8ff,stroke:#1565C0,stroke-width:2px
+style S2 fill:#dce8ff,stroke:#1565C0,stroke-width:2px
+style S3 fill:#e8e8e8,stroke:#616161
+style S4 fill:#e8e8e8,stroke:#616161
+style S5 fill:#f0e6ff,stroke:#6A1B9A
+style S5B fill:#f0e6ff,stroke:#6A1B9A
+style S6 fill:#e8e8e8,stroke:#616161
+
+style HITL2 fill:#ffebee,stroke:#F44336,stroke-width:2px
+style HITL4 fill:#ffebee,stroke:#F44336,stroke-width:2px
+style HITL5 fill:#fff8e1,stroke:#FF9800,stroke-width:2px
+style ESC fill:#ffebee,stroke:#F44336
+style LGTM fill:#e8f5e9,stroke:#4CAF50
+style REWORK fill:#fff3e0,stroke:#FF9800
 ```
 
 ---
