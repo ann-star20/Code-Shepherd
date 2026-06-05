@@ -1,84 +1,89 @@
--- Knowledge Graph Agent Pipeline — PostgreSQL DDL
+-- Knowledge Graph Agent Pipeline — PostgreSQL DDL v2
+-- Spec: PRD-schema.md §15.2
 -- Run: psql -h localhost -p 5433 -U postgres -d postgres -f schema.sql
 
+-- ① documents: 수집 대상 URL 메타데이터
 CREATE TABLE IF NOT EXISTS documents (
-    id          SERIAL PRIMARY KEY,
-    doc_id      VARCHAR(255) UNIQUE NOT NULL,   -- build_doc_id: PREFIX_urlpart_sha8
-    url         TEXT        NOT NULL,
-    prefix      VARCHAR(10) NOT NULL DEFAULT 'EXT',
-    status      VARCHAR(20) NOT NULL DEFAULT 'active' CHECK (status IN ('active','superseded')),
-    etag        VARCHAR(255),
-    content_hash VARCHAR(64),
-    crawled_at  TIMESTAMPTZ,
-    created_at  TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-    updated_at  TIMESTAMPTZ NOT NULL DEFAULT NOW()
+  doc_id           TEXT PRIMARY KEY,           -- PREFIX_url_hash8 마스터 키
+  source_prefix    TEXT NOT NULL,              -- EXT / KMS / ...
+  original_url     TEXT NOT NULL,              -- 원본 URL (정규화 전)
+  content_hash     CHAR(8) NOT NULL,           -- SHA-256 앞 8자리
+  etag             TEXT,                       -- HTTP ETag (우선 사용)
+  lang             TEXT,                       -- EN / KO
+  framework        TEXT,                       -- Pre-scan 추론값
+  version          TEXT,                       -- Pre-scan 추론값
+  infer_confidence REAL DEFAULT 0,             -- 추론 신뢰도 0.0~1.0
+  state            TEXT NOT NULL DEFAULT 'PENDING',  -- PENDING|CRAWLING|EXTRACTED|COMMITTED|FAILED
+  created_at       TIMESTAMPTZ DEFAULT now(),
+  updated_at       TIMESTAMPTZ,
+  CONSTRAINT documents_state_check CHECK (
+    state IN ('PENDING','CRAWLING','EXTRACTED','COMMITTED','FAILED')
+  )
 );
+CREATE INDEX IF NOT EXISTS idx_documents_prefix_state ON documents(source_prefix, state);
+CREATE INDEX IF NOT EXISTS idx_documents_url_hash     ON documents(original_url, content_hash);
 
-CREATE TABLE IF NOT EXISTS pipeline_jobs (
-    id            SERIAL PRIMARY KEY,
-    session_id    UUID        NOT NULL,
-    doc_id        VARCHAR(255) REFERENCES documents(doc_id) ON DELETE SET NULL,
-    status        VARCHAR(20) NOT NULL DEFAULT 'PENDING'
-                  CHECK (status IN ('PENDING','RUNNING','SUCCESS','FAILED')),
-    error_message TEXT,
-    retry_count   INTEGER     NOT NULL DEFAULT 0,
-    started_at    TIMESTAMPTZ,
-    failed_at     TIMESTAMPTZ,
-    completed_at  TIMESTAMPTZ,
-    created_at    TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-    updated_at    TIMESTAMPTZ NOT NULL DEFAULT NOW()
-);
-
+-- ② staging_concepts: Extractor 출력 임시 보관 (운영 DB 격리)
 CREATE TABLE IF NOT EXISTS staging_concepts (
-    id                   SERIAL PRIMARY KEY,
-    session_id           UUID         NOT NULL,
-    doc_id               VARCHAR(255) NOT NULL REFERENCES documents(doc_id),
-    concept_name         VARCHAR(255) NOT NULL,
-    concept_domain       VARCHAR(20)  NOT NULL CHECK (concept_domain IN ('security','performance','both')),
-    severity             VARCHAR(20)  NOT NULL CHECK (severity IN ('critical','high','medium','low','info')),
-    description_ko       TEXT         NOT NULL,
-    concept_type         VARCHAR(100),
-    cwe_id               VARCHAR(20),
-    owasp_id             VARCHAR(30),
-    aliases              JSONB        NOT NULL DEFAULT '[]',
-    security_mechanisms  JSONB        NOT NULL DEFAULT '[]',
-    affected_components  JSONB        NOT NULL DEFAULT '[]',
-    config_properties    JSONB        NOT NULL DEFAULT '[]',
-    root_cause           TEXT,
-    status               VARCHAR(20)  NOT NULL DEFAULT 'DRAFT'
-                         CHECK (status IN ('DRAFT','APPROVED','COMMITTED','REJECTED')),
-    reviewed_at          TIMESTAMPTZ,
-    created_at           TIMESTAMPTZ  NOT NULL DEFAULT NOW(),
-    updated_at           TIMESTAMPTZ  NOT NULL DEFAULT NOW()
+  id           UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  session_id   UUID NOT NULL,                  -- 파이프라인 실행 세션
+  doc_id       TEXT REFERENCES documents(doc_id) ON DELETE CASCADE,
+  concept_json JSONB NOT NULL,                 -- Extractor 원본 출력
+  state        TEXT NOT NULL DEFAULT 'DRAFT',  -- DRAFT|APPROVED|COMMITTED|REJECTED
+  reviewed_at  TIMESTAMPTZ,
+  committed_at TIMESTAMPTZ,
+  created_at   TIMESTAMPTZ DEFAULT now(),
+  CONSTRAINT staging_state_check CHECK (
+    state IN ('DRAFT','APPROVED','COMMITTED','REJECTED')
+  )
 );
+CREATE INDEX IF NOT EXISTS idx_staging_session_state ON staging_concepts(session_id, state);
 
+-- ③ concepts: 최종 승인 후 반영된 개념 정형 데이터
 CREATE TABLE IF NOT EXISTS concepts (
-    id                   SERIAL PRIMARY KEY,
-    concept_name         VARCHAR(255) NOT NULL,
-    concept_domain       VARCHAR(20)  NOT NULL CHECK (concept_domain IN ('security','performance','both')),
-    severity             VARCHAR(20)  NOT NULL CHECK (severity IN ('critical','high','medium','low','info')),
-    description_ko       TEXT         NOT NULL,
-    concept_type         VARCHAR(100),
-    cwe_id               VARCHAR(20),
-    owasp_id             VARCHAR(30),
-    aliases              JSONB        NOT NULL DEFAULT '[]',
-    security_mechanisms  JSONB        NOT NULL DEFAULT '[]',
-    affected_components  JSONB        NOT NULL DEFAULT '[]',
-    config_properties    JSONB        NOT NULL DEFAULT '[]',
-    root_cause           TEXT,
-    neo4j_node_id        VARCHAR(255),
-    first_seen_doc_id    VARCHAR(255),
-    last_updated_doc_id  VARCHAR(255),
-    created_at           TIMESTAMPTZ  NOT NULL DEFAULT NOW(),
-    updated_at           TIMESTAMPTZ  NOT NULL DEFAULT NOW(),
-    UNIQUE (concept_name, concept_domain)
+  id             UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  concept_name   TEXT NOT NULL,                -- Neo4j Concept.name 동일 (MERGE 키)
+  doc_id         TEXT REFERENCES documents(doc_id) ON DELETE SET NULL,
+  concept_domain TEXT NOT NULL,                -- security / performance / both
+  concept_type   TEXT,                         -- 4종 컨셉 타입
+  cwe_id         TEXT,
+  owasp_id       TEXT,
+  severity       TEXT,                         -- CRITICAL / HIGH / MEDIUM / LOW
+  description_ko TEXT,
+  aliases        TEXT[] DEFAULT '{}',
+  created_at     TIMESTAMPTZ DEFAULT now(),
+  updated_at     TIMESTAMPTZ,
+  CONSTRAINT concepts_domain_check CHECK (
+    concept_domain IN ('security','performance','both')
+  ),
+  CONSTRAINT concepts_severity_check CHECK (
+    severity IS NULL OR severity IN ('CRITICAL','HIGH','MEDIUM','LOW')
+  )
 );
+CREATE UNIQUE INDEX IF NOT EXISTS uq_concepts_name   ON concepts(concept_name);
+CREATE INDEX IF NOT EXISTS idx_concepts_domain        ON concepts(concept_domain);
+CREATE INDEX IF NOT EXISTS idx_concepts_cwe_id        ON concepts(cwe_id);
 
--- Indexes
-CREATE INDEX IF NOT EXISTS idx_pipeline_jobs_session   ON pipeline_jobs    (session_id);
-CREATE INDEX IF NOT EXISTS idx_pipeline_jobs_status    ON pipeline_jobs    (status);
-CREATE INDEX IF NOT EXISTS idx_staging_session         ON staging_concepts (session_id);
-CREATE INDEX IF NOT EXISTS idx_staging_status          ON staging_concepts (status);
-CREATE INDEX IF NOT EXISTS idx_staging_doc             ON staging_concepts (doc_id);
-CREATE INDEX IF NOT EXISTS idx_concepts_owasp          ON concepts         (owasp_id);
-CREATE INDEX IF NOT EXISTS idx_concepts_cwe            ON concepts         (cwe_id);
+-- ④ pipeline_logs: 에이전트 단계별 로그 (SSE 원본)
+CREATE TABLE IF NOT EXISTS pipeline_logs (
+  id         UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  doc_id     TEXT REFERENCES documents(doc_id) ON DELETE CASCADE,
+  session_id UUID,
+  agent      TEXT NOT NULL,   -- Input/Crawler/Extractor/Writer/Resolver
+  level      TEXT NOT NULL,   -- INFO / WARNING / ERROR
+  message    TEXT NOT NULL,
+  created_at TIMESTAMPTZ DEFAULT now(),
+  CONSTRAINT logs_level_check CHECK (level IN ('INFO','WARNING','ERROR'))
+);
+CREATE INDEX IF NOT EXISTS idx_logs_doc_session ON pipeline_logs(doc_id, session_id);
+
+-- ⑤ concept_snapshots: Extractor 원본 JSON (감사 추적·LangSmith 피드백)
+CREATE TABLE IF NOT EXISTS concept_snapshots (
+  id               UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  doc_id           TEXT REFERENCES documents(doc_id) ON DELETE CASCADE,
+  session_id       UUID NOT NULL,
+  langsmith_run_id TEXT,           -- @traceable 자동 기록값
+  raw_output_json  JSONB NOT NULL, -- Gemini 원본 출력 (수정 전)
+  approved_json    JSONB,          -- 관리자 확정 JSON (HITL diff 소스)
+  created_at       TIMESTAMPTZ DEFAULT now()
+);

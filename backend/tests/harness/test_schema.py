@@ -1,197 +1,258 @@
-"""C1 통합 테스트 — PostgreSQL DDL + Neo4j Tag Node.
+"""P1-T1 통합 테스트 — PostgreSQL DDL v2 (PRD-schema.md §15.2).
 
-T03: documents UPSERT 멱등성 — 동일 doc_id를 두 번 삽입해도 1행만 존재
-T04: Neo4j Tag Node MERGE 멱등성 — 동일 Cypher를 두 번 실행해도 노드 1개만 존재
+T01: documents 테이블 — state CHECK 제약 및 UPSERT 멱등성
+T02: staging_concepts 테이블 — concept_json JSONB, state CHECK 제약
+T03: concepts 테이블 — concept_name UNIQUE, domain/severity CHECK 제약
+T04: pipeline_logs 테이블 — level CHECK 제약
+T05: concept_snapshots 테이블 — raw_output_json JSONB 적재
 """
 
 import uuid
+import json
+import pytest
+import psycopg2
 
 
-# ── T03: PostgreSQL UPSERT 멱등성 ──────────────────────────────────────────
+def _apply_schema(cursor):
+    """테스트 DB에 v2 DDL 적용 (idempotent)."""
+    from pathlib import Path
+    sql = (
+        Path(__file__).parent.parent.parent
+        / "scripts" / "seed" / "security" / "schema.sql"
+    ).read_text(encoding="utf-8")
+    cursor.execute(sql)
 
 
-def _ensure_tables(cursor):
-    """테스트 실행 전 테이블이 없으면 생성."""
-    cursor.execute(
-        """
-        CREATE TABLE IF NOT EXISTS documents (
-            id          SERIAL PRIMARY KEY,
-            doc_id      VARCHAR(255) UNIQUE NOT NULL,
-            url         TEXT        NOT NULL,
-            prefix      VARCHAR(10) NOT NULL DEFAULT 'EXT',
-            status      VARCHAR(20) NOT NULL DEFAULT 'active'
-                        CHECK (status IN ('active','superseded')),
-            etag        VARCHAR(255),
-            content_hash VARCHAR(64),
-            crawled_at  TIMESTAMPTZ,
-            created_at  TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-            updated_at  TIMESTAMPTZ NOT NULL DEFAULT NOW()
-        )
+# ── T01: documents ─────────────────────────────────────────────────────────
+
+
+def test_T01_documents_upsert_idempotent(pg_cursor):
+    """Arrange: 고유 doc_id + 필수 컬럼 준비.
+    Act: 동일 doc_id로 INSERT ON CONFLICT DO UPDATE 2회.
+    Assert: 행 1개, 2회차 updated_at >= 1회차.
     """
-    )
-
-
-def test_T03_document_upsert_idempotency(pg_cursor):
-    """Arrange: 고유 doc_id 준비.
-    Act: 동일 doc_id로 INSERT … ON CONFLICT DO UPDATE 2회 실행.
-    Assert: 행 1개만 존재, 2회차 updated_at >= 1회차 updated_at.
-    """
-    _ensure_tables(pg_cursor)
+    _apply_schema(pg_cursor)
 
     doc_id = f"EXT_test-upsert_{uuid.uuid4().hex[:8]}"
-    url = "https://example.com/test"
-
-    upsert_sql = """
-        INSERT INTO documents (doc_id, url, prefix, updated_at)
-        VALUES (%s, %s, 'EXT', NOW())
+    upsert = """
+        INSERT INTO documents (doc_id, source_prefix, original_url, content_hash, updated_at)
+        VALUES (%s, 'EXT', 'https://example.com', 'deadbeef', now())
         ON CONFLICT (doc_id) DO UPDATE
-            SET url        = EXCLUDED.url,
-                updated_at = NOW()
+          SET updated_at = now()
         RETURNING updated_at
     """
 
-    # Arrange — Act 1회차
-    pg_cursor.execute(upsert_sql, (doc_id, url))
-    first_updated = pg_cursor.fetchone()[0]
+    pg_cursor.execute(upsert, (doc_id,))
+    t1 = pg_cursor.fetchone()[0]
 
-    # Act 2회차 (동일 doc_id)
-    pg_cursor.execute(upsert_sql, (doc_id, url))
-    second_updated = pg_cursor.fetchone()[0]
+    pg_cursor.execute(upsert, (doc_id,))
+    t2 = pg_cursor.fetchone()[0]
 
-    # Assert: 행 1개
-    pg_cursor.execute("SELECT COUNT(*) FROM documents WHERE doc_id = %s", (doc_id,))
-    count = pg_cursor.fetchone()[0]
-    assert count == 1, f"UPSERT 후 행이 {count}개여야 1개"
-
-    # Assert: 2회차 updated_at >= 1회차
-    assert (
-        second_updated >= first_updated
-    ), "2회차 updated_at이 1회차보다 이전일 수 없음"
+    pg_cursor.execute("SELECT COUNT(*) FROM documents WHERE doc_id=%s", (doc_id,))
+    assert pg_cursor.fetchone()[0] == 1, "UPSERT 후 행이 1개여야 함"
+    assert t2 >= t1, "2회차 updated_at이 1회차보다 이전일 수 없음"
 
 
-def test_T03_document_upsert_url_update(pg_cursor):
-    """Arrange: 기존 문서에 새 URL로 재크롤.
-    Act: ON CONFLICT DO UPDATE로 url 갱신.
-    Assert: url이 새 값으로 변경됨.
+def test_T01_documents_state_check(pg_cursor):
+    """Arrange: 유효하지 않은 state 값 준비.
+    Act: INSERT with state='INVALID'.
+    Assert: IntegrityError (CHECK 제약 위반).
     """
-    _ensure_tables(pg_cursor)
+    _apply_schema(pg_cursor)
 
-    doc_id = f"EXT_test-url-upd_{uuid.uuid4().hex[:8]}"
-    old_url = "https://example.com/old"
-    new_url = "https://example.com/new"
-
-    pg_cursor.execute(
-        "INSERT INTO documents (doc_id, url) VALUES (%s, %s)", (doc_id, old_url)
-    )
-    pg_cursor.execute(
-        """INSERT INTO documents (doc_id, url, updated_at)
-           VALUES (%s, %s, NOW())
-           ON CONFLICT (doc_id) DO UPDATE SET url = EXCLUDED.url, updated_at = NOW()""",
-        (doc_id, new_url),
-    )
-
-    pg_cursor.execute("SELECT url FROM documents WHERE doc_id = %s", (doc_id,))
-    stored_url = pg_cursor.fetchone()[0]
-    assert stored_url == new_url
+    doc_id = f"EXT_invalid-state_{uuid.uuid4().hex[:8]}"
+    with pytest.raises(psycopg2.errors.CheckViolation):
+        pg_cursor.execute(
+            """INSERT INTO documents
+               (doc_id, source_prefix, original_url, content_hash, state)
+               VALUES (%s, 'EXT', 'https://x.com', 'abcd1234', 'INVALID')""",
+            (doc_id,),
+        )
 
 
-# ── T04: Neo4j Tag Node MERGE 멱등성 ───────────────────────────────────────
-
-_MERGE_CONCEPT_CYPHER = """
-MERGE (c:Concept {name: $name})
-  ON CREATE SET c.severity = $severity, c.domain = $domain, c.created = timestamp()
-  ON MATCH  SET c.updated  = timestamp()
-MERGE (t:Tag {name: $tag_name})
-MERGE (c)-[:TAGGED_WITH]->(t)
-RETURN c.name AS concept, t.name AS tag
-"""
-
-_CLEANUP_CYPHER = """
-MATCH (c:Concept {name: $name})-[:TAGGED_WITH]->(t:Tag {name: $tag_name})
-DETACH DELETE c, t
-"""
-
-
-def test_T04_tag_node_merge_idempotent(neo4j_driver):
-    """Arrange: 고유 개념 이름으로 테스트 데이터 준비.
-    Act: 동일 MERGE Cypher를 2회 실행.
-    Assert: Concept 노드 1개, Tag 노드 1개, TAGGED_WITH 엣지 1개만 존재.
+def test_T01_documents_infer_confidence_default(pg_cursor):
+    """Arrange: infer_confidence 미지정.
+    Act: INSERT documents.
+    Assert: infer_confidence = 0 (DEFAULT).
     """
-    concept_name = f"TestXSS_{uuid.uuid4().hex[:6]}"
-    tag_name = "Security"
-    params = {
-        "name": concept_name,
-        "severity": "high",
-        "domain": "security",
-        "tag_name": tag_name,
+    _apply_schema(pg_cursor)
+
+    doc_id = f"EXT_conf-default_{uuid.uuid4().hex[:8]}"
+    pg_cursor.execute(
+        "INSERT INTO documents (doc_id, source_prefix, original_url, content_hash) VALUES (%s,'EXT','https://x.com','ab12ef34')",
+        (doc_id,),
+    )
+    pg_cursor.execute("SELECT infer_confidence FROM documents WHERE doc_id=%s", (doc_id,))
+    assert pg_cursor.fetchone()[0] == 0.0
+
+
+# ── T02: staging_concepts ──────────────────────────────────────────────────
+
+
+def _insert_doc(cursor, doc_id="EXT_seed_0000abcd"):
+    cursor.execute(
+        "INSERT INTO documents (doc_id, source_prefix, original_url, content_hash) "
+        "VALUES (%s,'EXT','https://docs.example.com','0000abcd') ON CONFLICT DO NOTHING",
+        (doc_id,),
+    )
+    return doc_id
+
+
+def test_T02_staging_concept_json_stored(pg_cursor):
+    """Arrange: documents 선행 삽입 후 concept_json 준비.
+    Act: staging_concepts INSERT.
+    Assert: concept_json JSONB 필드 완전 복원.
+    """
+    _apply_schema(pg_cursor)
+    doc_id = _insert_doc(pg_cursor)
+
+    session_id = uuid.uuid4()
+    concept = {
+        "concept_name": "XSS",
+        "concept_domain": "security",
+        "severity": "HIGH",
+        "cwe_id": "CWE-79",
     }
 
-    with neo4j_driver.session() as session:
-        try:
-            # Act 1회차
-            session.run(_MERGE_CONCEPT_CYPHER, **params)
-            # Act 2회차 (동일 파라미터)
-            session.run(_MERGE_CONCEPT_CYPHER, **params)
+    pg_cursor.execute(
+        "INSERT INTO staging_concepts (session_id, doc_id, concept_json) VALUES (%s,%s,%s) RETURNING id",
+        (str(session_id), doc_id, json.dumps(concept)),
+    )
+    row_id = pg_cursor.fetchone()[0]
 
-            # Assert: Concept 노드 수
-            c_count = session.run(
-                "MATCH (c:Concept {name: $name}) RETURN count(c) AS n",
-                name=concept_name,
-            ).single()["n"]
-            assert c_count == 1, f"Concept 노드가 {c_count}개 — MERGE 멱등성 실패"
-
-            # Assert: Tag 노드 수
-            t_count = session.run(
-                "MATCH (t:Tag {name: $name}) RETURN count(t) AS n",
-                name=tag_name,
-            ).single()["n"]
-            assert t_count >= 1, "Tag 노드가 존재해야 함"
-
-            # Assert: TAGGED_WITH 엣지 수 (이 Concept→Tag 쌍)
-            e_count = session.run(
-                """MATCH (c:Concept {name: $cname})-[r:TAGGED_WITH]->(t:Tag {name: $tname})
-                   RETURN count(r) AS n""",
-                cname=concept_name,
-                tname=tag_name,
-            ).single()["n"]
-            assert e_count == 1, f"TAGGED_WITH 엣지가 {e_count}개 — 중복 생성됨"
-
-        finally:
-            session.run(_CLEANUP_CYPHER, name=concept_name, tag_name=tag_name)
+    pg_cursor.execute("SELECT concept_json FROM staging_concepts WHERE id=%s", (str(row_id),))
+    stored = pg_cursor.fetchone()[0]
+    assert stored["concept_name"] == "XSS"
+    assert stored["concept_domain"] == "security"
 
 
-def test_T04_tag_node_multi_domain(neo4j_driver):
-    """Arrange: 동일 개념이 Security + Performance 두 도메인 태그를 가짐.
-    Act: 두 태그 각각 MERGE.
-    Assert: Concept 1개, TAGGED_WITH 엣지 2개, 각 Tag 1개.
+def test_T02_staging_state_default_draft(pg_cursor):
+    """Arrange: state 미지정.
+    Act: INSERT staging_concepts.
+    Assert: state = 'DRAFT'.
     """
-    concept_name = f"TestMemoryLeak_{uuid.uuid4().hex[:6]}"
+    _apply_schema(pg_cursor)
+    doc_id = _insert_doc(pg_cursor, f"EXT_state-default_{uuid.uuid4().hex[:8]}")
 
-    with neo4j_driver.session() as session:
-        try:
-            for tag in ("Security", "Performance"):
-                session.run(
-                    _MERGE_CONCEPT_CYPHER,
-                    name=concept_name,
-                    severity="medium",
-                    domain="both",
-                    tag_name=tag,
-                )
+    pg_cursor.execute(
+        "INSERT INTO staging_concepts (session_id, doc_id, concept_json) VALUES (%s,%s,%s) RETURNING state",
+        (str(uuid.uuid4()), doc_id, json.dumps({"concept_name": "CSRF"})),
+    )
+    assert pg_cursor.fetchone()[0] == "DRAFT"
 
-            c_count = session.run(
-                "MATCH (c:Concept {name: $name}) RETURN count(c) AS n",
-                name=concept_name,
-            ).single()["n"]
-            assert c_count == 1, "Concept 노드는 1개여야 함 (multi-tag MERGE)"
 
-            e_count = session.run(
-                "MATCH (c:Concept {name: $name})-[:TAGGED_WITH]->() RETURN count(*) AS n",
-                name=concept_name,
-            ).single()["n"]
-            assert e_count == 2, f"TAGGED_WITH 엣지가 {e_count}개 — 2개여야 함"
+def test_T02_staging_state_check(pg_cursor):
+    """Arrange: 유효하지 않은 state 값.
+    Act: INSERT staging_concepts with state='WRONG'.
+    Assert: CheckViolation.
+    """
+    _apply_schema(pg_cursor)
+    doc_id = _insert_doc(pg_cursor, f"EXT_staging-check_{uuid.uuid4().hex[:8]}")
 
-        finally:
-            session.run(
-                "MATCH (c:Concept {name: $name}) DETACH DELETE c",
-                name=concept_name,
-            )
+    with pytest.raises(psycopg2.errors.CheckViolation):
+        pg_cursor.execute(
+            "INSERT INTO staging_concepts (session_id, doc_id, concept_json, state) VALUES (%s,%s,%s,'WRONG')",
+            (str(uuid.uuid4()), doc_id, json.dumps({"concept_name": "SQLi"})),
+        )
+
+
+# ── T03: concepts ──────────────────────────────────────────────────────────
+
+
+def test_T03_concepts_unique_name(pg_cursor):
+    """Arrange: concept_name 'XSS'.
+    Act: 동일 concept_name 두 번 INSERT.
+    Assert: UniqueViolation.
+    """
+    _apply_schema(pg_cursor)
+
+    pg_cursor.execute(
+        "INSERT INTO concepts (concept_name, concept_domain) VALUES ('XSS_UNIQ_TEST','security') ON CONFLICT DO NOTHING"
+    )
+    with pytest.raises(psycopg2.errors.UniqueViolation):
+        pg_cursor.execute(
+            "INSERT INTO concepts (concept_name, concept_domain) VALUES ('XSS_UNIQ_TEST','security')"
+        )
+
+
+def test_T03_concepts_domain_check(pg_cursor):
+    """Arrange: 유효하지 않은 concept_domain.
+    Act: INSERT concepts with domain='unknown'.
+    Assert: CheckViolation.
+    """
+    _apply_schema(pg_cursor)
+
+    with pytest.raises(psycopg2.errors.CheckViolation):
+        pg_cursor.execute(
+            "INSERT INTO concepts (concept_name, concept_domain) VALUES ('BadDomain_test','unknown')"
+        )
+
+
+def test_T03_concepts_severity_check(pg_cursor):
+    """Arrange: 유효하지 않은 severity.
+    Act: INSERT concepts with severity='EXTREME'.
+    Assert: CheckViolation.
+    """
+    _apply_schema(pg_cursor)
+
+    with pytest.raises(psycopg2.errors.CheckViolation):
+        pg_cursor.execute(
+            "INSERT INTO concepts (concept_name, concept_domain, severity) VALUES ('SevCheck_test','security','EXTREME')"
+        )
+
+
+# ── T04: pipeline_logs ─────────────────────────────────────────────────────
+
+
+def test_T04_pipeline_logs_level_check(pg_cursor):
+    """Arrange: 유효하지 않은 level.
+    Act: INSERT pipeline_logs with level='DEBUG'.
+    Assert: CheckViolation.
+    """
+    _apply_schema(pg_cursor)
+    doc_id = _insert_doc(pg_cursor, f"EXT_logs-level_{uuid.uuid4().hex[:8]}")
+
+    with pytest.raises(psycopg2.errors.CheckViolation):
+        pg_cursor.execute(
+            "INSERT INTO pipeline_logs (doc_id, agent, level, message) VALUES (%s,'Crawler','DEBUG','msg')",
+            (doc_id,),
+        )
+
+
+def test_T04_pipeline_logs_insert_ok(pg_cursor):
+    """Arrange: 유효한 level INFO.
+    Act: INSERT pipeline_logs.
+    Assert: 행 삽입 성공.
+    """
+    _apply_schema(pg_cursor)
+    doc_id = _insert_doc(pg_cursor, f"EXT_logs-ok_{uuid.uuid4().hex[:8]}")
+
+    pg_cursor.execute(
+        "INSERT INTO pipeline_logs (doc_id, agent, level, message) VALUES (%s,'Extractor','INFO','추출 완료') RETURNING id",
+        (doc_id,),
+    )
+    assert pg_cursor.fetchone() is not None
+
+
+# ── T05: concept_snapshots ─────────────────────────────────────────────────
+
+
+def test_T05_concept_snapshots_jsonb(pg_cursor):
+    """Arrange: raw_output_json JSONB 페이로드.
+    Act: INSERT concept_snapshots.
+    Assert: raw_output_json 복원 정확.
+    """
+    _apply_schema(pg_cursor)
+    doc_id = _insert_doc(pg_cursor, f"EXT_snap_{uuid.uuid4().hex[:8]}")
+
+    raw = {"concept_name": "MemoryLeak", "concept_domain": "both", "severity": "HIGH"}
+    pg_cursor.execute(
+        "INSERT INTO concept_snapshots (doc_id, session_id, raw_output_json) VALUES (%s,%s,%s) RETURNING id",
+        (doc_id, str(uuid.uuid4()), json.dumps(raw)),
+    )
+    row_id = pg_cursor.fetchone()[0]
+
+    pg_cursor.execute("SELECT raw_output_json FROM concept_snapshots WHERE id=%s", (str(row_id),))
+    stored = pg_cursor.fetchone()[0]
+    assert stored["concept_name"] == "MemoryLeak"
+    assert stored["concept_domain"] == "both"

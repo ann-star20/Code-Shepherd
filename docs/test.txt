@@ -1,0 +1,1 @@
+mkdir -p backend && touch backend/A0_domain_model.md backend/A1_llm_mock_client.md backend/A2_db_schema_seed.md backend/A3_pipeline_core.md backend/A4_approval_gate.md backend/A5_ci_cd_pipeline.md

@@ -1,0 +1,108 @@
+{
+  "concepts": [
+    {
+      "name": "XSS",
+      "concept_domain": "security",
+      "concept_type": "vulnerability_root_cause",
+      "cwe_id": "CWE-79",
+      "owasp_id": "A03:2025",
+      "severity": "HIGH",
+      "description_ko": "크로스 사이트 스크립팅. 사용자 입력값이 HTML 컨텍스트에서 이스케이프 처리 없이 출력되어 공격자가 악성 스크립트를 삽입함.",
+      "aliases": ["Cross-Site Scripting", "크로스 사이트 스크립팅"],
+      "security_mechanisms": ["Output Encoding", "Content Security Policy", "HttpOnly Cookie"],
+      "affected_components": ["템플릿 렌더링 레이어", "API 응답 직렬화"],
+      "root_cause": "사용자 입력값이 HTML 컨텍스트에서 이스케이프 없이 출력됨",
+      "config_properties": [{"key": "SECURE_BROWSER_XSS_FILTER", "value": "True"}]
+    },
+    {
+      "name": "SQLi",
+      "concept_domain": "security",
+      "concept_type": "vulnerability_root_cause",
+      "cwe_id": "CWE-89",
+      "owasp_id": "A03:2025",
+      "severity": "CRITICAL",
+      "description_ko": "SQL 인젝션. 사용자 입력이 SQL 쿼리에 비위생화된 채 삽입되어 임의 쿼리 실행 또는 데이터 탈취가 가능함.",
+      "aliases": ["SQL Injection", "SQL 인젝션"],
+      "security_mechanisms": ["Parameterized Query", "ORM", "Input Validation"],
+      "affected_components": ["데이터베이스 레이어", "ORM 레이어"],
+      "root_cause": "사용자 입력이 SQL 쿼리 문자열에 직접 연결됨",
+      "config_properties": []
+    },
+    {
+      "name": "CSRF",
+      "concept_domain": "security",
+      "concept_type": "vulnerability_root_cause",
+      "cwe_id": "CWE-352",
+      "owasp_id": "A01:2025",
+      "severity": "HIGH",
+      "description_ko": "크로스 사이트 요청 위조. 인증된 사용자의 브라우저를 통해 공격자가 원하는 요청을 의도치 않게 전송하게 만드는 취약점.",
+      "aliases": ["Cross-Site Request Forgery", "크로스 사이트 요청 위조"],
+      "security_mechanisms": ["CSRF Token", "SameSite Cookie", "Double Submit Cookie"],
+      "affected_components": ["인증 모듈", "세션 관리", "API 엔드포인트"],
+      "root_cause": "서버가 요청 출처를 검증하지 않아 공격자가 대신 요청 전송 가능",
+      "config_properties": [
+        {"key": "CSRF_COOKIE_SECURE", "value": "True"},
+        {"key": "CSRF_COOKIE_HTTPONLY", "value": "True"}
+      ]
+    },
+    {
+      "name": "BrokenAccessControl",
+      "concept_domain": "security",
+      "concept_type": "vulnerability_root_cause",
+      "cwe_id": "CWE-284",
+      "owasp_id": "A01:2025",
+      "severity": "CRITICAL",
+      "description_ko": "취약한 접근 제어. 최소 권한 원칙 미준수, IDOR(Insecure Direct Object Reference) 등으로 인증된 사용자가 허용되지 않은 리소스에 접근.",
+      "aliases": ["Broken Access Control", "IDOR", "취약한 접근 제어"],
+      "security_mechanisms": ["RBAC", "ABAC", "Middleware Authorization"],
+      "affected_components": ["인증 모듈", "API 엔드포인트", "데이터베이스 레이어"],
+      "root_cause": "리소스 접근 전 권한 검사 누락 또는 잘못된 구현",
+      "config_properties": []
+    },
+    {
+      "name": "InsecureDeserialization",
+      "concept_domain": "security",
+      "concept_type": "vulnerability_root_cause",
+      "cwe_id": "CWE-502",
+      "owasp_id": "A08:2025",
+      "severity": "HIGH",
+      "description_ko": "안전하지 않은 역직렬화. 신뢰할 수 없는 직렬화 데이터를 검증 없이 역직렬화하여 원격 코드 실행, 권한 상승 등이 발생.",
+      "aliases": ["Insecure Deserialization", "안전하지 않은 역직렬화"],
+      "security_mechanisms": ["Input Validation", "Digital Signature", "Type Checking"],
+      "affected_components": ["직렬화/역직렬화 레이어", "API 엔드포인트"],
+      "root_cause": "신뢰할 수 없는 역직렬화 데이터에 대한 무결성 검증 없음",
+      "config_properties": []
+    },
+    {
+      "name": "SSRF",
+      "concept_domain": "security",
+      "concept_type": "vulnerability_root_cause",
+      "cwe_id": "CWE-918",
+      "owasp_id": "A10:2025",
+      "severity": "HIGH",
+      "description_ko": "서버 사이드 요청 위조. 공격자가 제어하는 URL로 서버가 요청을 전송하여 내부 네트워크, 클라우드 메타데이터 서비스에 접근.",
+      "aliases": ["Server-Side Request Forgery", "서버 사이드 요청 위조"],
+      "security_mechanisms": ["URL Allowlist", "Network Segmentation", "SSRF Prevention Middleware"],
+      "affected_components": ["HTTP 클라이언트", "파일 다운로드 기능", "웹훅 처리"],
+      "root_cause": "서버가 사용자 제공 URL을 검증 없이 외부 요청에 사용함",
+      "config_properties": []
+    },
+    {
+      "name": "SessionFixation",
+      "concept_domain": "security",
+      "concept_type": "vulnerability_root_cause",
+      "cwe_id": "CWE-384",
+      "owasp_id": "A07:2025",
+      "severity": "HIGH",
+      "description_ko": "세션 고정 공격. 로그인 후 세션 ID를 갱신하지 않아 공격자가 미리 설정한 세션 ID로 피해자 계정에 접근 가능.",
+      "aliases": ["Session Fixation", "세션 고정"],
+      "security_mechanisms": ["Session Regeneration on Login", "Secure Session Management"],
+      "affected_components": ["세션 관리", "인증 모듈"],
+      "root_cause": "로그인 성공 후 세션 ID 미갱신",
+      "config_properties": [
+        {"key": "SESSION_COOKIE_SECURE", "value": "True"},
+        {"key": "SESSION_COOKIE_HTTPONLY", "value": "True"}
+      ]
+    }
+  ]
+}

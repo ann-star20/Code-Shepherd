@@ -3,7 +3,6 @@
 ID	작업	파일	예상 시간
 <!-- D0-1	PRD §14.2 다이어그램에서 Celery 제거	docs/PRD_Knowledge_Graph_Agent.md	20min -->
 D0-2	PRD §11 COMMITTED_PENDING_RESOLVE 상태 제거	동상	20min
-D0-3	PRD §3.3.4 + §10.3 다중 라벨 → Tag Node 방식으로 교체	동상	30min
 
 ## A. 도메인 모델 (순수 Python, 인프라 의존 없음)
 
@@ -48,10 +47,10 @@ assert "parse error" in job.error_message`
           Neo4j Tag Node Cypher: (c:Concept)-[:TAGGED_WITH]->(t:Tag {name:"Security"})
           OWASP 2025 JSON 파일 (A01:2025 ~ A10:2025)
 C1-Test   T03 PostgreSQL UPSERT + updated_at 트리거
-          T04 Tag Node MERGE 멱등성 (APOC 없이)
+          T04 Tag Node MERGE 멱등성
 C1-Impl   scripts/seed/security/*.json *.sql *.cypher
           infrastructure/database/migrations/`
-AAA 예시 (T04, APOC 없는 버전):
+AAA 예시 (T04):
 
 
 `# Arrange

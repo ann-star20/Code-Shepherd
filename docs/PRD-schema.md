@@ -118,5 +118,3 @@ CREATE TABLE IF NOT EXISTS concept_snapshots (
 | `"security"` | `:Concept:Security` | XSS, SQLi, CSRF |
 | `"performance"` | `:Concept:Performance` | N+1Query, MissingIndex |
 | `"both"` | `:Concept:Security:Performance` | MemoryLeak, ConnPoolExhaustion |
-
----

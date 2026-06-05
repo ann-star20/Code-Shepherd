@@ -1,135 +1,136 @@
 
-## 4. 비기능 요구사항 (Non-Functional Requirements)
+### 3.10. LangSmith 기반 LLM 평가 및 테스트 하네스 정책
 
-- **확장성(Scalability)**: 보안 도메인에 국한하지 않고 Tech Issue & Solution KG로 확장 가능하도록 `Domain` 노드 기반 다도메인 구조 설계.
-- **성능(Performance)**: Neo4j Indexing (`name`, `cwe_id`, `aliases`) 및 PostgreSQL 관계 최적화.
-- **멱등성(Idempotency)**: 동일 URL 반복 요청 시 LLM 토큰 중복 소모 방지를 위한 캐싱 레이어 확보.
-- **감사 추적(Auditability)**: 파이프라인 각 단계의 입/출력 스냅샷을 PostgreSQL에 기록하여 추출 결과 검증 가능.
-- **DB 안전성(DB Safety)**: 스테이징 테이블 분리로 운영 DB 커넥션 풀 고갈 및 테이블 락 위험 원천 차단. 최종 승인 게이트(Commit Gate) 이전에는 운영 DB 쓰기 트랜잭션 미발생을 시스템 설계 원칙으로 강제.
-- **LLM 품질 보증(LLM Quality Gate)**: 프롬프트는 LangSmith Pre-Eval을 통해 스키마 이탈률 0% 기준을 통과한 버전만 프로덕션에 반영. 프로덕션 HITL 수정률 ≥ 20% 발생 시 프롬프트 재평가 사이클 자동 트리거 (→ 3.10절 참조).
+LLM 호출 품질을 **개발 전 사전 검증 → 통합 테스트 → 프로덕션 실시간 추적**의 3단계로 관리한다. 프롬프트 자산은 관리자 피드백과 함께 지속적으로 환류(Feedback Loop)되어 시스템이 스스로 개선되는 구조를 목표로 한다.
 
----
+#### 3.10.1. 선행 프롬프트 평가 (Pre-Eval)
 
+파이프라인 코드 작성 전, LangSmith 데이터셋을 활용하여 `gemini-2.5-flash` 모델의 프롬프트를 사전 검증한다. **스키마 이탈률 0%를 달성한 프롬프트만 프로덕션 코드에 반영**한다.
 
-## 6. 에이전트 파이프라인 상세 아키텍처 흐름
+**평가 대상 및 기준**:
+
+| 평가 항목 | 측정 지표 | 합격 기준 |
+|-----------|-----------|-----------|
+| JSON 스키마 준수율 | 필수 필드 누락률, 타입 불일치율 | 이탈률 0% |
+| `concept_domain` 정확도 | `security` / `performance` / `both` 분류 정확도 | ≥ 95% |
+| 한국어 번역 정합성 | 원문 의미 보존율 (사람 검토 + LLM-as-Judge) | ≥ 90% |
+| 4종 컨셉 타겟 추출율 | 보안메커니즘·취약점원인·설정속성·영향컴포넌트 추출 누락 여부 | 누락 0% |
+
+**LangSmith 데이터셋 구성**:
 
 ```
-[사용자 입력]
-    │  URL 1~5개
-    ▼
-[선행 파싱 레이어 — Pre-scan]
-    │  URL 경로 패턴 + HTML 메타 스캔 → 메타데이터 자동 추론
-    ▼
-[Human-in-the-Loop 검증]
-    │  추론 성공 → Pre-fill + Confirm
-    │  추론 실패 → PENDING + 관리자 수동 입력 (Interlock)
-    ▼
-[1단계] Input Agent
-    │  유효성 검사, ETag 중복 체크, 대기열 추가
-    ▼
-[2단계] Crawler Agent
-    │  DOM 파싱 → 불필요 태그 제거 → 텍스트 블록 분류
-    ▼
-[3단계] Extractor Agent
-    │  gemini-2.5-flash 호출
-    │  힌트: 배경→기전→영향도→대응코드 패턴
-    │  타겟: 보안메커니즘 / 취약점원인 / 설정속성 / 영향컴포넌트
-    │  출력: 구조화 JSON + 한국어 번역
-    ▼
-[4단계] Graph Writer Agent
-    │  aliases 동의어 중복 체크 → PostgreSQL 적재
-    │  Neo4j MERGE 증분 업데이트 (온톨로지 매핑 기준)
-    ▼
-[5단계] Link Resolver Agent
-    │  SAME_AS 관계 탐색 → 벡터 유사도 병합 → 노드 최종 확정
-    ▼
-[결과]
-    대시보드: 토폴로지 뷰 + 컨셉 인스펙터 + 실시간 로그
+langsmith_datasets/
+  extractor_schema_eval/
+    golden_inputs/       # 대표 공식 문서 청크 (영문 15개 + 한국어 5개)
+    expected_outputs/    # 기대 JSON 스키마 출력 (정답 레이블)
+  translation_eval/
+    en_ko_pairs/         # 영문 원문 ↔ 한국어 정답 번역 쌍
 ```
 
-### 단계별 상세
+**평가 실행 흐름**:
 
-| 단계 | 에이전트 | 주요 처리 내용 |
-|------|----------|---------------|
-| Pre-scan | — | URL 메타데이터 자동 추론, Human-in-the-Loop 인터락 |
-| 1 | Input Agent | URL 유효성 검증, 중복 방지, 메타데이터 확정 |
-| 2 | Crawler Agent | DOM 파싱, 텍스트 정제, 청크 분류 |
-| 3 | Extractor Agent | LLM 추출, 4종 컨셉 타겟팅, 한국어 번역, JSON 스키마화 |
-| 4 | Graph Writer Agent | aliases 중복 체크, PostgreSQL 적재, Neo4j MERGE |
-| 5 | Link Resolver Agent | SAME_AS 탐색, 유사도 병합, 관계 최종 확정 |
+```
+[프롬프트 후보 작성]
+    │
+    ▼
+[LangSmith Eval 실행]
+    │  langsmith_datasets/extractor_schema_eval 로드
+    │  gemini-2.5-flash 호출 → 실제 출력 생성
+    │  JSON Schema Validator → 스키마 이탈 여부 판정
+    │  LLM-as-Judge → 번역 정합성 점수 산출
+    ▼
+[결과 리포트]
+    │  이탈률 0% + 번역 ≥ 90% → 프로덕션 반영 승인
+    │  기준 미달 → 프롬프트 수정 후 재평가 (반복)
+    ▼
+[승인된 프롬프트 → prompts/ 디렉토리에 버전 태그로 저장]
+```
 
----
+#### 3.10.2. 하네스 기반 통합 테스트 (Test Harness)
 
-## 7. 데이터 모델 개요 (Data Model Overview)
+Celery 비동기 태스크 및 하이브리드 DB 적재 로직은 **독립된 테스트 하네스 환경**에서 구동하여 레이스 컨디션 및 DB 락 유무를 물리적으로 검증한다. 프로덕션 DB를 사용하지 않아 데이터 오염 위험 없이 실제 I/O 흐름을 재현한다.
 
-### PostgreSQL 주요 테이블
+**하네스 환경 구성**:
 
-| 테이블명 | PK / 주요 컬럼 | 설명 |
-|----------|---------------|------|
-| `documents` | `doc_id TEXT PK` (`PREFIX_url_hash8`) | 수집 대상 URL 메타데이터. 마스터 키로 Neo4j `Document` 노드와 1:1 매핑. `source_prefix`, `original_url`, `content_hash`, `etag`, `framework`, `version`, `state` |
-| `pipeline_logs` | `id UUID PK` | 단계별 처리 로그. `doc_id FK`, agent, level, message, timestamp |
-| `staging_concepts` | `id UUID PK` | Extractor 출력 임시 보관. `doc_id FK`, `concept_json`, state(DRAFT→APPROVED→COMMITTED\|REJECTED) |
-| `concepts` | `id UUID PK` | 관리자 최종 승인 후 반영된 개념 정형 데이터. `doc_id FK`, `concept_name`, `cwe_id`, severity, aliases, `description_ko` |
-| `concept_snapshots` | `id UUID PK` | Extractor 출력 원본 JSON 스냅샷 (감사 추적). `doc_id FK` |
+```
+tests/
+  harness/
+    docker-compose.test.yml  # 격리된 PostgreSQL + Neo4j + Redis 컨테이너
+    conftest.py              # 하네스 픽스처 (DB 초기화, 시드 데이터 주입)
+    test_celery_pipeline.py  # 비동기 태스크 레이스 컨디션 검증
+    test_db_write_gate.py    # 트랜잭션 경계 및 락 타임아웃 검증
+    test_neo4j_merge.py      # MERGE 멱등성 및 다중 라벨 누적 검증
+```
 
-**`doc_id` 매핑 원칙**: `documents.doc_id` = Neo4j `Document.doc_id`. 별도 매핑 테이블 없이 동일 값으로 양방향 직접 참조. `pipeline_logs`, `staging_concepts`, `concepts` 모두 `doc_id`를 FK로 보유하여 특정 문서의 전체 처리 이력을 단일 키로 추적 가능.
+**핵심 검증 시나리오**:
 
-**상태 전이 원칙**: `staging_concepts`의 레코드가 `COMMITTED` 되기 전까지 운영 `concepts` 테이블과 Neo4j에는 어떠한 쓰기도 발생하지 않는다. DB 커넥션 풀과 테이블 락을 Staging 단계에서 완전히 격리한다.
+| 시나리오 | 검증 목표 | 판정 기준 |
+|----------|-----------|-----------|
+| 동일 `doc_id` 병렬 제출 | UPSERT 충돌 없이 단일 레코드 유지 | 레코드 중복 0건 |
+| DRAFT 상태에서 운영 DB 미접촉 | `staging_concepts` 외 테이블 쓰기 발생 여부 | 쓰기 이벤트 0건 |
+| Neo4j `MERGE` 반복 실행 | 동일 `Concept` 노드 중복 생성 방지 | 노드 수 불변 |
+| 다중 라벨 누적 부여 | 기존 라벨 제거 없이 신규 라벨 추가 확인 | 라벨 집합 단조 증가 |
+| Celery Worker 2개 동시 실행 | 동일 `staging_concepts` 레코드 이중 처리 방지 | 최종 COMMITTED 1건 |
 
-### Neo4j 노드/관계 모델 — 통합 Concept 허브
+#### 3.10.3. 프로덕션 실시간 추적 및 피드백 루프 (Production Tracing & Feedback Loop)
 
-| 구분 | 내용 |
-|------|------|
-| **노드 레이블** | `Domain`, `OWASPCategory`, `PerfAntipatternCategory`, `CWE`, `Concept`(통합 허브), `SecurityMechanism`, `RootCause`, `Component`, `ConfigProperty`, `Framework` |
-| **Concept 다중 라벨** | `:Concept:Security` / `:Concept:Performance` / `:Concept:Security:Performance` (교차 도메인) |
-| **관계 타입** | `BELONGS_TO`, `MAPS_TO`, `REF_TO`, `INSTANTIATED_BY`, `MITIGATED_BY`, `CAUSED_BY`, `AFFECTS`, `CONFIGURED_BY`, `RELATED_TO`, `SAME_AS`, `IMPLEMENTS` |
-| **MERGE 식별 키** | `Concept.name` (영문 약어, 도메인 무관 단일 키), `CWE.cwe_id`, `OWASPCategory.owasp_id` |
-| **Neo4j Index** | `CREATE INDEX concept_name FOR (c:Concept) ON (c.name)` · `CREATE INDEX concept_aliases FOR (c:Concept) ON (c.aliases)` |
+배포 후 **모든 에이전트의 LLM API 호출을 LangSmith에 실시간 트레이싱**하며, Human-in-the-Loop 단계에서 관리자가 수정한 피드백 데이터를 프롬프트 자산으로 환류한다.
 
-**교차 도메인 Concept 예시**:
+**트레이싱 범위**:
 
-| name | 라벨 | 비고 |
-|------|------|------|
-| `XSS` | `:Concept:Security` | 보안 전용 |
-| `N+1Query` | `:Concept:Performance` | 성능 전용 |
-| `MemoryLeak` | `:Concept:Security:Performance` | CWE-401 — 보안 + 성능 교차 |
-| `ConnPoolExhaustion` | `:Concept:Security:Performance` | 자원 고갈 — 보안 + 성능 교차 |
+| 에이전트 | 추적 데이터 | LangSmith 태그 |
+|----------|-------------|----------------|
+| Extractor Agent | 프롬프트 입력·출력, 토큰 수, 지연시간 | `extractor`, `doc_id`, `framework` |
+| Link Resolver Agent | 유사도 판단 입력·출력 | `resolver`, `concept_name` |
+| Human-in-the-Loop | 관리자 수정 전·후 diff | `hitl`, `session_id`, `reviewer` |
 
----
+**피드백 루프 흐름**:
 
-## 8. 개발 순서 (Development Phases)
+```
+[프로덕션 Extractor 호출]
+    │  LangSmith Run 자동 기록 (langchain 콜백 또는 SDK wrap)
+    ▼
+[Human-in-the-Loop 승인/수정 단계]
+    │  관리자가 DRAFT 노드를 수정한 경우:
+    │  수정 전 JSON ↔ 수정 후 JSON diff → LangSmith Feedback으로 기록
+    ▼
+[피드백 누적 → 데이터셋 환류]
+    │  수정 빈도 높은 패턴 → extractor_schema_eval 데이터셋에 추가
+    │  번역 오류 수정 사례 → translation_eval 데이터셋에 추가
+    ▼
+[Pre-Eval 재실행 → 프롬프트 개선 사이클]
+```
 
-### Phase 1 — Backend Core
-1. PostgreSQL + Neo4j 스키마 설계 및 마이그레이션 (`staging_concepts` 포함)
-2. OWASP Top 10 / CWE SW Dev View / CWE Top 25 시드 데이터 적재 스크립트
-3. FastAPI 라우터 구성 (URL 입력 API, Pre-scan API, 파이프라인 트리거 API)
-4. Celery + Redis 비동기 태스크 구성 및 상태 관리
-5. **[LangSmith]** 테스트 하네스 환경 구성 (`docker-compose.test.yml`, DB 픽스처)
+**LangSmith 연동 구현 지침**:
 
-### Phase 2 — Agent Pipeline
-6. Pre-scan Layer: URL 패턴 파싱 + HTML 메타 추론 + Human-in-the-Loop API
-7. Crawler Agent: 웹 크롤링 및 텍스트 정제
-8. **[LangSmith]** Pre-Eval 실행: `extractor_schema_eval` 데이터셋 구성 → `gemini-2.5-flash` 프롬프트 후보 평가 → 스키마 이탈률 0% 달성 프롬프트 확정
-9. Extractor Agent: 확정 프롬프트 적용, 4종 컨셉 타겟, `concept_domain` 필드 포함 JSON 추출 → `staging_concepts` DRAFT 적재. LangSmith `@traceable` 래핑
-10. 최종 승인 게이트 API (`/approve`, `/reject`, `/diff`) 구현
-11. Graph Writer Agent: APPROVED 항목 → `concept_domain` 기반 다중 라벨 결정 → `MERGE` 단일 노드 → `apoc.create.addLabels` 라벨 누적 → state = COMMITTED
-12. Link Resolver Agent: SAME_AS 탐색, 유사도 기반 노드 병합. LangSmith 트레이싱 적용
-13. **[LangSmith]** 하네스 통합 테스트 실행: 레이스 컨디션, DB 락, MERGE 멱등성, 다중 라벨 누적 검증
+```python
+from langsmith import traceable
+from langsmith.wrappers import wrap_openai  # Gemini는 OpenAI 호환 엔드포인트 사용
 
-### Phase 3 — Frontend
-14. React + TypeScript + Vite 프로젝트 셋업
-15. Human-in-the-Loop 메타데이터 검증 UI (추론 신뢰도 배지, 인터락 폼)
-16. 파이프라인 5단계 상태 인디케이터 컴포넌트
-17. WebSocket/SSE 기반 실시간 로그 콘솔
-18. 가상 노드 미리보기: `GET /api/graph/topology` + `GET /api/staging/{session_id}` 클라이언트 병합 렌더링
-19. 승인 UI: DRAFT 노드 점선/반투명 스타일, 개별 승인/거부 토글, diff 요약, 최종 승인 버튼
-20. react-force-graph 토폴로지 뷰 (온톨로지 계층 필터, 색상 범례, COMMITTED 후 가상→실제 노드 전환)
-21. 컨셉 인스펙터 패널 (4종 컨셉 타입 필터 + 상세 대응 방안)
+@traceable(name="extractor_agent", tags=["extractor"])
+async def extract_concepts(doc_id: str, text_chunk: str) -> dict:
+    # gemini-2.5-flash 호출 — Run이 LangSmith에 자동 기록됨
+    response = await llm.ainvoke(prompt)
+    return response
 
-### Phase 4 — 프로덕션 모니터링 (LangSmith)
-22. **[LangSmith]** HITL 수정 피드백 기록: 관리자 수정 diff → `client.create_feedback()` 연동
-23. **[LangSmith]** 피드백 환류: 수정 빈도 높은 패턴 → `extractor_schema_eval` 데이터셋 추가 → Pre-Eval 재실행
-24. **[LangSmith]** 모니터링 알림 설정: 스키마 이탈 1건/시간 → Slack, HITL 수정률 ≥ 20% → 프롬프트 재평가 트리거
+# Human-in-the-Loop 수정 피드백 기록
+from langsmith import Client
+client = Client()
+client.create_feedback(
+    run_id=run_id,
+    key="hitl_correction",
+    score=0,           # 0 = 수정 필요했던 출력
+    comment=f"before: {before_json}, after: {after_json}"
+)
+```
+
+**모니터링 알림 기준**:
+
+| 지표 | 경보 임계값 | 조치 |
+|------|-------------|------|
+| 스키마 이탈 Run 발생 | 1건 이상 / 1시간 | Slack 알림 + 해당 Run LangSmith 링크 첨부 |
+| HITL 수정률 | ≥ 20% / 세션 | 프롬프트 재평가 트리거 |
+| 평균 토큰 수 | ≥ 기준치 150% | 청크 분할 전략 재검토 알림 |
 
 ---
 
@@ -194,7 +195,7 @@ class ILLMClient(ABC):
             metadata:   {framework, version, lang} Pre-scan 추론값
 
         Returns:
-            PRD §3.3.3 ConceptExtractionSchema 목록
+            PRD-domain §3.3.3 ConceptExtractionSchema 목록
             (concept_name, concept_domain, cwe_id, severity,
              description_ko, aliases, security_mechanisms,
              affected_components, config_properties, root_cause)
@@ -239,14 +240,14 @@ class GeminiClient(ILLMClient):
 
 ### 16.5. 개발 모드 구현체 (`mock_client.py`)
 
-PRD §3.3.3에 정의된 4종 컨셉 타겟을 커버하는 **고정 스펙 Mock 데이터**를 반환한다. 네트워크 I/O 없이 즉시 반환하며 LangSmith를 비활성화한다.
+PRD-domain §3.3.3에 정의된 4종 컨셉 타겟을 커버하는 **고정 스펙 Mock 데이터**를 반환한다. 네트워크 I/O 없이 즉시 반환하며 LangSmith를 비활성화한다.
 
 ```python
 # backend/app/infrastructure/llm/mock_client.py
 from app.infrastructure.llm.interface import ILLMClient
 from app.domain.models import ConceptExtractionSchema
 
-# PRD §3.3.3 4종 컨셉 타겟을 커버하는 고정 Mock 스펙
+# PRD-domain §3.3.3 4종 컨셉 타겟을 커버하는 고정 Mock 스펙
 _MOCK_CONCEPTS: list[dict] = [
     {
         "concept_name":          "XSS",
@@ -427,7 +428,7 @@ def test_mock_client_returns_spec_schema():
     assert "performance" in domains
     assert "both"        in domains          # 교차 도메인 존재
     assert "vulnerability_root_cause" in types_set
-    assert "security_mechanism"       in types_set  # §3.3.3 4종 중 보안 메커니즘
+    assert "security_mechanism"       in types_set  # PRD-domain §3.3.3 4종 중 보안 메커니즘
 
     # Assert 2: Pydantic 스키마 완전성
     for c in concepts:

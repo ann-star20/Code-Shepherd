@@ -52,10 +52,15 @@
 
 ---
 
-## Tag Node schema for domain membership (replaces multi-label + APOC)
+## [Core] APOC 플러그인 기반 동적 다중 라벨(Multi-label) 아키텍처 고수
 
-**What**: Replace `:Concept:Security:Performance` multi-label approach with `(c:Concept)-[:TAGGED_WITH]->(t:Tag {name: "Security"})` relationships. Update all seed Cypher, Graph Writer specs, and T04 to use TAGGED_WITH instead of label assertions.
+**What**: 임시 우회책이었던 `(c:Concept)-[:TAGGED_WITH]->(t:Tag)` 관계형 구조를 전면 폐기함. 원래 설계대로 단일 `Concept` 허브 노드에 물리적 다중 라벨(예: `:Concept:Security:Performance`)을 누적하는 방식을 최종 확정함. 모든 초기 시드 Cypher, Graph Writer 스펙, 그리고 `T04` 테스트 코드를 APOC 동적 라벨 추가 구문으로 동기화함.
 
-**Why**: APOC `apoc.create.addLabels()` is required for dynamic label assignment -- native Cypher `SET n:$labelName` is invalid. APOC is unavailable on Neo4j Aura Free tier. Tag Node achieves the same cross-domain filtering without plugins.
+**Why**: 
+1. 로컬 및 자체 호스팅 환경(Neo4j Community 에디션)에서 APOC 플러그인이 완벽히 지원되므로, Cypher의 변수 라벨링 한계를 `apoc.create.addLabels()` 프로시저로 우아하게 해결할 수 있음.
+2. 유령 `Tag` 노드를 양산할 경우 발생하는 슈퍼노드(Supernode) 병목과 관계선 폭발 현상을 원천 차단하고, 그래프 데이터 모델의 진실성(정합성)을 지키기 위함.
+3. `MATCH (c:Concept:Security)`와 같이 Neo4j 네이티브 하드웨어 인덱스 가속을 100% 활용한 초고속 필터링 조회가 가능함.
 
-**How to apply**: Phase 1 -- update schema, seed Cypher, and Graph Writer specs before any code is written.
+**How to apply (Phase 1 가동 지침)**:
+1. `scripts/seed/` 내의 온톨로지 적재 쿼리를 단일 `MERGE (c:Concept {name: $name})` 후 `CALL apoc.create.addLabels(c, $domain_labels)`를 호출하는 구조로 원자화할 것.
+2. `backend/tests/harness/test_db_migration.py (T04)` 테스트 자산의 Assert 구문을 `labels(c)` 함수를 사용하여 물리 라벨 세트가 누적 단조 증가하는지 검증하도록 수정할 것.

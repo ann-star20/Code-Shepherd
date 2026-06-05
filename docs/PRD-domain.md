@@ -1,3 +1,4 @@
+
 ## 1. 프로젝트 개요 (Project Overview)
 
 - **프로젝트 명**: 에이전트 기반 보안·기술 지식 그래프 자동화 파이프라인 및 웹뷰  
@@ -20,8 +21,6 @@
   3. 비동기 파이프라인이 트리거되어 백그라운드에서 크롤링 및 LLM 분석 수행.
   4. 추출된 보안 개념을 기구축된 OWASP Top 10 / CWE 시드 데이터와 매핑 및 증분 업데이트(Merge).
   5. 프론트엔드 대시보드를 통해 실시간 파이프라인 상태, 로그 콘솔, Neo4j 기반 토폴로지 관계도 확인.
-
----
 
 ## 3. 핵심 기능 요구사항 (Functional Requirements)
 
@@ -263,55 +262,53 @@ CREATE INDEX document_doc_id FOR (d:Document) ON (d.doc_id)
 | 성능 문서에서 추출 | `:Concept:Performance` | `N+1Query`, `MissingIndex` |
 | 양쪽 모두 해당 | `:Concept:Security:Performance` | `MemoryLeak`, `ConnPoolExhaustion` |
 
-**교차 도메인 MERGE Cypher** (Tag Node 방식 — APOC 불필요):
+**교차 도메인 MERGE Cypher**:
 
 ```cypher
-// 1. Concept 노드 생성 또는 병합
+// 1. 노드 생성 또는 병합 (name 기준 단일 노드 보장)
 MERGE (c:Concept {name: "MemoryLeak"})
 ON CREATE SET
-  c.aliases        = ["Memory Leak", "메모리 누수"],
-  c.cwe_id         = "CWE-401",
+  c.aliases      = ["Memory Leak", "메모리 누수"],
+  c.cwe_id       = "CWE-401",
   c.description_ko = "객체 참조 미해제로 인한 GC 부하 및 힙 메모리 소진",
-  c.created_at     = timestamp()
+  c.created_at   = timestamp()
 ON MATCH SET
-  c.updated_at     = timestamp()
+  c.updated_at   = timestamp()
 
-// 2. 도메인 Tag 연결 (누적 추가 — 기존 관계 삭제 없음)
+// 2. 도메인 라벨 누적 부여 (기존 라벨 제거 없이 추가만)
 WITH c
-UNWIND ["Security", "Performance"] AS tag_name
-  MERGE (t:Tag {name: tag_name})
-  MERGE (c)-[:TAGGED_WITH]->(t)
+CALL apoc.create.addLabels(c, ["Security", "Performance"]) YIELD node
+RETURN node
 ```
 
-**조회 패턴** (Tag Node 방식):
+**조회 패턴**:
 ```cypher
 // 보안 도메인 Concept만 조회
-MATCH (c:Concept)-[:TAGGED_WITH]->(:Tag {name: "Security"}) RETURN c
+MATCH (c:Concept:Security) RETURN c
 
 // 성능 도메인 Concept만 조회
-MATCH (c:Concept)-[:TAGGED_WITH]->(:Tag {name: "Performance"}) RETURN c
+MATCH (c:Concept:Performance) RETURN c
 
-// 교차 도메인 Concept ("보안이면서 성능이기도 한" 노드)
-MATCH (c:Concept)-[:TAGGED_WITH]->(:Tag {name: "Security"})
-WHERE (c)-[:TAGGED_WITH]->(:Tag {name: "Performance"})
-RETURN c
+// 교차 도메인 Concept 조회 ("보안이면서 성능이기도 한" 노드)
+MATCH (c:Concept:Security:Performance) RETURN c
 
-// "MemoryLeak" + 보안 컨텍스트
-MATCH (c:Concept {name: "MemoryLeak"})-[:TAGGED_WITH]->(:Tag {name: "Security"}) RETURN c
+// "MemoryLeak" 키워드 + 보안 컨텍스트 조회
+MATCH (c:Concept:Security {name: "MemoryLeak"}) RETURN c
 
-// aliases 포함 전체 검색
+// aliases 포함 전체 검색 (키워드 "메모리 누수")
 MATCH (c:Concept) WHERE "메모리 누수" IN c.aliases RETURN c
 ```
 
-**Extractor Agent 도메인 태그 결정 로직**:
-Extractor가 LLM 결과 JSON에서 `concept_domain` 필드를 반환하면, Graph Writer가 아래 매핑으로 Tag를 연결한다.
+**Extractor Agent 라벨 결정 로직**:
+Extractor가 LLM 추출 결과 JSON에서 `concept_domain` 필드를 반환하면, Graph Writer가 아래 매핑으로 라벨을 결정한다.
 
 ```python
-DOMAIN_TAG_MAP = {
+DOMAIN_LABEL_MAP = {
     "security":     ["Security"],
     "performance":  ["Performance"],
     "both":         ["Security", "Performance"],
 }
+# LLM이 모호하게 판단한 경우 Link Resolver가 사후 라벨 추가
 ```
 
 프롬프트 출력 스키마에 `concept_domain` 필드를 추가한다:
@@ -577,167 +574,7 @@ POST /api/staging/{session_id}/approve  → 최종 승인 전송
 | `GET` | `/api/staging/{session_id}/diff` | 승인 시 예상 변경 diff 요약 반환 |
 
 ---
-
-### 3.10. LangSmith 기반 LLM 평가 및 테스트 하네스 정책
-
-LLM 호출 품질을 **개발 전 사전 검증 → 통합 테스트 → 프로덕션 실시간 추적**의 3단계로 관리한다. 프롬프트 자산은 관리자 피드백과 함께 지속적으로 환류(Feedback Loop)되어 시스템이 스스로 개선되는 구조를 목표로 한다.
-
-#### 3.10.1. 선행 프롬프트 평가 (Pre-Eval)
-
-파이프라인 코드 작성 전, LangSmith 데이터셋을 활용하여 `gemini-2.5-flash` 모델의 프롬프트를 사전 검증한다. **스키마 이탈률 0%를 달성한 프롬프트만 프로덕션 코드에 반영**한다.
-
-**평가 대상 및 기준**:
-
-| 평가 항목 | 측정 지표 | 합격 기준 |
-|-----------|-----------|-----------|
-| JSON 스키마 준수율 | 필수 필드 누락률, 타입 불일치율 | 이탈률 0% |
-| `concept_domain` 정확도 | `security` / `performance` / `both` 분류 정확도 | ≥ 95% |
-| 한국어 번역 정합성 | 원문 의미 보존율 (사람 검토 + LLM-as-Judge) | ≥ 90% |
-| 4종 컨셉 타겟 추출율 | 보안메커니즘·취약점원인·설정속성·영향컴포넌트 추출 누락 여부 | 누락 0% |
-
-**LangSmith 데이터셋 구성**:
-
-```
-langsmith_datasets/
-  extractor_schema_eval/
-    golden_inputs/       # 대표 공식 문서 청크 (영문 15개 + 한국어 5개)
-    expected_outputs/    # 기대 JSON 스키마 출력 (정답 레이블)
-  translation_eval/
-    en_ko_pairs/         # 영문 원문 ↔ 한국어 정답 번역 쌍
-```
-
-**평가 실행 흐름**:
-
-```
-[프롬프트 후보 작성]
-    │
-    ▼
-[LangSmith Eval 실행]
-    │  langsmith_datasets/extractor_schema_eval 로드
-    │  gemini-2.5-flash 호출 → 실제 출력 생성
-    │  JSON Schema Validator → 스키마 이탈 여부 판정
-    │  LLM-as-Judge → 번역 정합성 점수 산출
-    ▼
-[결과 리포트]
-    │  이탈률 0% + 번역 ≥ 90% → 프로덕션 반영 승인
-    │  기준 미달 → 프롬프트 수정 후 재평가 (반복)
-    ▼
-[승인된 프롬프트 → prompts/ 디렉토리에 버전 태그로 저장]
-```
-
-#### 3.10.2. 하네스 기반 통합 테스트 (Test Harness)
-
-Celery 비동기 태스크 및 하이브리드 DB 적재 로직은 **독립된 테스트 하네스 환경**에서 구동하여 레이스 컨디션 및 DB 락 유무를 물리적으로 검증한다. 프로덕션 DB를 사용하지 않아 데이터 오염 위험 없이 실제 I/O 흐름을 재현한다.
-
-**하네스 환경 구성**:
-
-```
-tests/
-  harness/
-    docker-compose.test.yml  # 격리된 PostgreSQL + Neo4j + Redis 컨테이너
-    conftest.py              # 하네스 픽스처 (DB 초기화, 시드 데이터 주입)
-    test_celery_pipeline.py  # 비동기 태스크 레이스 컨디션 검증
-    test_db_write_gate.py    # 트랜잭션 경계 및 락 타임아웃 검증
-    test_neo4j_merge.py      # MERGE 멱등성 및 다중 라벨 누적 검증
-```
-
-**핵심 검증 시나리오**:
-
-| 시나리오 | 검증 목표 | 판정 기준 |
-|----------|-----------|-----------|
-| 동일 `doc_id` 병렬 제출 | UPSERT 충돌 없이 단일 레코드 유지 | 레코드 중복 0건 |
-| DRAFT 상태에서 운영 DB 미접촉 | `staging_concepts` 외 테이블 쓰기 발생 여부 | 쓰기 이벤트 0건 |
-| Neo4j `MERGE` 반복 실행 | 동일 `Concept` 노드 중복 생성 방지 | 노드 수 불변 |
-| 다중 라벨 누적 부여 | 기존 라벨 제거 없이 신규 라벨 추가 확인 | 라벨 집합 단조 증가 |
-| Celery Worker 2개 동시 실행 | 동일 `staging_concepts` 레코드 이중 처리 방지 | 최종 COMMITTED 1건 |
-
-#### 3.10.3. 프로덕션 실시간 추적 및 피드백 루프 (Production Tracing & Feedback Loop)
-
-배포 후 **모든 에이전트의 LLM API 호출을 LangSmith에 실시간 트레이싱**하며, Human-in-the-Loop 단계에서 관리자가 수정한 피드백 데이터를 프롬프트 자산으로 환류한다.
-
-**트레이싱 범위**:
-
-| 에이전트 | 추적 데이터 | LangSmith 태그 |
-|----------|-------------|----------------|
-| Extractor Agent | 프롬프트 입력·출력, 토큰 수, 지연시간 | `extractor`, `doc_id`, `framework` |
-| Link Resolver Agent | 유사도 판단 입력·출력 | `resolver`, `concept_name` |
-| Human-in-the-Loop | 관리자 수정 전·후 diff | `hitl`, `session_id`, `reviewer` |
-
-**피드백 루프 흐름**:
-
-```
-[프로덕션 Extractor 호출]
-    │  LangSmith Run 자동 기록 (langchain 콜백 또는 SDK wrap)
-    ▼
-[Human-in-the-Loop 승인/수정 단계]
-    │  관리자가 DRAFT 노드를 수정한 경우:
-    │  수정 전 JSON ↔ 수정 후 JSON diff → LangSmith Feedback으로 기록
-    ▼
-[피드백 누적 → 데이터셋 환류]
-    │  수정 빈도 높은 패턴 → extractor_schema_eval 데이터셋에 추가
-    │  번역 오류 수정 사례 → translation_eval 데이터셋에 추가
-    ▼
-[Pre-Eval 재실행 → 프롬프트 개선 사이클]
-```
-
-**LangSmith 연동 구현 지침**:
-
-```python
-from langsmith import traceable
-from langsmith.wrappers import wrap_openai  # Gemini는 OpenAI 호환 엔드포인트 사용
-
-@traceable(name="extractor_agent", tags=["extractor"])
-async def extract_concepts(doc_id: str, text_chunk: str) -> dict:
-    # gemini-2.5-flash 호출 — Run이 LangSmith에 자동 기록됨
-    response = await llm.ainvoke(prompt)
-    return response
-
-# Human-in-the-Loop 수정 피드백 기록
-from langsmith import Client
-client = Client()
-client.create_feedback(
-    run_id=run_id,
-    key="hitl_correction",
-    score=0,           # 0 = 수정 필요했던 출력
-    comment=f"before: {before_json}, after: {after_json}"
-)
-```
-
-**모니터링 알림 기준**:
-
-| 지표 | 경보 임계값 | 조치 |
-|------|-------------|------|
-| 스키마 이탈 Run 발생 | 1건 이상 / 1시간 | Slack 알림 + 해당 Run LangSmith 링크 첨부 |
-| HITL 수정률 | ≥ 20% / 세션 | 프롬프트 재평가 트리거 |
-| 평균 토큰 수 | ≥ 기준치 150% | 청크 분할 전략 재검토 알림 |
-
 ---
-
-## 11. 최종 승인 게이트 — 4대 핵심 커밋 규칙
-
-FastAPI BackgroundTasks(PipelineTask), PostgreSQL 스테이징 테이블, Neo4j 지식 그래프가 3중으로 얽힌 하이브리드 아키텍처에서, 관리자 승인 후 운영 DB에 데이터를 최종 반영(`state='COMMITTED'`)할 때 백엔드 엔진이 강제 준수해야 하는 원자적 커밋 규칙이다. (v1 기준 3대 규칙; 규칙 ③ Link Resolver는 v2 대상)
-
-### 규칙 ① — 2단계 크로스 DB 트랜잭션 보장 (Two-Phase Commit Pattern)
-
-**규칙**: PostgreSQL `concepts` 테이블 쓰기와 Neo4j `MERGE`는 하나의 논리적 단위로 묶인다.
-
-**예외 처리**: Neo4j 적재 중 에러(커넥션 타임아웃, 문법 오류 등) 발생 시 이미 성공한 PostgreSQL `INSERT/UPSERT`를 즉시 롤백하고, `staging_concepts.state`를 `COMMITTED`로 변경하지 않는다.
-
-```python
-async def commit_to_master(session_id: str, approved_concepts: list):
-    async with pg_session.begin() as pg_tx:       # PostgreSQL 트랜잭션 열기
-        try:
-            await pg_tx.execute(upsert_concepts_sql, approved_concepts)
-            await neo4j_merge_concepts(approved_concepts)  # Neo4j 적재
-            await pg_tx.execute(
-                "UPDATE staging_concepts SET state='COMMITTED' WHERE session_id=:sid",
-                {"sid": session_id}
-            )
-            # PostgreSQL commit은 with 블록 정상 종료 시 자동 실행
-        except Neo4jError:
-            await pg_tx.rollback()               # Neo4j 실패 시 PG도 롤백
-            raise
-```
 
 ### 규칙 ② — 멱등성 기반 자성 커밋 (Idempotent MERGE Commit)
 
@@ -746,42 +583,39 @@ async def commit_to_master(session_id: str, approved_concepts: list):
 **구현 제약**: Neo4j 적재 시 반드시 `Concept.name`을 유니크 식별 키로 `MERGE ... ON CREATE SET ... ON MATCH SET` 구문을 사용한다. 동일 데이터 재입력 시 노드 중복 생성 없이 `updated_at` 타임스탬프만 갱신된다.
 
 ```cypher
-// Tag Node 방식 — APOC 불필요, 순수 Cypher (v1)
 MERGE (c:Concept {name: $name})
 ON CREATE SET
-  c.cwe_id         = $cwe_id,
+  c.cwe_id        = $cwe_id,
   c.description_ko = $description_ko,
-  c.aliases        = $aliases,
-  c.created_at     = timestamp()
+  c.aliases       = $aliases,
+  c.created_at    = timestamp()
 ON MATCH SET
-  c.updated_at     = timestamp()
+  c.updated_at    = timestamp()
 WITH c
-UNWIND $domain_tags AS tag_name          // ["Security"], ["Performance"], or ["Security","Performance"]
-  MERGE (t:Tag {name: tag_name})
-  MERGE (c)-[:TAGGED_WITH]->(t)
+CALL apoc.create.addLabels(c, $domain_labels) YIELD node
+RETURN node
 ```
 
-> **설계 이유**: `apoc.create.addLabels()`는 APOC 플러그인 필수. Neo4j Aura Free 미지원.
-> Tag Node(`-[:TAGGED_WITH]->`) 방식은 순수 Cypher로 동일 교차도메인 필터링을 달성한다.
-> `MATCH (c:Concept)-[:TAGGED_WITH]->(:Tag {name:'Security'})` = 기존 `MATCH (c:Concept:Security)`
+### 규칙 ③ — 후행 Link Resolver 트리거 연동
 
-### 규칙 ③ — Link Resolver 트리거 (v2 대상 — v1 미구현)
+**규칙**: 개념 노드가 Neo4j 마스터에 최종 커밋(`COMMITTED`)된 직후, 백엔드는 5단계 Link Resolver Agent 태스크를 자동 트리거해야 한다.
 
-> **v1 상태 전이**: `APPROVED → COMMITTED` (직결).
-> `COMMITTED_PENDING_RESOLVE` 상태는 v1에 존재하지 않는다.
+**동작**: 새로 커밋된 `Concept` 노드의 `aliases` 배열과 기존 그래프 내 노드들의 유사도를 즉시 계산하여 `SAME_AS` 또는 `RELATED_TO` 관계를 맺는 후속 커밋까지 완료되어야 한 세션의 커밋 프로세스가 완전히 종료된 것으로 간주한다.
 
-**v2 계획**: 개념 노드가 Neo4j에 커밋된 직후 Link Resolver Agent가 `aliases` 기반 벡터 유사도 탐색으로 `SAME_AS` / `RELATED_TO` 관계를 자동 생성. v2에서 Celery 도입 시 함께 구현.
+```python
+async def commit_to_master(session_id: str, approved_concepts: list):
+    # ... (규칙 ① 코드) ...
+    # 커밋 완료 후 Link Resolver 자동 트리거
+    for concept in approved_concepts:
+        resolve_links_task.delay(concept_name=concept["name"])
+    # resolve_links_task 완료 시점까지 세션 상태는 COMMITTED_PENDING_RESOLVE
+    # 관계 맺기 완료 후 COMMITTED로 최종 전환
+```
 
-**v1 세션 상태 전이** (단순화):
+**세션 상태 전이 확장**:
 
 ```
-APPROVED → COMMITTED
-```
-
-**v2 세션 상태 전이** (예정):
-
-```
-APPROVED → COMMITTED → COMMITTED_PENDING_RESOLVE → FULLY_RESOLVED
+APPROVED → COMMITTING → COMMITTED_PENDING_RESOLVE → COMMITTED(완전 종료)
 ```
 
 ### 규칙 ④ — 소스 문서(`Document`) 상태 동기화 격리
@@ -811,11 +645,9 @@ async def commit_to_master(session_id: str, approved_concepts: list):
 
 **4대 규칙 요약**:
 
-| 규칙 | 핵심 보장 | 실패 시 동작 | v1 여부 |
-|------|-----------|-------------|---------|
-| ① 크로스 DB 일관성 | PG 소스오브트루스 + 시작 시 Neo4j 재조정 | 재시작 시 COMMITTED 행 재처리 | ✅ v1 |
-| ② 멱등성 MERGE Commit | 이중 실행 안전 | 노드 중복 없이 타임스탬프만 갱신 | ✅ v1 |
-| ③ Link Resolver 자동 트리거 | 고립 노드 방지 | — | ⏳ v2 |
-| ④ Document 상태 동기화 | 대시보드 정합성 | 동일 트랜잭션 내 즉시 반영 | ✅ v1 |
-
----
+| 규칙 | 핵심 보장 | 실패 시 동작 |
+|------|-----------|-------------|
+| ① 2단계 크로스 DB 트랜잭션 | PG + Neo4j 원자성 | Neo4j 실패 → PG 롤백 |
+| ② 멱등성 MERGE Commit | 이중 실행 안전 | 노드 중복 없이 타임스탬프만 갱신 |
+| ③ Link Resolver 자동 트리거 | 고립 노드 방지 | 관계 미연결 시 COMMITTED 미전환 |
+| ④ Document 상태 동기화 | 대시보드 정합성 | 동일 트랜잭션 내 즉시 반영 |
