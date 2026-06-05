@@ -18,56 +18,47 @@
 
 ## 2. 시스템 아키텍처 — 모듈 연결 맵
 
-```mermaid
-flowchart TB
+```
+  신입 개발자 PR 제출          팀원 자연어 질의           팀원 문서 업로드
+         │                          │                          │
+         └──────────────────────────┘                          │
+                                    │                          ▼
+                                    ▼              ┌───────────────────────────────────┐
+              ┌─────────────────────────────────── │   Module 0: KMS 지식 파이프라인   │
+              │        Module 1: Orchestrator     │ │  (문서 업로드 → 변환 → 검증 → 저장) │
+              │   (LangGraph StateGraph, 라우팅 허브) │ │  PostgreSQL + pgVector + GraphDB  │
+              └─────────────────────────────────── └───────────────────────────────────┘
+                              │  KMS 검색 필요 시 ──────────▶  ▲
+                              │  ◀────────────── chunk_id / context 반환
+                              │
+                              │  PR 리뷰 요청
+                              ▼
+              ┌─────────────────────────────────────────────────┐
+              │           asyncio.gather (병렬 실행)             │
+              └─────────────────────────────────────────────────┘
+                       │                              │
+                       ▼                              ▼
+         ┌──────────────────────┐       ┌──────────────────────┐
+         │      Module 2:       │       │      Module 3:       │
+         │   정적분석 + 보안     │       │   테스트 + 성능분석   │
+         │     (KMS 참조)       │       │     (KMS 참조)       │
+         └──────────────────────┘       └──────────────────────┘
+                       └──────────────┬────────────────┘
+                                      │
+                                      ▼
+              ┌─────────────────────────────────────────────────┐
+              │          Module 4: 커리큘럼 에이전트             │
+              │       KMS 참조 · 이슈 기반 학습 추천             │
+              │    → GitHub PR 코멘트 + Slack + 대시보드         │
+              └─────────────────────────────────────────────────┘
 
-%% ── 사용자 입력 ──────────────────────────────────
-subgraph INPUT["👤 사용자 입력"]
-    direction LR
-    U1["🧑‍💻 신입 개발자\nGitHub PR 제출"]
-    U2["📄 팀원\n사내 문서 업로드"]
-    U3["💬 팀원\n자연어 질의"]
-    U5["📁 별도\n문서 업로드"]
-end
-
-%% ── Module 1: Orchestrator ───────────────────────
-MOD1["🎯 Module 1 — Orchestrator\nLangGraph StateGraph · 라우팅 허브"]
-
-%% ── Module 0: KMS 파이프라인 ─────────────────────
-subgraph MOD0["🗄️ Module 0 — KMS 지식 파이프라인"]
-    M0["문서 업로드 → 변환 → 검증 → 저장\nPostgreSQL + pgVector + GraphDB"]
-end
-
-%% ── Module 2/3: 병렬 분석 ────────────────────────
-subgraph PARALLEL["asyncio.gather · 병렬 실행 (30초 타임아웃)"]
-    direction LR
-    MOD2["🔍 Module 2\n정적분석 + 보안\n(KMS 참조)"]
-    MOD3["🧪 Module 3\n테스트 + 성능분석\n(KMS 참조)"]
-end
-
-%% ── Module 4: 커리큘럼 에이전트 ─────────────────
-MOD4["📚 Module 4 — 커리큘럼 에이전트\nKMS 참조 · 이슈 기반 학습 추천\n→ GitHub PR 코멘트 + Slack 알림 + 대시보드"]
-
-%% ── Module 5 ─────────────────────────────────────
-subgraph MOD5["🕸️ Module 5 — GraphDB + YouTube · 독립 모듈 (KMS 확장 가능)"]
-    M5["별도 웹 UI → Neo4j Aura → 관계 그래프 → YouTube 추천"]
-end
-
-%% ── 연결 ─────────────────────────────────────────
-U1 & U3 --> MOD1
-U2 --> M0
-MOD1 -- "KMS 검색 필요 시" --> M0
-M0 -- "chunk_id / context 반환" --> MOD1
-MOD1 -- "PR 리뷰 요청" --> PARALLEL
-MOD2 & MOD3 --> MOD4
-U5 --> MOD5
-
-%% ── 스타일 ───────────────────────────────────────
-style MOD1 fill:#f3e8f8,stroke:#9C27B0,stroke-width:2px
-style MOD0 fill:#e8f4f8,stroke:#2196F3,stroke-width:2px
-style PARALLEL fill:#e8f8ee,stroke:#4CAF50,stroke-width:2px
-style MOD4 fill:#fff8e8,stroke:#FF9800,stroke-width:2px
-style MOD5 fill:#f8e8e8,stroke:#F44336,stroke-width:2px
+  별도 문서 업로드
+         │
+         ▼
+  ┌────────────────────────────────────────────────────────────────┐
+  │       Module 5: GraphDB + YouTube — 독립 모듈 (KMS 확장 가능)  │
+  │       별도 웹 UI → Neo4j Aura → 관계 그래프 → YouTube 추천    │
+  └────────────────────────────────────────────────────────────────┘
 ```
 
 ---
