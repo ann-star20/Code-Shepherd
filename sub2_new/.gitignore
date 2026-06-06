@@ -1,0 +1,41 @@
+# Python
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+*.egg-info/
+dist/
+build/
+
+# Virtual environment
+.venv/
+venv/
+env/
+
+# Environment
+.env
+*.env
+
+# Coverage
+.coverage
+htmlcov/
+.pytest_cache/
+
+# IDE
+.vscode/
+.idea/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Misc package artifacts
+=*
+
+# Local venv / scratch (not part of the project)
+dev2/test311/
+pj3_data/
+asyncpg_test.py
+db_test.py
+result.txt
+result_all.txt

@@ -1,0 +1,763 @@
+{
+  "module": "M2",
+  "dataset": "m2_owasp_benchmark_python_selected",
+  "source": "OWASP BenchmarkPython",
+  "format": "Dev2 Output Contract (security_scan)",
+  "summary": {
+    "total_cases": 50,
+    "true": 25,
+    "false": 25
+  },
+  "cases": [
+    {
+      "case_id": "m2_owasp_sqli_BenchmarkTest00099",
+      "source": "OWASP BenchmarkPython",
+      "agent": "security_scan",
+      "category": "sqli",
+      "cwe": "CWE-89",
+      "real_vulnerability": true,
+      "expected_issues": [
+        {
+          "severity": "Critical",
+          "issue_type": "Vulnerability",
+          "line": null,
+          "file": "BenchmarkTest00099.py",
+          "message": "OWASP BenchmarkPython labels this case as a real SQL Injection vulnerability.",
+          "rule_id": "SEC-001",
+          "suggestion": "Use parameterized queries and avoid direct string interpolation in SQL.",
+          "resolution_example": "Replace raw SQL string construction with parameterized query execution.",
+          "similar_issues": []
+        }
+      ]
+    },
+    {
+      "case_id": "m2_owasp_sqli_BenchmarkTest00283",
+      "source": "OWASP BenchmarkPython",
+      "agent": "security_scan",
+      "category": "sqli",
+      "cwe": "CWE-89",
+      "real_vulnerability": true,
+      "expected_issues": [
+        {
+          "severity": "Critical",
+          "issue_type": "Vulnerability",
+          "line": null,
+          "file": "BenchmarkTest00283.py",
+          "message": "OWASP BenchmarkPython labels this case as a real SQL Injection vulnerability.",
+          "rule_id": "SEC-001",
+          "suggestion": "Use parameterized queries and avoid direct string interpolation in SQL.",
+          "resolution_example": "Replace raw SQL string construction with parameterized query execution.",
+          "similar_issues": []
+        }
+      ]
+    },
+    {
+      "case_id": "m2_owasp_sqli_BenchmarkTest00284",
+      "source": "OWASP BenchmarkPython",
+      "agent": "security_scan",
+      "category": "sqli",
+      "cwe": "CWE-89",
+      "real_vulnerability": true,
+      "expected_issues": [
+        {
+          "severity": "Critical",
+          "issue_type": "Vulnerability",
+          "line": null,
+          "file": "BenchmarkTest00284.py",
+          "message": "OWASP BenchmarkPython labels this case as a real SQL Injection vulnerability.",
+          "rule_id": "SEC-001",
+          "suggestion": "Use parameterized queries and avoid direct string interpolation in SQL.",
+          "resolution_example": "Replace raw SQL string construction with parameterized query execution.",
+          "similar_issues": []
+        }
+      ]
+    },
+    {
+      "case_id": "m2_owasp_sqli_BenchmarkTest00454",
+      "source": "OWASP BenchmarkPython",
+      "agent": "security_scan",
+      "category": "sqli",
+      "cwe": "CWE-89",
+      "real_vulnerability": true,
+      "expected_issues": [
+        {
+          "severity": "Critical",
+          "issue_type": "Vulnerability",
+          "line": null,
+          "file": "BenchmarkTest00454.py",
+          "message": "OWASP BenchmarkPython labels this case as a real SQL Injection vulnerability.",
+          "rule_id": "SEC-001",
+          "suggestion": "Use parameterized queries and avoid direct string interpolation in SQL.",
+          "resolution_example": "Replace raw SQL string construction with parameterized query execution.",
+          "similar_issues": []
+        }
+      ]
+    },
+    {
+      "case_id": "m2_owasp_sqli_BenchmarkTest00455",
+      "source": "OWASP BenchmarkPython",
+      "agent": "security_scan",
+      "category": "sqli",
+      "cwe": "CWE-89",
+      "real_vulnerability": true,
+      "expected_issues": [
+        {
+          "severity": "Critical",
+          "issue_type": "Vulnerability",
+          "line": null,
+          "file": "BenchmarkTest00455.py",
+          "message": "OWASP BenchmarkPython labels this case as a real SQL Injection vulnerability.",
+          "rule_id": "SEC-001",
+          "suggestion": "Use parameterized queries and avoid direct string interpolation in SQL.",
+          "resolution_example": "Replace raw SQL string construction with parameterized query execution.",
+          "similar_issues": []
+        }
+      ]
+    },
+    {
+      "case_id": "m2_owasp_sqli_BenchmarkTest00011",
+      "source": "OWASP BenchmarkPython",
+      "agent": "security_scan",
+      "category": "sqli",
+      "cwe": "CWE-89",
+      "real_vulnerability": false,
+      "expected_issues": []
+    },
+    {
+      "case_id": "m2_owasp_sqli_BenchmarkTest00012",
+      "source": "OWASP BenchmarkPython",
+      "agent": "security_scan",
+      "category": "sqli",
+      "cwe": "CWE-89",
+      "real_vulnerability": false,
+      "expected_issues": []
+    },
+    {
+      "case_id": "m2_owasp_sqli_BenchmarkTest00100",
+      "source": "OWASP BenchmarkPython",
+      "agent": "security_scan",
+      "category": "sqli",
+      "cwe": "CWE-89",
+      "real_vulnerability": false,
+      "expected_issues": []
+    },
+    {
+      "case_id": "m2_owasp_sqli_BenchmarkTest00192",
+      "source": "OWASP BenchmarkPython",
+      "agent": "security_scan",
+      "category": "sqli",
+      "cwe": "CWE-89",
+      "real_vulnerability": false,
+      "expected_issues": []
+    },
+    {
+      "case_id": "m2_owasp_sqli_BenchmarkTest00285",
+      "source": "OWASP BenchmarkPython",
+      "agent": "security_scan",
+      "category": "sqli",
+      "cwe": "CWE-89",
+      "real_vulnerability": false,
+      "expected_issues": []
+    },
+    {
+      "case_id": "m2_owasp_xss_BenchmarkTest00096",
+      "source": "OWASP BenchmarkPython",
+      "agent": "security_scan",
+      "category": "xss",
+      "cwe": "CWE-79",
+      "real_vulnerability": true,
+      "expected_issues": [
+        {
+          "severity": "Critical",
+          "issue_type": "Vulnerability",
+          "line": null,
+          "file": "BenchmarkTest00096.py",
+          "message": "OWASP BenchmarkPython labels this case as a real Cross-Site Scripting vulnerability.",
+          "rule_id": "SEC-002",
+          "suggestion": "Escape or sanitize untrusted input before rendering it in HTML or JavaScript contexts.",
+          "resolution_example": "Use framework-provided escaping and avoid directly writing user input to responses.",
+          "similar_issues": []
+        }
+      ]
+    },
+    {
+      "case_id": "m2_owasp_xss_BenchmarkTest00097",
+      "source": "OWASP BenchmarkPython",
+      "agent": "security_scan",
+      "category": "xss",
+      "cwe": "CWE-79",
+      "real_vulnerability": true,
+      "expected_issues": [
+        {
+          "severity": "Critical",
+          "issue_type": "Vulnerability",
+          "line": null,
+          "file": "BenchmarkTest00097.py",
+          "message": "OWASP BenchmarkPython labels this case as a real Cross-Site Scripting vulnerability.",
+          "rule_id": "SEC-002",
+          "suggestion": "Escape or sanitize untrusted input before rendering it in HTML or JavaScript contexts.",
+          "resolution_example": "Use framework-provided escaping and avoid directly writing user input to responses.",
+          "similar_issues": []
+        }
+      ]
+    },
+    {
+      "case_id": "m2_owasp_xss_BenchmarkTest00098",
+      "source": "OWASP BenchmarkPython",
+      "agent": "security_scan",
+      "category": "xss",
+      "cwe": "CWE-79",
+      "real_vulnerability": true,
+      "expected_issues": [
+        {
+          "severity": "Critical",
+          "issue_type": "Vulnerability",
+          "line": null,
+          "file": "BenchmarkTest00098.py",
+          "message": "OWASP BenchmarkPython labels this case as a real Cross-Site Scripting vulnerability.",
+          "rule_id": "SEC-002",
+          "suggestion": "Escape or sanitize untrusted input before rendering it in HTML or JavaScript contexts.",
+          "resolution_example": "Use framework-provided escaping and avoid directly writing user input to responses.",
+          "similar_issues": []
+        }
+      ]
+    },
+    {
+      "case_id": "m2_owasp_xss_BenchmarkTest00169",
+      "source": "OWASP BenchmarkPython",
+      "agent": "security_scan",
+      "category": "xss",
+      "cwe": "CWE-79",
+      "real_vulnerability": true,
+      "expected_issues": [
+        {
+          "severity": "Critical",
+          "issue_type": "Vulnerability",
+          "line": null,
+          "file": "BenchmarkTest00169.py",
+          "message": "OWASP BenchmarkPython labels this case as a real Cross-Site Scripting vulnerability.",
+          "rule_id": "SEC-002",
+          "suggestion": "Escape or sanitize untrusted input before rendering it in HTML or JavaScript contexts.",
+          "resolution_example": "Use framework-provided escaping and avoid directly writing user input to responses.",
+          "similar_issues": []
+        }
+      ]
+    },
+    {
+      "case_id": "m2_owasp_xss_BenchmarkTest00187",
+      "source": "OWASP BenchmarkPython",
+      "agent": "security_scan",
+      "category": "xss",
+      "cwe": "CWE-79",
+      "real_vulnerability": true,
+      "expected_issues": [
+        {
+          "severity": "Critical",
+          "issue_type": "Vulnerability",
+          "line": null,
+          "file": "BenchmarkTest00187.py",
+          "message": "OWASP BenchmarkPython labels this case as a real Cross-Site Scripting vulnerability.",
+          "rule_id": "SEC-002",
+          "suggestion": "Escape or sanitize untrusted input before rendering it in HTML or JavaScript contexts.",
+          "resolution_example": "Use framework-provided escaping and avoid directly writing user input to responses.",
+          "similar_issues": []
+        }
+      ]
+    },
+    {
+      "case_id": "m2_owasp_xss_BenchmarkTest00082",
+      "source": "OWASP BenchmarkPython",
+      "agent": "security_scan",
+      "category": "xss",
+      "cwe": "CWE-79",
+      "real_vulnerability": false,
+      "expected_issues": []
+    },
+    {
+      "case_id": "m2_owasp_xss_BenchmarkTest00083",
+      "source": "OWASP BenchmarkPython",
+      "agent": "security_scan",
+      "category": "xss",
+      "cwe": "CWE-79",
+      "real_vulnerability": false,
+      "expected_issues": []
+    },
+    {
+      "case_id": "m2_owasp_xss_BenchmarkTest00084",
+      "source": "OWASP BenchmarkPython",
+      "agent": "security_scan",
+      "category": "xss",
+      "cwe": "CWE-79",
+      "real_vulnerability": false,
+      "expected_issues": []
+    },
+    {
+      "case_id": "m2_owasp_xss_BenchmarkTest00149",
+      "source": "OWASP BenchmarkPython",
+      "agent": "security_scan",
+      "category": "xss",
+      "cwe": "CWE-79",
+      "real_vulnerability": false,
+      "expected_issues": []
+    },
+    {
+      "case_id": "m2_owasp_xss_BenchmarkTest00150",
+      "source": "OWASP BenchmarkPython",
+      "agent": "security_scan",
+      "category": "xss",
+      "cwe": "CWE-79",
+      "real_vulnerability": false,
+      "expected_issues": []
+    },
+    {
+      "case_id": "m2_owasp_pathtraver_BenchmarkTest00001",
+      "source": "OWASP BenchmarkPython",
+      "agent": "security_scan",
+      "category": "pathtraver",
+      "cwe": "CWE-22",
+      "real_vulnerability": true,
+      "expected_issues": [
+        {
+          "severity": "Critical",
+          "issue_type": "Vulnerability",
+          "line": null,
+          "file": "BenchmarkTest00001.py",
+          "message": "OWASP BenchmarkPython labels this case as a real Path Traversal vulnerability.",
+          "rule_id": "SEC-003",
+          "suggestion": "Normalize the path and verify it stays within the allowed base directory.",
+          "resolution_example": "Resolve the target path and reject it if it escapes the configured base directory.",
+          "similar_issues": []
+        }
+      ]
+    },
+    {
+      "case_id": "m2_owasp_pathtraver_BenchmarkTest00002",
+      "source": "OWASP BenchmarkPython",
+      "agent": "security_scan",
+      "category": "pathtraver",
+      "cwe": "CWE-22",
+      "real_vulnerability": true,
+      "expected_issues": [
+        {
+          "severity": "Critical",
+          "issue_type": "Vulnerability",
+          "line": null,
+          "file": "BenchmarkTest00002.py",
+          "message": "OWASP BenchmarkPython labels this case as a real Path Traversal vulnerability.",
+          "rule_id": "SEC-003",
+          "suggestion": "Normalize the path and verify it stays within the allowed base directory.",
+          "resolution_example": "Resolve the target path and reject it if it escapes the configured base directory.",
+          "similar_issues": []
+        }
+      ]
+    },
+    {
+      "case_id": "m2_owasp_pathtraver_BenchmarkTest00003",
+      "source": "OWASP BenchmarkPython",
+      "agent": "security_scan",
+      "category": "pathtraver",
+      "cwe": "CWE-22",
+      "real_vulnerability": true,
+      "expected_issues": [
+        {
+          "severity": "Critical",
+          "issue_type": "Vulnerability",
+          "line": null,
+          "file": "BenchmarkTest00003.py",
+          "message": "OWASP BenchmarkPython labels this case as a real Path Traversal vulnerability.",
+          "rule_id": "SEC-003",
+          "suggestion": "Normalize the path and verify it stays within the allowed base directory.",
+          "resolution_example": "Resolve the target path and reject it if it escapes the configured base directory.",
+          "similar_issues": []
+        }
+      ]
+    },
+    {
+      "case_id": "m2_owasp_pathtraver_BenchmarkTest00008",
+      "source": "OWASP BenchmarkPython",
+      "agent": "security_scan",
+      "category": "pathtraver",
+      "cwe": "CWE-22",
+      "real_vulnerability": true,
+      "expected_issues": [
+        {
+          "severity": "Critical",
+          "issue_type": "Vulnerability",
+          "line": null,
+          "file": "BenchmarkTest00008.py",
+          "message": "OWASP BenchmarkPython labels this case as a real Path Traversal vulnerability.",
+          "rule_id": "SEC-003",
+          "suggestion": "Normalize the path and verify it stays within the allowed base directory.",
+          "resolution_example": "Resolve the target path and reject it if it escapes the configured base directory.",
+          "similar_issues": []
+        }
+      ]
+    },
+    {
+      "case_id": "m2_owasp_pathtraver_BenchmarkTest00085",
+      "source": "OWASP BenchmarkPython",
+      "agent": "security_scan",
+      "category": "pathtraver",
+      "cwe": "CWE-22",
+      "real_vulnerability": true,
+      "expected_issues": [
+        {
+          "severity": "Critical",
+          "issue_type": "Vulnerability",
+          "line": null,
+          "file": "BenchmarkTest00085.py",
+          "message": "OWASP BenchmarkPython labels this case as a real Path Traversal vulnerability.",
+          "rule_id": "SEC-003",
+          "suggestion": "Normalize the path and verify it stays within the allowed base directory.",
+          "resolution_example": "Resolve the target path and reject it if it escapes the configured base directory.",
+          "similar_issues": []
+        }
+      ]
+    },
+    {
+      "case_id": "m2_owasp_pathtraver_BenchmarkTest00004",
+      "source": "OWASP BenchmarkPython",
+      "agent": "security_scan",
+      "category": "pathtraver",
+      "cwe": "CWE-22",
+      "real_vulnerability": false,
+      "expected_issues": []
+    },
+    {
+      "case_id": "m2_owasp_pathtraver_BenchmarkTest00005",
+      "source": "OWASP BenchmarkPython",
+      "agent": "security_scan",
+      "category": "pathtraver",
+      "cwe": "CWE-22",
+      "real_vulnerability": false,
+      "expected_issues": []
+    },
+    {
+      "case_id": "m2_owasp_pathtraver_BenchmarkTest00006",
+      "source": "OWASP BenchmarkPython",
+      "agent": "security_scan",
+      "category": "pathtraver",
+      "cwe": "CWE-22",
+      "real_vulnerability": false,
+      "expected_issues": []
+    },
+    {
+      "case_id": "m2_owasp_pathtraver_BenchmarkTest00007",
+      "source": "OWASP BenchmarkPython",
+      "agent": "security_scan",
+      "category": "pathtraver",
+      "cwe": "CWE-22",
+      "real_vulnerability": false,
+      "expected_issues": []
+    },
+    {
+      "case_id": "m2_owasp_pathtraver_BenchmarkTest00009",
+      "source": "OWASP BenchmarkPython",
+      "agent": "security_scan",
+      "category": "pathtraver",
+      "cwe": "CWE-22",
+      "real_vulnerability": false,
+      "expected_issues": []
+    },
+    {
+      "case_id": "m2_owasp_cmdi_BenchmarkTest00165",
+      "source": "OWASP BenchmarkPython",
+      "agent": "security_scan",
+      "category": "cmdi",
+      "cwe": "CWE-78",
+      "real_vulnerability": true,
+      "expected_issues": [
+        {
+          "severity": "Critical",
+          "issue_type": "Vulnerability",
+          "line": null,
+          "file": "BenchmarkTest00165.py",
+          "message": "OWASP BenchmarkPython labels this case as a real Command Injection vulnerability.",
+          "rule_id": "SEC-004",
+          "suggestion": "Avoid building shell command strings from user input.",
+          "resolution_example": "Use subprocess with an argument list and shell=False.",
+          "similar_issues": []
+        }
+      ]
+    },
+    {
+      "case_id": "m2_owasp_cmdi_BenchmarkTest00166",
+      "source": "OWASP BenchmarkPython",
+      "agent": "security_scan",
+      "category": "cmdi",
+      "cwe": "CWE-78",
+      "real_vulnerability": true,
+      "expected_issues": [
+        {
+          "severity": "Critical",
+          "issue_type": "Vulnerability",
+          "line": null,
+          "file": "BenchmarkTest00166.py",
+          "message": "OWASP BenchmarkPython labels this case as a real Command Injection vulnerability.",
+          "rule_id": "SEC-004",
+          "suggestion": "Avoid building shell command strings from user input.",
+          "resolution_example": "Use subprocess with an argument list and shell=False.",
+          "similar_issues": []
+        }
+      ]
+    },
+    {
+      "case_id": "m2_owasp_cmdi_BenchmarkTest00167",
+      "source": "OWASP BenchmarkPython",
+      "agent": "security_scan",
+      "category": "cmdi",
+      "cwe": "CWE-78",
+      "real_vulnerability": true,
+      "expected_issues": [
+        {
+          "severity": "Critical",
+          "issue_type": "Vulnerability",
+          "line": null,
+          "file": "BenchmarkTest00167.py",
+          "message": "OWASP BenchmarkPython labels this case as a real Command Injection vulnerability.",
+          "rule_id": "SEC-004",
+          "suggestion": "Avoid building shell command strings from user input.",
+          "resolution_example": "Use subprocess with an argument list and shell=False.",
+          "similar_issues": []
+        }
+      ]
+    },
+    {
+      "case_id": "m2_owasp_cmdi_BenchmarkTest00168",
+      "source": "OWASP BenchmarkPython",
+      "agent": "security_scan",
+      "category": "cmdi",
+      "cwe": "CWE-78",
+      "real_vulnerability": true,
+      "expected_issues": [
+        {
+          "severity": "Critical",
+          "issue_type": "Vulnerability",
+          "line": null,
+          "file": "BenchmarkTest00168.py",
+          "message": "OWASP BenchmarkPython labels this case as a real Command Injection vulnerability.",
+          "rule_id": "SEC-004",
+          "suggestion": "Avoid building shell command strings from user input.",
+          "resolution_example": "Use subprocess with an argument list and shell=False.",
+          "similar_issues": []
+        }
+      ]
+    },
+    {
+      "case_id": "m2_owasp_cmdi_BenchmarkTest00267",
+      "source": "OWASP BenchmarkPython",
+      "agent": "security_scan",
+      "category": "cmdi",
+      "cwe": "CWE-78",
+      "real_vulnerability": true,
+      "expected_issues": [
+        {
+          "severity": "Critical",
+          "issue_type": "Vulnerability",
+          "line": null,
+          "file": "BenchmarkTest00267.py",
+          "message": "OWASP BenchmarkPython labels this case as a real Command Injection vulnerability.",
+          "rule_id": "SEC-004",
+          "suggestion": "Avoid building shell command strings from user input.",
+          "resolution_example": "Use subprocess with an argument list and shell=False.",
+          "similar_issues": []
+        }
+      ]
+    },
+    {
+      "case_id": "m2_owasp_cmdi_BenchmarkTest00350",
+      "source": "OWASP BenchmarkPython",
+      "agent": "security_scan",
+      "category": "cmdi",
+      "cwe": "CWE-78",
+      "real_vulnerability": false,
+      "expected_issues": []
+    },
+    {
+      "case_id": "m2_owasp_cmdi_BenchmarkTest00512",
+      "source": "OWASP BenchmarkPython",
+      "agent": "security_scan",
+      "category": "cmdi",
+      "cwe": "CWE-78",
+      "real_vulnerability": false,
+      "expected_issues": []
+    },
+    {
+      "case_id": "m2_owasp_cmdi_BenchmarkTest00736",
+      "source": "OWASP BenchmarkPython",
+      "agent": "security_scan",
+      "category": "cmdi",
+      "cwe": "CWE-78",
+      "real_vulnerability": false,
+      "expected_issues": []
+    },
+    {
+      "case_id": "m2_owasp_cmdi_BenchmarkTest00900",
+      "source": "OWASP BenchmarkPython",
+      "agent": "security_scan",
+      "category": "cmdi",
+      "cwe": "CWE-78",
+      "real_vulnerability": false,
+      "expected_issues": []
+    },
+    {
+      "case_id": "m2_owasp_cmdi_BenchmarkTest01097",
+      "source": "OWASP BenchmarkPython",
+      "agent": "security_scan",
+      "category": "cmdi",
+      "cwe": "CWE-78",
+      "real_vulnerability": false,
+      "expected_issues": []
+    },
+    {
+      "case_id": "m2_owasp_hash_BenchmarkTest00054",
+      "source": "OWASP BenchmarkPython",
+      "agent": "security_scan",
+      "category": "hash",
+      "cwe": "CWE-328",
+      "real_vulnerability": true,
+      "expected_issues": [
+        {
+          "severity": "Major",
+          "issue_type": "Vulnerability",
+          "line": null,
+          "file": "BenchmarkTest00054.py",
+          "message": "OWASP BenchmarkPython labels this case as a real Weak Hash vulnerability.",
+          "rule_id": "SEC-005",
+          "suggestion": "Use a modern secure hashing algorithm appropriate for the data being protected.",
+          "resolution_example": "Replace MD5/SHA1 with SHA-256 for integrity or bcrypt/Argon2/PBKDF2 for passwords.",
+          "similar_issues": []
+        }
+      ]
+    },
+    {
+      "case_id": "m2_owasp_hash_BenchmarkTest00057",
+      "source": "OWASP BenchmarkPython",
+      "agent": "security_scan",
+      "category": "hash",
+      "cwe": "CWE-328",
+      "real_vulnerability": true,
+      "expected_issues": [
+        {
+          "severity": "Major",
+          "issue_type": "Vulnerability",
+          "line": null,
+          "file": "BenchmarkTest00057.py",
+          "message": "OWASP BenchmarkPython labels this case as a real Weak Hash vulnerability.",
+          "rule_id": "SEC-005",
+          "suggestion": "Use a modern secure hashing algorithm appropriate for the data being protected.",
+          "resolution_example": "Replace MD5/SHA1 with SHA-256 for integrity or bcrypt/Argon2/PBKDF2 for passwords.",
+          "similar_issues": []
+        }
+      ]
+    },
+    {
+      "case_id": "m2_owasp_hash_BenchmarkTest00058",
+      "source": "OWASP BenchmarkPython",
+      "agent": "security_scan",
+      "category": "hash",
+      "cwe": "CWE-328",
+      "real_vulnerability": true,
+      "expected_issues": [
+        {
+          "severity": "Major",
+          "issue_type": "Vulnerability",
+          "line": null,
+          "file": "BenchmarkTest00058.py",
+          "message": "OWASP BenchmarkPython labels this case as a real Weak Hash vulnerability.",
+          "rule_id": "SEC-005",
+          "suggestion": "Use a modern secure hashing algorithm appropriate for the data being protected.",
+          "resolution_example": "Replace MD5/SHA1 with SHA-256 for integrity or bcrypt/Argon2/PBKDF2 for passwords.",
+          "similar_issues": []
+        }
+      ]
+    },
+    {
+      "case_id": "m2_owasp_hash_BenchmarkTest00059",
+      "source": "OWASP BenchmarkPython",
+      "agent": "security_scan",
+      "category": "hash",
+      "cwe": "CWE-328",
+      "real_vulnerability": true,
+      "expected_issues": [
+        {
+          "severity": "Major",
+          "issue_type": "Vulnerability",
+          "line": null,
+          "file": "BenchmarkTest00059.py",
+          "message": "OWASP BenchmarkPython labels this case as a real Weak Hash vulnerability.",
+          "rule_id": "SEC-005",
+          "suggestion": "Use a modern secure hashing algorithm appropriate for the data being protected.",
+          "resolution_example": "Replace MD5/SHA1 with SHA-256 for integrity or bcrypt/Argon2/PBKDF2 for passwords.",
+          "similar_issues": []
+        }
+      ]
+    },
+    {
+      "case_id": "m2_owasp_hash_BenchmarkTest00060",
+      "source": "OWASP BenchmarkPython",
+      "agent": "security_scan",
+      "category": "hash",
+      "cwe": "CWE-328",
+      "real_vulnerability": true,
+      "expected_issues": [
+        {
+          "severity": "Major",
+          "issue_type": "Vulnerability",
+          "line": null,
+          "file": "BenchmarkTest00060.py",
+          "message": "OWASP BenchmarkPython labels this case as a real Weak Hash vulnerability.",
+          "rule_id": "SEC-005",
+          "suggestion": "Use a modern secure hashing algorithm appropriate for the data being protected.",
+          "resolution_example": "Replace MD5/SHA1 with SHA-256 for integrity or bcrypt/Argon2/PBKDF2 for passwords.",
+          "similar_issues": []
+        }
+      ]
+    },
+    {
+      "case_id": "m2_owasp_hash_BenchmarkTest00055",
+      "source": "OWASP BenchmarkPython",
+      "agent": "security_scan",
+      "category": "hash",
+      "cwe": "CWE-328",
+      "real_vulnerability": false,
+      "expected_issues": []
+    },
+    {
+      "case_id": "m2_owasp_hash_BenchmarkTest00056",
+      "source": "OWASP BenchmarkPython",
+      "agent": "security_scan",
+      "category": "hash",
+      "cwe": "CWE-328",
+      "real_vulnerability": false,
+      "expected_issues": []
+    },
+    {
+      "case_id": "m2_owasp_hash_BenchmarkTest00061",
+      "source": "OWASP BenchmarkPython",
+      "agent": "security_scan",
+      "category": "hash",
+      "cwe": "CWE-328",
+      "real_vulnerability": false,
+      "expected_issues": []
+    },
+    {
+      "case_id": "m2_owasp_hash_BenchmarkTest00062",
+      "source": "OWASP BenchmarkPython",
+      "agent": "security_scan",
+      "category": "hash",
+      "cwe": "CWE-328",
+      "real_vulnerability": false,
+      "expected_issues": []
+    },
+    {
+      "case_id": "m2_owasp_hash_BenchmarkTest00063",
+      "source": "OWASP BenchmarkPython",
+      "agent": "security_scan",
+      "category": "hash",
+      "cwe": "CWE-328",
+      "real_vulnerability": false,
+      "expected_issues": []
+    }
+  ]
+}
