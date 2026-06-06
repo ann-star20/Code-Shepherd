@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from "react";
-import { approveHitl, applyCategory, getHitlMarkdown, listHitlQueue, rejectHitl, reprocessHitl, suggestCategory } from "../lib/hitlApi";
-import type { CategorySuggestion } from "../lib/hitlApi";
+import { SplitView } from "./SplitView";
+import { approveHitl, applyCategory, getHitlMarkdown, getPageImages, listHitlQueue, rejectHitl, reprocessHitl, suggestCategory } from "../lib/hitlApi";
+import type { CategorySuggestion, PageImage } from "../lib/hitlApi";
 import type { HitlQueueItem } from "../types/kms";
 
 type TabStatus = "pending" | "approved" | "rejected" | "reprocessing";
@@ -212,6 +213,7 @@ export function HitlQueue() {
             onKbInputChange={setKbInput}
             onKbApply={() => handleKbApply(selected)}
             onLoadMarkdown={getHitlMarkdown}
+          onGetPageImages={getPageImages}
           />
         )}
       </div>
@@ -222,7 +224,7 @@ export function HitlQueue() {
 function ItemDetail({
   item, busy, onApprove, onReject, onReprocess,
   isKbEvolution, kbSuggestion, kbLoading, kbInput, kbSelected,
-  onKbSuggest, onKbSelect, onKbInputChange, onKbApply, onLoadMarkdown,
+  onKbSuggest, onKbSelect, onKbInputChange, onKbApply, onLoadMarkdown, onGetPageImages,
 }: {
   item: HitlQueueItem;
   busy: boolean;
@@ -239,20 +241,24 @@ function ItemDetail({
   onKbInputChange: (v: string) => void;
   onKbApply: () => void;
   onLoadMarkdown: (queueId: string) => Promise<{ markdown: string; path: string }>;
+  onGetPageImages: (queueId: string) => Promise<PageImage[]>;
 }) {
-  const [rejectNote, setRejectNote] = useState("");
-  const [mdPreview, setMdPreview]   = useState<string | null>(null);
-  const [mdLoading, setMdLoading]   = useState(false);
+  const [rejectNote, setRejectNote]   = useState("");
+  const [splitData, setSplitData]     = useState<{ markdown: string; pageImages: PageImage[] } | null>(null);
+  const [splitLoading, setSplitLoading] = useState(false);
 
-  const handleLoadMarkdown = async () => {
-    setMdLoading(true);
+  const handleLoadSplitView = async () => {
+    setSplitLoading(true);
     try {
-      const res = await onLoadMarkdown(item.queue_id);
-      setMdPreview(res.markdown);
+      const [mdRes, images] = await Promise.all([
+        onLoadMarkdown(item.queue_id),
+        onGetPageImages(item.queue_id),
+      ]);
+      setSplitData({ markdown: mdRes.markdown, pageImages: images });
     } catch {
-      setMdPreview("Markdown 로드 실패");
+      setSplitData({ markdown: "Markdown 로드 실패", pageImages: [] });
     } finally {
-      setMdLoading(false);
+      setSplitLoading(false);
     }
   };
 
@@ -288,13 +294,13 @@ function ItemDetail({
       })()}
 
       <div style={{ marginTop: 12 }}>
-        <button style={{ ...styles.btn, background: "#64748b", fontSize: 12, padding: "5px 12px" }} disabled={mdLoading} onClick={handleLoadMarkdown}>
-          {mdLoading ? "로딩 중..." : "📄 Markdown 미리보기"}
+        <button style={{ ...styles.btn, background: "#64748b", fontSize: 12, padding: "5px 12px" }} disabled={splitLoading} onClick={handleLoadSplitView}>
+          {splitLoading ? "로딩 중..." : "📄 Markdown 미리보기"}
         </button>
-        {mdPreview !== null && (
-          <pre style={{ marginTop: 8, padding: 10, background: "#f8fafc", border: "1px solid #e2e8f0", borderRadius: 6, fontSize: 11, overflowX: "auto", maxHeight: 300, overflowY: "auto", whiteSpace: "pre-wrap", wordBreak: "break-word" }}>
-            {mdPreview}
-          </pre>
+        {splitData !== null && (
+          <div style={{ marginTop: 8, height: 500, borderRadius: 6, overflow: "hidden", border: "1px solid #e2e8f0" }}>
+            <SplitView markdown={splitData.markdown} pageImages={splitData.pageImages} />
+          </div>
         )}
       </div>
 
