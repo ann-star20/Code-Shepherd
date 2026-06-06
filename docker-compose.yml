@@ -48,6 +48,7 @@ services:
       - ./backend/_shared:/app/_shared:ro
       - ./backend/m0:/app/service
       - ${GOOGLE_ADC_PATH}:/root/.config/gcloud/application_default_credentials.json:ro
+      - ./secrets:/app/secrets:ro
     networks:
       - code-shepherd
     restart: unless-stopped
