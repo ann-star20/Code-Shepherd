@@ -81,6 +81,7 @@ class SearchResultItem(BaseModel):
     score: float
     metadata: dict | None = None
     doc_title: str | None = None
+    page_image_path: str | None = None
 
 
 class SearchResponse(BaseModel):

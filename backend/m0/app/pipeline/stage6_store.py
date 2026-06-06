@@ -249,6 +249,7 @@ async def _insert_embedding_rows(
     rows: list[tuple[dict, list[float]]],
     metadata: dict,
     model_name: str = EMBEDDING_MODEL,
+    doc_id: str | None = None,
 ) -> None:
     """사전 계산된 임베딩을 pgVector에 INSERT한다 (HTTP 호출 없음 — 트랜잭션 내부 전용)."""
     if not rows:
@@ -265,6 +266,11 @@ async def _insert_embedding_rows(
                     "team": metadata.get("team"),
                     "tags": metadata.get("tags", []),
                     "section_header": chunk.get("section_header"),
+                    "page_image_path": (
+                        f"images/{doc_id}/page_{chunk['page_number']}.png"
+                        if doc_id and chunk.get("page_number") is not None
+                        else None
+                    ),
                 },
                 ensure_ascii=False,
             ),
@@ -286,6 +292,36 @@ async def _insert_embedding_rows(
 # ---------------------------------------------------------------------------
 # Neo4j 저장
 # ---------------------------------------------------------------------------
+
+async def _save_page_images(
+    doc_id: str,
+    page_images: list[dict] | None,
+    storage: "Storage",
+) -> list[str]:
+    """페이지 이미지를 Storage에 저장하고 경로 목록을 반환한다.
+
+    저장 경로: images/{doc_id}/page_{page_number}.png
+
+    Returns:
+        저장된 GCS 경로 목록 (page_images=None 또는 []이면 빈 리스트)
+    """
+    if not page_images:
+        return []
+
+    paths: list[str] = []
+    for item in page_images:
+        page_num = item["page_number"]
+        image_bytes = item["image_bytes"]
+        path = f"images/{doc_id}/page_{page_num}.png"
+        await storage.save(path, image_bytes)
+        paths.append(path)
+
+    logger.info(
+        f"페이지 이미지 {len(paths)}장 저장 완료",
+        extra={"doc_id": doc_id},
+    )
+    return paths
+
 
 async def _save_to_neo4j(state: "DocPipelineState") -> bool:
     """Neo4j에 Document 노드, Chunk 노드, Entity 노드, MENTIONS 관계 저장.
@@ -404,7 +440,7 @@ async def stage6_store(
             async with session.begin():
                 await _save_document(session, state, markdown_path, original_path)
                 await _save_chunks(session, chunks, doc_id)
-                await _insert_embedding_rows(session, embedding_rows, metadata, embed_model)
+                await _insert_embedding_rows(session, embedding_rows, metadata, embed_model, doc_id=doc_id)
     except Exception as e:
         logger.error(f"PostgreSQL 저장 실패: {e}", extra={"doc_id": doc_id})
         return {
@@ -414,7 +450,16 @@ async def stage6_store(
             "current_stage": "stage6_store",
         }
 
-    # --- 4. Neo4j 저장 (실패해도 파이프라인 계속) ---
+    # --- 4. 페이지 이미지 GCS 저장 (실패해도 파이프라인 계속) ---
+    page_image_paths: list[str] = []
+    page_images = state.get("page_images")
+    if page_images:
+        try:
+            page_image_paths = await _save_page_images(doc_id, page_images, storage)
+        except Exception as e:
+            logger.warning(f"페이지 이미지 저장 실패 (무시): {e}", extra={"doc_id": doc_id})
+
+    # --- 5. Neo4j 저장 (실패해도 파이프라인 계속) ---
     neo4j_ok = await _save_to_neo4j(state)
 
     async with db_session_factory() as session:
@@ -428,13 +473,17 @@ async def stage6_store(
     if not neo4j_ok:
         logger.warning("Neo4j 저장 실패 — stored_partial 로 처리", extra={"doc_id": doc_id})
 
-    logger.info(f"Stage 6 완료 (status={final_status})", extra={"doc_id": doc_id})
+    logger.info(
+        f"Stage 6 완료 (status={final_status}, page_images={len(page_image_paths)}장)",
+        extra={"doc_id": doc_id},
+    )
     return {
         "stored": True,
         "neo4j_stored": neo4j_ok,
         "storage_paths": {
             "original": original_path,
             "markdown": markdown_path,
+            "page_images": page_image_paths,
         },
         "status": final_status,
         "current_stage": "stage6_store",

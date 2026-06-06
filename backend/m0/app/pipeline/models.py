@@ -65,6 +65,7 @@ class Neo4jRelation(BaseModel):
 class StoragePaths(TypedDict):
     original: str                       # 원본 파일 경로
     markdown: str                       # 변환된 Markdown 파일 경로
+    page_images: list[str]              # 페이지별 이미지 경로 (images/{doc_id}/page_N.png)
 
 
 # ---------------------------------------------------------------------------
@@ -93,6 +94,8 @@ class DocPipelineState(TypedDict):
     fallback_used: Optional[bool]
     image_refs: Optional[list]           # GCS 이미지 경로 (Stage 6 업로드 후)
     image_data: Optional[list]           # 임시 이미지 바이너리 (Stage 1→6 전달용)
+    # 형식: [{"page_number": int, "image_bytes": bytes}, ...]
+    page_images: Optional[list]          # 페이지별 PNG bytes (Stage 1 추출 → Stage 6 GCS 저장)
 
     # Stage 2: Markdown 검증 출력
     validated_markdown: Optional[str]
@@ -165,6 +168,7 @@ def make_reprocess_state(
         fallback_used=None,
         image_refs=None,
         image_data=None,
+        page_images=None,
         validated_markdown=raw_markdown if start_validated else None,
         quality_score=None,
         quality_issues=None,

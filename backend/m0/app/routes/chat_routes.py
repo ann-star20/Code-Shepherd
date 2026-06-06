@@ -65,6 +65,7 @@ class ChatSource(BaseModel):
     score: float
     doc_title: str | None = None
     source_type: str = "pgvector"
+    page_image_path: str | None = None
 
 
 class ChatResponse(BaseModel):
