@@ -280,16 +280,17 @@ class TestStage1ReturnsImageData:
     # ---- PDF ----
 
     async def test_pdf_state_contains_image_data(self):
-        """PDF 처리 후 state['image_data']에 페이지 이미지가 담겨야 한다."""
+        """PDF 처리 후 state['page_images']에 페이지 이미지가 담겨야 한다."""
         from app.pipeline.stage1_document_parser_agent import document_parser_agent
 
         state = self._make_base_state("pdf")
         storage = self._make_mock_storage()
 
+        # PDF는 _parse_with_quality_loop 경로를 사용하므로 해당 함수를 패치
         with (
             patch(
-                "app.pipeline.stage1_document_parser_agent._extract_markdown",
-                new=AsyncMock(return_value="# Test\n" + "a" * 300),
+                "app.pipeline.stage1_document_parser_agent._parse_with_quality_loop",
+                new=AsyncMock(return_value=("# Test\n" + "a" * 300, "pymupdf", 85)),
             ),
             patch(
                 "app.pipeline.stage1_document_parser_agent._extract_page_images_pdf",
@@ -299,22 +300,23 @@ class TestStage1ReturnsImageData:
         ):
             result = await document_parser_agent(state, storage=storage)
 
-        assert result.get("image_data") is not None, (
-            "PDF 처리 후 image_data가 None이면 안 됩니다"
+        assert result.get("page_images") is not None, (
+            "PDF 처리 후 page_images가 None이면 안 됩니다"
         )
-        assert isinstance(result["image_data"], list)
-        assert len(result["image_data"]) == 1
-        assert result["image_data"][0]["page_number"] == 1
+        assert isinstance(result["page_images"], list)
+        assert len(result["page_images"]) == 1
+        assert result["page_images"][0]["page_number"] == 1
 
     # ---- PPTX ----
 
     async def test_pptx_state_contains_image_data(self):
-        """PPTX 처리 후 state['image_data']에 슬라이드 이미지가 담겨야 한다."""
+        """PPTX 처리 후 state['page_images']에 슬라이드 이미지가 담겨야 한다."""
         from app.pipeline.stage1_document_parser_agent import document_parser_agent
 
         state = self._make_base_state("pptx")
         storage = self._make_mock_storage()
 
+        # PPTX는 _extract_markdown 경로를 사용 (unstructured 파서)
         with (
             patch(
                 "app.pipeline.stage1_document_parser_agent._extract_markdown",
@@ -328,13 +330,15 @@ class TestStage1ReturnsImageData:
         ):
             result = await document_parser_agent(state, storage=storage)
 
-        assert result.get("image_data") is not None
-        assert isinstance(result["image_data"], list)
+        assert result.get("page_images") is not None, (
+            "PPTX 처리 후 page_images가 None이면 안 됩니다"
+        )
+        assert isinstance(result["page_images"], list)
 
     # ---- TXT (이미지 없음) ----
 
     async def test_txt_state_image_data_is_none(self):
-        """TXT 처리 후 image_data는 None이어야 한다."""
+        """TXT 처리 후 page_images는 None이어야 한다."""
         from app.pipeline.stage1_document_parser_agent import document_parser_agent
 
         state = self._make_base_state("txt")
@@ -349,6 +353,6 @@ class TestStage1ReturnsImageData:
         ):
             result = await document_parser_agent(state, storage=storage)
 
-        assert result.get("image_data") is None, (
-            "TXT 파일은 image_data가 None이어야 합니다"
+        assert result.get("page_images") is None, (
+            "TXT 파일은 page_images가 None이어야 합니다"
         )
