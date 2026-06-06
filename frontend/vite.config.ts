@@ -19,7 +19,8 @@ export default defineConfig({
     port: 5173,
     proxy: {
       "/api": {
-        target: "http://api-core:8000",
+        // 로컬 풀스택은 VITE_PROXY_TARGET=http://localhost:8000 로 덮어쓴다(기본은 compose 호스트).
+        target: process.env.VITE_PROXY_TARGET ?? "http://api-core:8000",
         changeOrigin: true,
         rewrite: (path) => path.replace(/^\/api/, ""),
       },

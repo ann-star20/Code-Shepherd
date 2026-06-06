@@ -6,6 +6,7 @@ import hashlib
 import hmac
 import uuid
 
+import httpx
 from fastapi import APIRouter, Header, HTTPException, Request, status
 from pydantic import BaseModel
 
@@ -34,6 +35,30 @@ from ..clients.module_clients import (
 
 router = APIRouter()
 logger = get_logger(__name__)
+
+
+# diff_url(.diff) 본문 fetch 타임아웃. 데모 레포는 public 이라 토큰 불필요.
+_DIFF_FETCH_TIMEOUT_S = 15.0
+
+
+async def _fetch_pr_diff(diff_url: str) -> str:
+    """PR 의 diff_url(.diff)을 본문 텍스트로 1회 fetch.
+
+    m2·m3 는 URL 이 아니라 'diff --git ...' 본문을 기대한다. 따라서 여기서 본문으로
+    치환해 보낸다. diff_url 이 비었거나, fetch 실패/비-diff 응답이면 빈 문자열을 돌려준다
+    (가짜 diff 를 만들지 않는다 — 빈 본문이면 분석은 빈 결과로 정직하게 흐른다).
+    """
+    if not diff_url:
+        return ""
+    try:
+        async with httpx.AsyncClient(follow_redirects=True, timeout=_DIFF_FETCH_TIMEOUT_S) as client:
+            resp = await client.get(diff_url)
+        if resp.status_code == 200 and resp.text.startswith("diff --git"):
+            return resp.text
+    except Exception as exc:  # noqa: BLE001 — 네트워크/HTTP 어떤 실패든 정직하게 빈 본문으로
+        logger.warning("pr_diff_fetch_failed", url=diff_url, error=str(exc))
+        return ""
+    return ""
 
 
 def _verify_github_hmac(body: bytes, signature: str | None, secret: str) -> bool:
@@ -125,17 +150,32 @@ async def receive_pr_webhook(
         raise
 
     task_id = str(uuid.uuid4())
+
+    # diff_url → 본문 텍스트로 1회 fetch. URL 그대로 m2/m3 로 보내지 않는다.
+    # (ingest 통과 후에 fetch — skip 되는 PR 에 불필요한 네트워크를 쓰지 않게.)
+    diff_text = await _fetch_pr_diff(pull_request.get("diff_url", ""))
+
+    # m3 실 분석(clone→run)용 repo 좌표.
+    head = pull_request.get("head") or {}
+    clone_url = (head.get("repo") or {}).get("clone_url") or raw.get("repository", {}).get(
+        "clone_url"
+    )
+    commit_sha = head.get("sha")
+
+    # m2·m3 둘 다 동일한 diff_text 를 쓴다(빈 문자열이면 분석은 빈 결과로 정직하게).
     analysis_req = M2AnalyzeRequest(
         task_id=task_id,
         pr_id=trigger.pr_id or "",
-        pr_diff=trigger.pr_diff,
+        pr_diff=diff_text,
         context=AnalysisContext(),
         trace_id=trigger.trace_id,
     )
     verify_req = M3VerifyRequest(
         task_id=task_id,
         pr_id=trigger.pr_id or "",
-        pr_diff=trigger.pr_diff,
+        pr_diff=diff_text,
+        clone_url=clone_url,
+        commit_sha=commit_sha,
         context=AnalysisContext(),
         trace_id=trigger.trace_id,
     )
