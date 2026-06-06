@@ -19,6 +19,9 @@ import base64
 import logging
 import os
 import re
+import shutil
+import subprocess
+import tempfile
 import time
 from datetime import date
 from pathlib import Path
@@ -1117,18 +1120,21 @@ async def document_parser_agent(
     storage_path = f"markdown/{doc_id}/raw.md"
     await storage.save(storage_path, markdown.encode("utf-8"))
 
-    # [7] 페이지 이미지 추출 (PDF / PPTX — 멀티모달 RAG용)
+    # [7] 페이지 이미지 추출 (PDF / DOCX / PPTX — 멀티모달 RAG용)
     page_images: list[dict] | None = None
     if file_type == "pdf":
         try:
             page_images = await asyncio.to_thread(_extract_page_images_pdf, file_path)
         except Exception as e:
             logger.warning(f"PDF 페이지 이미지 추출 실패 (무시): {e}", extra={"doc_id": doc_id})
-    elif file_type == "pptx":
+    elif file_type in ("docx", "pptx"):
         try:
-            page_images = await asyncio.to_thread(_extract_page_images_pptx, file_path)
+            page_images = await asyncio.to_thread(_extract_page_images_docx, file_path)
         except Exception as e:
-            logger.warning(f"PPTX 슬라이드 이미지 추출 실패 (무시): {e}", extra={"doc_id": doc_id})
+            logger.warning(
+                f"{file_type.upper()} 페이지 이미지 추출 실패 (무시, LibreOffice 필요): {e}",
+                extra={"doc_id": doc_id},
+            )
 
     logger.info(
         "Stage 1 완료",
@@ -1260,3 +1266,44 @@ def _extract_page_images_pptx(file_path: str) -> list[dict]:
             "image_bytes": _render_slide_to_png(slide),
         })
     return result
+
+
+def _convert_to_pdf_with_libreoffice(file_path: str) -> tuple[str, str]:
+    """LibreOffice headless로 DOCX/PPTX를 PDF로 변환한다.
+
+    Returns:
+        (pdf_path, tmp_dir) — 호출자가 tmp_dir을 shutil.rmtree로 정리해야 함.
+    Raises:
+        RuntimeError: LibreOffice 변환 실패 시
+    """
+    tmp_dir = tempfile.mkdtemp()
+    result = subprocess.run(
+        ["libreoffice", "--headless", "--convert-to", "pdf", "--outdir", tmp_dir, file_path],
+        capture_output=True,
+        text=True,
+        timeout=120,
+    )
+    if result.returncode != 0:
+        raise RuntimeError(f"LibreOffice 변환 실패 (code={result.returncode}): {result.stderr}")
+
+    pdf_name = Path(file_path).stem + ".pdf"
+    pdf_path = os.path.join(tmp_dir, pdf_name)
+    if not os.path.exists(pdf_path):
+        raise RuntimeError(f"LibreOffice PDF 출력 파일 없음: {pdf_path}")
+
+    return pdf_path, tmp_dir
+
+
+def _extract_page_images_docx(file_path: str, dpi: int = 150) -> list[dict]:
+    """DOCX/PPTX를 LibreOffice로 PDF 변환 후 페이지 이미지를 추출한다.
+
+    LibreOffice가 없으면 RuntimeError가 전파됩니다.
+
+    Returns:
+        [{"page_number": 1, "image_bytes": b"..."}, ...]  (1-indexed)
+    """
+    pdf_path, tmp_dir = _convert_to_pdf_with_libreoffice(file_path)
+    try:
+        return _extract_page_images_pdf(pdf_path, dpi=dpi)
+    finally:
+        shutil.rmtree(tmp_dir, ignore_errors=True)

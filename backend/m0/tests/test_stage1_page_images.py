@@ -317,13 +317,14 @@ class TestStage1ReturnsImageData:
         storage = self._make_mock_storage()
 
         # PPTX는 _extract_markdown 경로를 사용 (unstructured 파서)
+        # 이미지 추출은 LibreOffice 경유 _extract_page_images_docx 사용
         with (
             patch(
                 "app.pipeline.stage1_document_parser_agent._extract_markdown",
                 new=AsyncMock(return_value="Slide content " * 30),
             ),
             patch(
-                "app.pipeline.stage1_document_parser_agent._extract_page_images_pptx",
+                "app.pipeline.stage1_document_parser_agent._extract_page_images_docx",
                 return_value=self.FAKE_PAGE_IMAGES,
             ),
             patch("os.path.getsize", return_value=20000),

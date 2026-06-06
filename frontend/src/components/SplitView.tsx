@@ -6,9 +6,10 @@ import type { PageImage } from "../lib/hitlApi";
 interface SplitViewProps {
   markdown: string;
   pageImages: PageImage[];
+  rawText?: string;
 }
 
-export function SplitView({ markdown, pageImages }: SplitViewProps) {
+export function SplitView({ markdown, pageImages, rawText }: SplitViewProps) {
   const [currentPage, setCurrentPage] = useState(1);
 
   const currentImage = pageImages.find(p => p.page === currentPage);
@@ -63,7 +64,24 @@ export function SplitView({ markdown, pageImages }: SplitViewProps) {
         )}
 
         <div style={{ flex: 1, overflowY: "auto", display: "flex", justifyContent: "center", padding: 16 }}>
-          {pageImages.length === 0 ? (
+          {pageImages.length === 0 && rawText ? (
+            <pre
+              data-testid="raw-text-panel"
+              style={{
+                width: "100%",
+                margin: 0,
+                padding: "12px 16px",
+                fontFamily: "monospace",
+                fontSize: 13,
+                lineHeight: 1.6,
+                color: "#334155",
+                whiteSpace: "pre-wrap",
+                wordBreak: "break-word",
+                background: "transparent",
+                border: "none",
+              }}
+            >{rawText}</pre>
+          ) : pageImages.length === 0 ? (
             <p style={{ color: "#94a3b8", fontSize: 13, textAlign: "center", margin: "auto" }}>페이지 이미지가 없습니다</p>
           ) : currentImage ? (
             <img

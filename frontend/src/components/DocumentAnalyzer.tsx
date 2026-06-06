@@ -168,7 +168,7 @@ export function DocumentAnalyzer({ chunks, docId }: DocumentAnalyzerProps) {
           {!imagesLoaded ? (
             <p style={{ color: "#94a3b8", fontSize: 13, textAlign: "center", padding: 40 }}>이미지 로딩 중...</p>
           ) : (
-            <SplitView markdown={fullMarkdown} pageImages={pageImages} />
+            <SplitView markdown={fullMarkdown} pageImages={pageImages} rawText={fullMarkdown} />
           )}
         </div>
       )}
