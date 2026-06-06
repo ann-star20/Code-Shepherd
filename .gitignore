@@ -27,6 +27,10 @@ htmlcov/
 # uv
 .uv/
 
+# Local DB / runtime data (예: dev3_demo.db — 리뷰 결과 런타임 저장)
+*.db
+*.sqlite3
+
 # Node / frontend
 node_modules/
 dist/

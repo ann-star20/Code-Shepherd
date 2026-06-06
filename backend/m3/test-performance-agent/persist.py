@@ -56,6 +56,16 @@ CREATE TABLE IF NOT EXISTS scan_summaries (
     metrics  TEXT,
     UNIQUE(scan_id, agent)
 );
+CREATE TABLE IF NOT EXISTS review_results (
+    owner      TEXT NOT NULL,
+    repo       TEXT NOT NULL,
+    pr_number  INTEGER NOT NULL,
+    verdict    TEXT NOT NULL,
+    comment    TEXT,
+    issues     TEXT,
+    created_at TEXT DEFAULT (datetime('now')),
+    PRIMARY KEY (owner, repo, pr_number)
+);
 """
 
 
@@ -116,6 +126,51 @@ def _readback(scan_id: int):
     ).fetchall()
     conn.close()
     return issues, summaries
+
+
+# ════════════════════════════════════════════════════════════════════
+# 리뷰 결과 저장/조회 — m3 /review 가 산출한 {verdict, comment, issues} 보관.
+# (owner, repo, pr_number) 기준 UPSERT. 프론트(GET /review)가 읽어 표시한다.
+# scan_issues 와 별개: verdict·comment 를 담아야 하므로 전용 테이블 사용.
+# ════════════════════════════════════════════════════════════════════
+
+def save_review(owner, repo, pr_number, verdict, comment, issues) -> None:
+    """리뷰 결과 1건을 (owner, repo, pr_number) 키로 UPSERT 저장."""
+    conn = _conn()
+    try:
+        conn.execute(
+            """INSERT INTO review_results(owner,repo,pr_number,verdict,comment,issues)
+               VALUES(?,?,?,?,?,?)
+               ON CONFLICT(owner,repo,pr_number) DO UPDATE SET
+                 verdict=excluded.verdict, comment=excluded.comment,
+                 issues=excluded.issues, created_at=datetime('now')""",
+            (owner, repo, int(pr_number), verdict, comment,
+             json.dumps(issues, ensure_ascii=False)),
+        )
+        conn.commit()
+    finally:
+        conn.close()
+
+
+def get_review(owner, repo, pr_number):
+    """저장된 리뷰 결과를 dict 로 반환. 없으면 None."""
+    conn = _conn()
+    try:
+        row = conn.execute(
+            "SELECT verdict, comment, issues FROM review_results "
+            "WHERE owner=? AND repo=? AND pr_number=?",
+            (owner, repo, int(pr_number)),
+        ).fetchone()
+    finally:
+        conn.close()
+    if not row:
+        return None
+    verdict, comment, issues_json = row
+    return {
+        "verdict": verdict,
+        "comment": comment or "",
+        "issues": json.loads(issues_json) if issues_json else [],
+    }
 
 
 # ════════════════════════════════════════════════════════════════════

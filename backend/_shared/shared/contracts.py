@@ -105,6 +105,29 @@ class M3VerifyResponse(BaseModel):
     execution_ms: int = 0
 
 
+class M3ReviewRequest(BaseModel):
+    """4개 모듈 결과를 모아 판정·코멘트·게시를 요청 (M4EvaluateRequest 동형 + repository/pr_number)."""
+    task_id: str
+    pr_id: str
+    repository: str  # "owner/repo" — 코멘트를 게시할 대상
+    pr_number: int
+    static_analysis: M2AnalyzeResponse | None = None
+    security_scan: M2AnalyzeResponse | None = None
+    test_verification: M3VerifyResponse | None = None
+    performance: M3VerifyResponse | None = None
+    developer: DeveloperProfile | None = None
+    trace_id: str | None = None
+
+
+class M3ReviewResponse(BaseModel):
+    task_id: str
+    pr_id: str
+    verdict: Literal["lgtm", "rework", "escalate"] = "lgtm"
+    comment_posted: bool = False
+    comment_url: str | None = None
+    persisted: bool = False
+
+
 # ---------------------------------------------------------------------------
 # m4 — 커리큘럼·판정
 # ---------------------------------------------------------------------------

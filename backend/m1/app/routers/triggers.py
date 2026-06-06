@@ -13,12 +13,11 @@ from pydantic import BaseModel
 from shared.config import get_settings
 from shared.contracts import (
     AnalysisContext,
-    DeveloperProfile,
     DocumentTriggerPayload,
     M0IngestRequest,
     M2AnalyzeRequest,
+    M3ReviewRequest,
     M3VerifyRequest,
-    M4EvaluateRequest,
     PRTriggerPayload,
 )
 from shared.logging import get_logger
@@ -29,8 +28,8 @@ from ..clients.module_clients import (
     call_m2_analyze_security,
     call_m2_analyze_static,
     call_m3_analyze_performance,
+    call_m3_review,
     call_m3_verify_tests,
-    call_m4_evaluate,
 )
 
 router = APIRouter()
@@ -180,34 +179,40 @@ async def receive_pr_webhook(
         trace_id=trigger.trace_id,
     )
 
-    # 결정적 라우팅: PR → m2(static) + m2(security) + m3(tests) + m3(perf) → m4
+    # 결정적 라우팅: PR → m2(static) + m2(security) + m3(tests) + m3(perf) → m3(review)
+    # 코멘트·판정은 m3 소유(m4 미호출). m3 /review 가 집계→판정→코멘트 게시→저장까지 수행.
     try:
         static_result = await call_m2_analyze_static(analysis_req)
         security_result = await call_m2_analyze_security(analysis_req)
         test_result = await call_m3_verify_tests(verify_req)
         perf_result = await call_m3_analyze_performance(verify_req)
 
-        eval_req = M4EvaluateRequest(
+        review_req = M3ReviewRequest(
             task_id=task_id,
             pr_id=trigger.pr_id or "",
+            repository=repository,
+            pr_number=int(pr_number),
             static_analysis=static_result,
             security_scan=security_result,
             test_verification=test_result,
             performance=perf_result,
             trace_id=trigger.trace_id,
         )
-        eval_result = await call_m4_evaluate(eval_req)
+        review_result = await call_m3_review(review_req)
 
         logger.info(
             "pr_trigger_dispatched",
             task_id=task_id,
             trace_id=trigger.trace_id,
-            verdict=eval_result.verdict,
+            verdict=review_result.verdict,
+            comment_posted=review_result.comment_posted,
         )
         return {
             "task_id": task_id,
             "trace_id": trigger.trace_id,
             "status": "dispatched",
+            "verdict": review_result.verdict,
+            "comment_url": review_result.comment_url,
             "ingest": ingest_result,
         }
 

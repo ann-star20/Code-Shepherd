@@ -48,6 +48,14 @@ STUB_M4_RESPONSE = {
     "comment_body": "LGTM",
     "execution_ms": 10,
 }
+STUB_M3_REVIEW_RESPONSE = {
+    "task_id": "t1",
+    "pr_id": "42",
+    "verdict": "lgtm",
+    "comment_posted": False,
+    "comment_url": None,
+    "persisted": True,
+}
 
 
 # ---------------------------------------------------------------------------
@@ -74,7 +82,7 @@ def _mock_all_modules(mock):
     mock.post("http://m2:8003/analyze/security").mock(return_value=Response(200, json={**STUB_M2_RESPONSE, "agent": "security_scan"}))
     mock.post("http://m3:8004/verify/tests").mock(return_value=Response(200, json=STUB_M3_RESPONSE))
     mock.post("http://m3:8004/analyze/performance").mock(return_value=Response(200, json={**STUB_M3_RESPONSE, "agent": "performance"}))
-    mock.post("http://m4:8005/evaluate").mock(return_value=Response(200, json=STUB_M4_RESPONSE))
+    mock.post("http://m3:8004/review").mock(return_value=Response(200, json=STUB_M3_REVIEW_RESPONSE))
 
 
 @pytest.mark.asyncio
@@ -156,8 +164,8 @@ async def test_pr_trigger_calls_api_core_ingest(client):
 
 
 @pytest.mark.asyncio
-async def test_pr_trigger_calls_m2_m3_m4(client):
-    """PR 트리거 수신 시 m2(static+security), m3(tests+perf), m4(evaluate) 호출."""
+async def test_pr_trigger_calls_m2_m3_review(client):
+    """PR 트리거 수신 시 m2(static+security), m3(tests+perf), m3(review) 호출."""
     with respx.mock as mock:
         _mock_api_core_ingest(mock)
         m2_static = mock.post("http://m2:8003/analyze/static").mock(
@@ -172,8 +180,8 @@ async def test_pr_trigger_calls_m2_m3_m4(client):
         m3_perf = mock.post("http://m3:8004/analyze/performance").mock(
             return_value=Response(200, json={**STUB_M3_RESPONSE, "agent": "performance"})
         )
-        m4_eval = mock.post("http://m4:8005/evaluate").mock(
-            return_value=Response(200, json=STUB_M4_RESPONSE)
+        m3_review = mock.post("http://m3:8004/review").mock(
+            return_value=Response(200, json=STUB_M3_REVIEW_RESPONSE)
         )
 
         sig = _sign(PR_PAYLOAD)
@@ -188,7 +196,7 @@ async def test_pr_trigger_calls_m2_m3_m4(client):
     assert m2_security.called
     assert m3_tests.called
     assert m3_perf.called
-    assert m4_eval.called
+    assert m3_review.called
 
 
 # ---------------------------------------------------------------------------
@@ -236,7 +244,7 @@ async def test_pr_trigger_fetches_diff_body_and_fills_repo_fields(client):
         m3_perf = mock.post("http://m3:8004/analyze/performance").mock(
             return_value=Response(200, json={**STUB_M3_RESPONSE, "agent": "performance"})
         )
-        mock.post("http://m4:8005/evaluate").mock(return_value=Response(200, json=STUB_M4_RESPONSE))
+        mock.post("http://m3:8004/review").mock(return_value=Response(200, json=STUB_M3_REVIEW_RESPONSE))
 
         sig = _sign(PR_PAYLOAD_FULL)
         resp = await client.post(
@@ -287,7 +295,7 @@ async def test_pr_trigger_clone_url_falls_back_to_repository(client):
         mock.post("http://m2:8003/analyze/security").mock(return_value=Response(200, json={**STUB_M2_RESPONSE, "agent": "security_scan"}))
         m3_tests = mock.post("http://m3:8004/verify/tests").mock(return_value=Response(200, json=STUB_M3_RESPONSE))
         mock.post("http://m3:8004/analyze/performance").mock(return_value=Response(200, json={**STUB_M3_RESPONSE, "agent": "performance"}))
-        mock.post("http://m4:8005/evaluate").mock(return_value=Response(200, json=STUB_M4_RESPONSE))
+        mock.post("http://m3:8004/review").mock(return_value=Response(200, json=STUB_M3_REVIEW_RESPONSE))
 
         sig = _sign(payload)
         resp = await client.post(
@@ -300,6 +308,52 @@ async def test_pr_trigger_clone_url_falls_back_to_repository(client):
     assert m3_body["clone_url"] == CLONE_URL   # repository.clone_url 폴백
     assert m3_body["commit_sha"] == HEAD_SHA
     assert m3_body["pr_diff"] == ""            # diff_url 비어있음 → 빈 본문(가짜 없음)
+
+
+@pytest.mark.asyncio
+async def test_pr_trigger_calls_m3_review_with_four_results_not_m4(client):
+    """판정·코멘트는 m3 소유 — PR 트리거가 m3 /review 를 4결과+repository+pr_number 로
+    호출하고, m4 /evaluate 는 호출하지 않는다."""
+    with respx.mock(assert_all_called=False) as mock:
+        _mock_api_core_ingest(mock)
+        mock.post("http://m2:8003/analyze/static").mock(
+            return_value=Response(200, json=STUB_M2_RESPONSE)
+        )
+        mock.post("http://m2:8003/analyze/security").mock(
+            return_value=Response(200, json={**STUB_M2_RESPONSE, "agent": "security_scan"})
+        )
+        mock.post("http://m3:8004/verify/tests").mock(
+            return_value=Response(200, json=STUB_M3_RESPONSE)
+        )
+        mock.post("http://m3:8004/analyze/performance").mock(
+            return_value=Response(200, json={**STUB_M3_RESPONSE, "agent": "performance"})
+        )
+        m3_review = mock.post("http://m3:8004/review").mock(
+            return_value=Response(200, json=STUB_M3_REVIEW_RESPONSE)
+        )
+        m4_eval = mock.post("http://m4:8005/evaluate").mock(
+            return_value=Response(200, json=STUB_M4_RESPONSE)
+        )
+
+        sig = _sign(PR_PAYLOAD)
+        resp = await client.post(
+            "/triggers/pr",
+            content=PR_PAYLOAD,
+            headers={"X-Hub-Signature-256": sig, "Content-Type": "application/json"},
+        )
+
+    assert resp.status_code == 200
+    assert m3_review.called          # m3 /review 호출됨
+    assert not m4_eval.called        # m4 /evaluate 미호출 (코멘트·판정은 m3 소유)
+
+    body = json.loads(m3_review.calls.last.request.content)
+    # 4결과 동형 + repository + pr_number 를 채워 보냈는가
+    assert body["repository"] == "org/repo"
+    assert body["pr_number"] == 42
+    assert body["static_analysis"]["agent"] == "static_analysis"
+    assert body["security_scan"]["agent"] == "security_scan"
+    assert body["test_verification"]["agent"] == "test_verification"
+    assert body["performance"]["agent"] == "performance"
 
 
 @pytest.mark.asyncio

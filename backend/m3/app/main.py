@@ -13,17 +13,27 @@ from contextlib import asynccontextmanager
 import structlog
 from fastapi import FastAPI
 
-from shared.contracts import IssueItem, IssueSummary, M3VerifyRequest, M3VerifyResponse
+from shared.contracts import (
+    IssueItem,
+    IssueSummary,
+    M3ReviewRequest,
+    M3ReviewResponse,
+    M3VerifyRequest,
+    M3VerifyResponse,
+)
 from shared.logging import TraceIDMiddleware, configure_logging
 
 log = structlog.get_logger()
 
-# test-performance-agent 경로 (이 파일: backend/m3/app/main.py → backend/m3/test-performance-agent)
-_TP = os.path.join(
-    os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "test-performance-agent"
-)
+# 형제 에이전트 경로 (이 파일: backend/m3/app/main.py)
+_M3_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+_TP = os.path.join(_M3_ROOT, "test-performance-agent")
+_PRC = os.path.join(_M3_ROOT, "pr-comment-agent")
 # 동명 모듈(contracts/main/config) 충돌 방지 — webhook-gateway/agents/dev3_adapter.py 와 동일 패턴
 _DEV3_MODS = ("contracts", "main", "config", "config.settings")
+# pr-comment-agent 도 contracts/config 를 가짐 → 같은 격리로 import 한다.
+_PRC_MODS = ("contracts", "config", "config.settings", "main",
+             "aggregator", "llm_refiner", "github_poster")
 
 # pr_diff(=diff 본문) fetch 방어 — m1은 보통 본문을 보내지만 URL(.diff)이 올 수도 있다.
 _DIFF_FETCH_TIMEOUT_S = 15
@@ -215,3 +225,228 @@ async def verify_tests(payload: M3VerifyRequest) -> M3VerifyResponse:
 async def analyze_performance(payload: M3VerifyRequest) -> M3VerifyResponse:
     """run() 결과 중 agent=='performance' 이슈를 반환."""
     return _build_response(payload, "performance")
+
+
+# ════════════════════════════════════════════════════════════════════
+# /review — 4개 결과 집계 → 판정 → 코멘트 → 게시 → 저장.
+# 분석/코멘트 로직은 형제 에이전트(pr-comment-agent·test-performance-agent) 소유.
+# 여기는 "조립 + 엔드포인트"만. 외부 의존(LLM·GitHub·DB)은 seam 으로 분리해
+# 테스트에서 monkeypatch 하고, 키/토큰 없으면 정직하게 fallback/skip 한다.
+# ════════════════════════════════════════════════════════════════════
+
+import contextlib  # noqa: E402
+
+
+def _load_env_file(path: str) -> None:
+    """형제 .env(GITHUB_TOKEN·GOOGLE_API_KEY)를 setdefault 로 로드. 값은 코드/깃에 없음."""
+    if not os.path.exists(path):
+        return
+    try:
+        for line in open(path, encoding="utf-8"):
+            line = line.strip()
+            if line and not line.startswith("#") and "=" in line:
+                k, v = line.split("=", 1)
+                os.environ.setdefault(k.strip(), v.strip())
+    except OSError:
+        pass
+
+
+@contextlib.contextmanager
+def _prc_isolation():
+    """pr-comment-agent 모듈을 동명 충돌 없이 import 하기 위한 sys.path/sys.modules 격리."""
+    for m in _PRC_MODS:
+        sys.modules.pop(m, None)
+    if _PRC not in sys.path:
+        sys.path.insert(0, _PRC)
+    _load_env_file(os.path.join(_PRC, ".env"))
+    try:
+        yield
+    finally:
+        for m in _PRC_MODS:
+            sys.modules.pop(m, None)
+
+
+def _collect_outputs(payload: M3ReviewRequest) -> list[dict]:
+    """4개 모듈 결과(M2/M3 Response)를 {agent, issues[]} 평면 dict 목록으로 변환."""
+    outputs: list[dict] = []
+    for result in (
+        payload.static_analysis,
+        payload.security_scan,
+        payload.test_verification,
+        payload.performance,
+    ):
+        if result is None:
+            continue
+        outputs.append(
+            {
+                "agent": result.agent,
+                "issues": [
+                    {
+                        "severity": i.severity,
+                        "file": i.file or "",
+                        "line": i.line,
+                        "message": i.message,
+                        "rule_id": i.rule_id or "",
+                        "suggestion": i.suggestion or "",
+                    }
+                    for i in result.issues
+                ],
+            }
+        )
+    return outputs
+
+
+def _review_aggregate(outputs: list[dict]) -> tuple[str, list[dict]]:
+    """pr-comment-agent aggregator 재사용 → (verdict, combined_issues[dict])."""
+    with _prc_isolation():
+        from aggregator import aggregate
+        from contracts import AgentOutput, Issue
+
+        agent_outputs = [
+            AgentOutput(
+                task_id="review",
+                scan_id=0,
+                pr_id="",
+                agent=o["agent"],
+                issues=[Issue(**i) for i in o["issues"]],
+            )
+            for o in outputs
+        ]
+        combined, verdict, _summary = aggregate(agent_outputs)
+        combined_dicts = [
+            {
+                "severity": c.severity,
+                "file": c.file,
+                "line": c.line,
+                "message": c.message,
+                "rule_id": c.rule_id,
+                "suggestion": c.suggestion,
+                "source_agent": c.source_agent,
+                "rag_context": c.rag_context,
+            }
+            for c in combined
+        ]
+        return verdict, combined_dicts
+
+
+def _review_refine(combined: list[dict], verdict: str, skill_level: str) -> str:
+    """pr-comment-agent llm_refiner 재사용 → 코멘트 본문. LLM 키 없으면 휴리스틱 fallback."""
+    with _prc_isolation():
+        from contracts import CombinedIssue
+        from llm_refiner import _heuristic_refine, refine
+
+        issues = [CombinedIssue(**c) for c in combined]
+        try:
+            return refine(issues, verdict, skill_level)
+        except Exception as exc:  # noqa: BLE001 — LLM 호출 실패는 휴리스틱으로 정직하게 fallback
+            log.warning("m3.review.refine_fallback", error=f"{type(exc).__name__}: {exc}")
+            return _heuristic_refine(issues, verdict)
+
+
+def _gh_post(owner: str, repo: str, pr_number: int, body: str) -> dict:
+    """pr-comment-agent github_poster 재사용 — 실제 게시 시도(또는 토큰 없으면 dry_run)."""
+    with _prc_isolation():
+        from github_poster import post_comment
+
+        return post_comment("", body, owner=owner, repo=repo, pr_num=pr_number)
+
+
+def _review_post_comment(owner: str, repo: str, pr_number: int, body: str) -> dict:
+    """코멘트를 GitHub 에 게시. 토큰 없음/실패 시 정직하게 skip(가짜 게시 금지).
+
+    Returns: {"posted": bool, "url": str|None, "reason": str}
+    - mode=='github' 일 때만 실제 게시 → posted True + issuecomment URL.
+    - dry_run/skipped/예외 → posted False + 사유(예외 안 터뜨림).
+    """
+    if not body.strip():
+        return {"posted": False, "url": None, "reason": "empty comment"}
+    try:
+        res = _gh_post(owner, repo, pr_number, body)
+    except Exception as exc:  # noqa: BLE001 — 인증 실패 등 어떤 게시 오류든 정직하게 skip
+        log.warning("m3.review.post_failed", error=f"{type(exc).__name__}: {exc}")
+        return {"posted": False, "url": None, "reason": str(exc)}
+
+    if res.get("mode") == "github":
+        cid = res.get("comment_id")
+        url = f"https://github.com/{owner}/{repo}/pull/{pr_number}#issuecomment-{cid}"
+        return {"posted": True, "url": url, "reason": "github"}
+
+    reason = res.get("reason") or res.get("mode") or "skipped"
+    log.info("m3.review.post_skipped", reason=reason)
+    return {"posted": False, "url": None, "reason": reason}
+
+
+def _review_persist(owner, repo, pr_number, verdict, comment, issues) -> bool:
+    """test-performance-agent persist 재사용 → review_results 저장. 실패해도 예외 안 터뜨림."""
+    if _TP not in sys.path:
+        sys.path.insert(0, _TP)
+    try:
+        import persist as dev3_persist
+
+        dev3_persist.save_review(owner, repo, pr_number, verdict, comment, issues)
+        return True
+    except Exception as exc:  # noqa: BLE001 — DB 미가용 등 어떤 실패든 저장만 정직하게 skip
+        log.warning("m3.review.persist_failed", error=f"{type(exc).__name__}: {exc}")
+        return False
+    finally:
+        sys.modules.pop("persist", None)
+
+
+def _get_stored_review(owner: str, repo: str, pr_number: int):
+    """저장된 리뷰 결과 dict 반환(없으면 None). 조회 실패해도 예외 안 터뜨림."""
+    if _TP not in sys.path:
+        sys.path.insert(0, _TP)
+    try:
+        import persist as dev3_persist
+
+        return dev3_persist.get_review(owner, repo, pr_number)
+    except Exception as exc:  # noqa: BLE001
+        log.warning("m3.review.get_failed", error=f"{type(exc).__name__}: {exc}")
+        return None
+    finally:
+        sys.modules.pop("persist", None)
+
+
+@app.post("/review", response_model=M3ReviewResponse)
+async def review(payload: M3ReviewRequest) -> M3ReviewResponse:
+    """4개 결과 → 판정 → 코멘트 → GitHub 게시 → DB 저장 → M3ReviewResponse."""
+    owner, _, repo = payload.repository.partition("/")
+
+    outputs = _collect_outputs(payload)
+    verdict, combined = _review_aggregate(outputs)
+
+    skill = payload.developer.skill_level if payload.developer else "junior"
+    comment_body = _review_refine(combined, verdict, skill)
+
+    post = _review_post_comment(owner, repo, payload.pr_number, comment_body)
+    persisted = _review_persist(
+        owner, repo, payload.pr_number, verdict, comment_body, combined
+    )
+
+    log.info(
+        "m3.review.done",
+        task_id=payload.task_id,
+        repository=payload.repository,
+        pr_number=payload.pr_number,
+        verdict=verdict,
+        comment_posted=post["posted"],
+        persisted=persisted,
+    )
+    return M3ReviewResponse(
+        task_id=payload.task_id,
+        pr_id=payload.pr_id,
+        verdict=verdict,
+        comment_posted=post["posted"],
+        comment_url=post["url"],
+        persisted=persisted,
+    )
+
+
+@app.get("/review/{owner}/{repo}/{pr_number}")
+async def get_review(owner: str, repo: str, pr_number: int):
+    """저장된 {verdict, comment, issues} 반환. 없으면 found=False 빈 결과(200)."""
+    stored = _get_stored_review(owner, repo, pr_number)
+    base = {"owner": owner, "repo": repo, "pr_number": pr_number}
+    if not stored:
+        return {**base, "found": False, "verdict": None, "comment": "", "issues": []}
+    return {**base, "found": True, **stored}

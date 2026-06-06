@@ -12,6 +12,8 @@ from shared.contracts import (
     M0IngestResponse,
     M2AnalyzeRequest,
     M2AnalyzeResponse,
+    M3ReviewRequest,
+    M3ReviewResponse,
     M3VerifyRequest,
     M3VerifyResponse,
     M4EvaluateRequest,
@@ -140,6 +142,30 @@ async def call_m3_analyze_performance(payload: M3VerifyRequest) -> M3VerifyRespo
     )
     resp.raise_for_status()
     return M3VerifyResponse(**resp.json())
+
+
+async def call_m3_review(payload: M3ReviewRequest) -> M3ReviewResponse:
+    """m3 /review 호출 — 4결과 집계→판정→코멘트 게시→저장. (코멘트·판정은 m3 소유)"""
+    settings = get_settings()
+    start = time.monotonic()
+    async with httpx.AsyncClient() as client:
+        resp = await client.post(
+            f"{settings.m3_url}/review",
+            json=payload.model_dump(),
+            timeout=60.0,
+        )
+    elapsed_ms = int((time.monotonic() - start) * 1000)
+    logger.info(
+        "module_call",
+        module="m3",
+        endpoint="/review",
+        status=resp.status_code,
+        elapsed_ms=elapsed_ms,
+        trace_id=payload.trace_id,
+        task_id=payload.task_id,
+    )
+    resp.raise_for_status()
+    return M3ReviewResponse(**resp.json())
 
 
 async def call_m4_evaluate(payload: M4EvaluateRequest) -> M4EvaluateResponse:
