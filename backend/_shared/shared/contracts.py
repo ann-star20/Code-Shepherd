@@ -88,6 +88,10 @@ class M3VerifyRequest(BaseModel):
     task_id: str
     pr_id: str
     pr_diff: str
+    # 선택: 실제 분석(clone→run)에 필요. 없으면 빈 issues 반환(가짜 만들지 않음).
+    # 하위호환 — m1이 아직 안 보내도 됨(None).
+    clone_url: str | None = None
+    commit_sha: str | None = None
     context: AnalysisContext = Field(default_factory=AnalysisContext)
     developer: DeveloperProfile | None = None
     trace_id: str | None = None
