@@ -1,4 +1,4 @@
-# Phase 2 — Agent Pipeline 작업 계획
+<!-- # Phase 2 — Agent Pipeline 작업 계획
 
 > 방법론: **SDD(Spec → 인터페이스 설계) → TDD(AAA 테스트 먼저) → 구현** 순서 엄수  
 > 브랜치: `feat/k-graph-agent`  
@@ -267,9 +267,9 @@ PATCH /{session_id}/nodes/{node_id} → 개별 APPROVED/REJECTED 전환
 
 ```python
 DOMAIN_TAG_MAP = {
-    "security":    ["Security"],
-    "performance": ["Performance"],
-    "both":        ["Security", "Performance"],
+    "security":    ["security"],
+    "performance": ["performance"],
+    "both":        ["security", "performance"],
 }
 
 async def write_concept_node(
@@ -372,4 +372,4 @@ async def create_same_as_relation(
 G1 → G2 → G3 → G4 → G5 → G6 → G7 → G8 → G9 → G10
 ```
 
-각 단계: **SDD 확인 → 테스트 파일 작성 → `pytest` 실패 확인 → 구현 → `pytest` 통과 → 커밋**
+각 단계: **SDD 확인 → 테스트 파일 작성 → `pytest` 실패 확인 → 구현 → `pytest` 통과 → 커밋** -->

@@ -41,7 +41,11 @@ async def test_T09_post_documents_single_url():
     from app.main import app
 
     mock_pool, mock_conn = _make_mock_pool(
-        fetchrow_return={"doc_id": "EXT_test_abc12345", "state": "PENDING"}
+        fetchrow_return={
+            "doc_id": "EXT_test_abc12345",
+            "state": "PENDING",
+            "original_url": "https://docs.djangoproject.com/en/6.0/topics/security/",
+        }
     )
     app.state.pool = mock_pool
 
@@ -67,7 +71,11 @@ async def test_T09_post_documents_max_5_urls():
     from app.main import app
 
     mock_pool, mock_conn = _make_mock_pool(
-        fetchrow_return={"doc_id": "EXT_multi_00000000", "state": "PENDING"}
+        fetchrow_return={
+            "doc_id": "EXT_multi_00000000",
+            "state": "PENDING",
+            "original_url": "https://example.com/page0",
+        }
     )
     app.state.pool = mock_pool
 

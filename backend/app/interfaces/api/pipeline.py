@@ -1,6 +1,7 @@
-"""P1-T11: POST /api/pipeline/trigger — 파이프라인 트리거."""
+"""P1-T11 / A2-T1: 파이프라인 트리거 + 로그 조회."""
 
 import uuid
+from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
@@ -75,3 +76,57 @@ async def trigger_pipeline(
         doc_id=body.doc_id,
         message="파이프라인이 시작되었습니다.",
     )
+
+
+# ── 스키마 ─────────────────────────────────────────────────────────────────
+
+class LogEntry(BaseModel):
+    ts: str
+    agent: str
+    level: str
+    message: str
+
+
+class LogsResponse(BaseModel):
+    session_id: str
+    doc_state: Optional[str]
+    logs: list[LogEntry]
+
+
+# ── GET /logs/{session_id} ─────────────────────────────────────────────────
+
+@router.get("/logs/{session_id}", response_model=LogsResponse)
+async def get_pipeline_logs(
+    session_id: str,
+    conn=Depends(get_conn),
+):
+    """session_id 기준 pipeline_logs 조회 + documents.state 반환 (2초 폴링용)."""
+    rows = await conn.fetch(
+        """SELECT l.agent, l.level, l.message, l.created_at
+           FROM pipeline_logs l
+           WHERE l.session_id = $1::uuid
+           ORDER BY l.created_at""",
+        session_id,
+    )
+
+    doc_state: Optional[str] = None
+    if rows:
+        doc_row = await conn.fetchrow(
+            "SELECT state FROM documents WHERE doc_id = "
+            "(SELECT doc_id FROM pipeline_logs WHERE session_id=$1::uuid LIMIT 1)",
+            session_id,
+        )
+        if doc_row:
+            doc_state = doc_row["state"]
+
+    logs = [
+        LogEntry(
+            ts=str(r["created_at"]),
+            agent=r["agent"],
+            level=r["level"],
+            message=r["message"],
+        )
+        for r in rows
+    ]
+
+    return LogsResponse(session_id=session_id, doc_state=doc_state, logs=logs)

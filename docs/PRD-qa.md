@@ -76,24 +76,23 @@ def test_doc_id_content_change():
 | Assert 1 | 중복 에러 없이 `state`가 `'CRAWLING'`으로 변경됨 |
 | Assert 2 | `updated_at`이 `created_at`보다 미래 시간으로 자동 갱신됨 |
 
-**T04. Neo4j Tag Node 방식 도메인 태깅 + MERGE 멱등성 테스트**
+**T04. Neo4j 동적 다중 라벨 누적 및 MERGE 멱등성 테스트**
 
 | 항목 | 내용 |
-|------|------|
-| 시나리오 | `MemoryLeak` 개념 노드 생성 Cypher를 2회 실행 후 Tag Node(`Security`, `Performance`) 관계를 순차 부여 |
+| --- | --- |
+| 시나리오 | `MemoryLeak` 개념 노드 생성 Cypher를 2회 실행 후 `apoc.create.addLabels`로 `['security', 'performance']` 라벨을 동적 순차 부여 |
 | Assert 1 | 전체 `:Concept` 노드 수 = 1 (Deduplication 보장) |
-| Assert 2 | `(MemoryLeak)-[:TAGGED_WITH]->(Security)` 및 `(MemoryLeak)-[:TAGGED_WITH]->(Performance)` 관계 각 1개씩만 존재 |
+| Assert 2 | 대상 노드의 물리 라벨 배열을 추출했을 때 `['Concept', 'security', 'performance']`가 누락 없이 집합으로 결합되어 존재함 |
 
 ```python
-def test_neo4j_tag_node_deduplication(neo4j_session):
-    # Arrange — 2회 MERGE 실행 (멱등성 확인)
+def test_neo4j_multilabel_dynamic_deduplication(neo4j_session):
+    # Arrange — 2회 MERGE 및 동적 라벨 누적 실행 (멱등성 확인)
     for _ in range(2):
         neo4j_session.run("""
             MERGE (c:Concept {name: 'MemoryLeak'})
             WITH c
-            UNWIND ['Security', 'Performance'] AS tag_name
-              MERGE (t:Tag {name: tag_name})
-              MERGE (c)-[:TAGGED_WITH]->(t)
+            CALL apoc.create.addLabels(c, ['security', 'performance']) YIELD node
+            RETURN node
         """)
 
     # Assert 1 — Concept 노드 중복 없음
@@ -102,22 +101,24 @@ def test_neo4j_tag_node_deduplication(neo4j_session):
     ).single()["cnt"]
     assert cnt == 1
 
-    # Assert 2 — Tag 관계 중복 없음 (각 1개)
-    tags = neo4j_session.run("""
-        MATCH (c:Concept {name:'MemoryLeak'})-[:TAGGED_WITH]->(t:Tag)
-        RETURN collect(t.name) AS tags
-    """).single()["tags"]
-    assert set(tags) == {"Security", "Performance"}
+    # Assert 2 — 물리 다중 라벨 결합 완벽성 검증 (오버레이 관계 방식 폐기)
+    labels = neo4j_session.run("""
+        MATCH (c:Concept {name:'MemoryLeak'})
+        RETURN labels(c) AS labels
+    """).single()["labels"]
+    assert set(labels) == {"Concept", "Security", "Performance"}
+
 ```
 
 ### 10.4. 레이어 C — 비동기 파이프라인 및 스테이징 격리 검증 (`test_pipeline_gate.py`)
 
 "승인 게이트 전 운영 DB 쓰기 차단" 정책을 물리적으로 검증하는 핵심 레이어.
 
+
 **T05. Extractor 완료 시점 운영 DB 격리 테스트**
 
 | 항목 | 내용 |
-|------|------|
+| --- | --- |
 | 시나리오 | Extractor Task가 성공적으로 구조화 JSON을 도출한 직후 DB 상태 스캔 |
 | Assert 1 | `concepts` 테이블과 Neo4j Graph DB에 어떠한 데이터도 추가/변경되지 않음 |
 | Assert 2 | `staging_concepts` 테이블에만 `state='DRAFT'` 레코드 1건 존재 |
@@ -138,12 +139,13 @@ def test_extractor_does_not_touch_master_db(db_session, neo4j_session, celery_ap
         "SELECT COUNT(*) FROM staging_concepts WHERE state='DRAFT'"
     ).scalar()
     assert draft_count == 1                          # 스테이징에만 존재
+
 ```
 
 **T06. 병렬 제출 레이스 컨디션 방어 테스트**
 
 | 항목 | 내용 |
-|------|------|
+| --- | --- |
 | 시나리오 | 동일 `session_id`·`doc_id`로 승인 요청을 Celery Worker 2개에 동시 투입 |
 | Assert 1 | 먼저 진입한 Worker만 `state='COMMITTED'` 전환 성공 |
 | Assert 2 | 늦게 온 Worker는 `ObjectDeletedError` 또는 커스텀 예외로 Fail-safe 처리됨 |
@@ -168,58 +170,49 @@ def test_parallel_approve_race_condition(db_session, celery_app):
     statuses = [r["status"] for r in results]
     assert statuses.count("success") == 1
     assert statuses.count("conflict") == 1           # 나머지는 예외 처리
+
 ```
 
-### 10.5. 레이어 D — LLM 품질 및 LangSmith 연동 검증 (`test_llm_eval.py`)
+#### 10.5. 레이어 D — LLM 품질 및 동적 확장 유효성 검증 (`test_llm_eval.py`)
 
-Gemini 출력 규격과 LangSmith 피드백 추적망이 정상 작동하는지 검증한다.
+Gemini 출력 규격과 미등록 도메인 분류 처리망이 정상 작동하는지 검증한다.
 
-**T07. Extractor 출력 JSON 스키마 유효성 테스트**
+**T07. Extractor 출력 JSON 배열 스키마 유효성 테스트**
 
 | 항목 | 내용 |
-|------|------|
+| --- | --- |
 | 시나리오 | Gemini가 반환한 Mock JSON을 Pydantic 모델 `ConceptExtractionSchema`로 파싱 |
 | Assert 1 | `ValidationError` 없이 객체화 성공 |
-| Assert 2 | `concept_domain` 값이 `['security', 'performance', 'both']` 범위 내에 존재 |
+| Assert 2 | `domains` 속성이 리스트(`list[str]`) 타입이며, 개수가 1개 이상 존재함을 검증 (both 폐기 반영) |
 
 ```python
-def test_extractor_schema_validation():
+def test_extractor_array_schema_validation():
     mock_output = {
-        "concept_name": "XSS",
-        "concept_domain": "security",
+        "concept_name": "MemoryLeak",
+        "domains": ["security", "performance"], # 배열 형태 검증
         "concept_type": "vulnerability_root_cause",
-        "cwe_id": "CWE-79",
+        "cwe_id": "CWE-401",
         "severity": "HIGH",
-        "description_ko": "크로스 사이트 스크립팅 취약점",
-        "aliases": ["Cross-Site Scripting", "크로스 사이트 스크립팅"],
+        "description_ko": "메모리 누수 결함",
+        "aliases": ["Memory Leak", "메모리 누수"],
     }
-    schema = ConceptExtractionSchema(**mock_output)   # ValidationError 없어야 함
-    assert schema.concept_domain in {"security", "performance", "both"}
+    schema = ConceptExtractionSchema(**mock_output)
+    assert isinstance(schema.domains, list)
+    assert "both" not in schema.domains
+
 ```
 
-**T08. LangSmith 피드백 루프 API 트리거 테스트**
+**T08. 미등록 도메인 유입 시 DOMAIN_PENDING 상태 전이 테스트**
 
 | 항목 | 내용 |
-|------|------|
-| 시나리오 | HITL 수정 가상 API 호출 시 `langsmith.Client().create_feedback()` 정상 호출 여부 Mocking 검증 |
-| Assert | 페이로드에 `score=0`, `run_id`, 수정 전/후 diff 메시지가 누락 없이 매핑됨 |
+| --- | --- |
+| 시나리오 | `domain_registry`에 없는 `["compliance"]` 도메인을 포함한 데이터 파이프라인 가동 |
+| Assert 1 | 시스템 에러로 다운되지 않고 `staging_concepts` 레코드에 성공적으로 포획됨 |
+| Assert 2 | 적재된 레코드의 `state` 값이 명확하게 `'DOMAIN_PENDING'` 마킹됨을 검증 |
 
-```python
-def test_langsmith_feedback_trigger():
-    with patch("langsmith.Client.create_feedback") as mock_feedback:
-        call_hitl_correction_api(
-            run_id="run-abc-123",
-            before_json={"concept_domain": "security"},
-            after_json={"concept_domain": "both"},
-        )
-        mock_feedback.assert_called_once()
-        kwargs = mock_feedback.call_args.kwargs
-        assert kwargs["score"] == 0
-        assert kwargs["run_id"] == "run-abc-123"
-        assert "before" in kwargs["comment"] and "after" in kwargs["comment"]
-```
+---
 
-### 10.6. QA 완료 판단 기준 (Definition of Done — QA)
+#### 10.6. QA 완료 판단 기준 (Definition of Done — QA)
 
 `pytest tests/`를 실행했을 때 아래 조건을 모두 충족해야 QA 통과로 판정한다.
 
@@ -230,10 +223,11 @@ tests/harness/test_pipeline_gate.py  PASSED [ 75%]   # T05, T06
 tests/harness/test_llm_eval.py       PASSED [100%]   # T07, T08
 
 ==================== 8 passed in 2.34s ====================
+
 ```
 
 | 판정 기준 | 목표값 |
-|-----------|--------|
+| --- | --- |
 | 전체 테스트 통과율 | 8 / 8 PASSED |
 | 테스트 커버리지 | ≥ 85% |
 | DB 잔류 레코드 | 테스트 종료 후 마스터 테이블 및 그래프 고아 노드 0건 |
@@ -241,19 +235,17 @@ tests/harness/test_llm_eval.py       PASSED [100%]   # T07, T08
 
 ---
 
-## 13. 프로젝트 완료 조건 (Definition of Done)
+### 13. 프로젝트 완료 조건 (Definition of Done)
 
-각 Phase별 개발 완료 판정 및 최종 릴리즈 승인은 아래의 정량적·정성적 기준을 모두 충족할 때에만 승인된다.
-
-### 13.1. 기능적 완료 조건
+#### 13.1. 기능적 완료 조건
 
 | 번호 | 조건 | 판정 방법 |
-|------|------|-----------|
-| F-01 | 1~5개 URL 입력 → 파이프라인 완전 실행 → Neo4j Concept 노드 생성까지 End-to-End 동작 | 실제 Django Docs URL 투입 후 토폴로지 뷰 확인 |
+| --- | --- | --- |
+| F-01 | 1~5개 URL 입력 → 파이프라인 완전 실행 → Neo4j Concept 동적 다중 라벨 생성까지 End-to-End 동작 | 실제 Django Docs URL 투입 후 토폴로지 뷰 확인 |
 | F-02 | Human-in-the-Loop: 메타데이터 자동 추론 성공률 ≥ 80% (Django·Spring·FastAPI URL 기준) | Pre-scan 20건 테스트 결과 |
-| F-03 | 최종 승인 게이트: DRAFT→APPROVED→COMMITTED 상태 전이 및 4대 커밋 규칙 모두 동작 | T05·T06 하네스 통과 확인 |
-| F-04 | 프론트엔드 가상 노드 미리보기: DRAFT 노드 점선 렌더링 및 승인 후 실선 전환 정상 동작 | Chrome 브라우저 스모크 테스트 |
-| F-05 | 성능 도메인 4종 안티패턴(N+1Query 등) 및 보안 도메인 OWASP 시드 데이터 정상 적재 | `verify_seed.py` 실행 결과 0 오류 |
+| F-03 | 최종 승인 게이트: DRAFT / DOMAIN_PENDING → APPROVED → COMMITTED 상태 전이 정상 작동 | T05·T06·T08 하네스 통과 확인 |
+| F-04 | 프론트엔드 가상 노드 미리보기: DRAFT 노드 점선 및 미등록 도메인 배지 렌더링 정상 동작 | Chrome 브라우저 스모크 테스트 |
+| F-05 | 성능 도메인 4종 안티패턴 및 보안 도메인 OWASP / 신규 등록 도메인 시드 데이터 무결성 적재 | `verify_seed.py` 실행 결과 0 오류 |
 
 ### 13.2. 비기능적 성능 및 품질 지표
 

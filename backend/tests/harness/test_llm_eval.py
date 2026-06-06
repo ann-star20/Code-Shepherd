@@ -1,106 +1,80 @@
-"""레이어 D — LLM 품질 테스트 (T07). PRD §10.5."""
-
-import sys
-import pathlib
-
-sys.path.insert(0, str(pathlib.Path(__file__).parents[2]))
+"""레이어 D — LLM 품질 테스트 (T07). PRD §10.5 — domains: list[str] 스키마."""
 
 import pytest
 from pydantic import ValidationError
-from app.domain.models import ConceptExtractionSchema, ConceptDomain
+from app.domain.models import ConceptExtractionSchema
 
 
-# ── T07: Extractor 출력 JSON 스키마 유효성 ──────────────────────────────────
 def test_extractor_schema_validation_security():
-    """보안 도메인 최소 필드 → ValidationError 없이 객체화, domain 범위 내."""
-    # Arrange
-    mock_output = {
-        "concept_name": "XSS",
-        "concept_domain": "security",
-        "concept_type": "vulnerability_root_cause",
-        "cwe_id": "CWE-79",
-        "severity": "HIGH",
-        "description_ko": "크로스 사이트 스크립팅 취약점",
-        "aliases": ["Cross-Site Scripting", "크로스 사이트 스크립팅"],
-    }
-
-    # Act
-    schema = ConceptExtractionSchema(**mock_output)
-
-    # Assert
-    assert schema.concept_domain == ConceptDomain.SECURITY
-    assert schema.concept_domain in {
-        ConceptDomain.SECURITY,
-        ConceptDomain.PERFORMANCE,
-        ConceptDomain.BOTH,
-    }
+    """보안 도메인 → domains=['security'], severity 정규화."""
+    schema = ConceptExtractionSchema(
+        concept_name="XSS",
+        domains=["security"],
+        concept_type="vulnerability_root_cause",
+        cwe_id="CWE-79",
+        severity="HIGH",
+        description_ko="크로스 사이트 스크립팅 취약점",
+        aliases=["Cross-Site Scripting"],
+    )
+    assert "security" in schema.domains
+    assert "both" not in schema.domains
     assert schema.severity == "HIGH"
 
 
 def test_extractor_schema_validation_performance():
-    """성능 도메인 → concept_domain = performance."""
-    # Arrange + Act
+    """성능 도메인 → domains=['performance'], severity 소문자 정규화."""
     schema = ConceptExtractionSchema(
         concept_name="N+1Query",
-        concept_domain="performance",
-        severity="high",  # 소문자 입력도 정규화돼야 함
+        domains=["performance"],
+        severity="high",
         description_ko="ORM N+1 쿼리 성능 문제",
     )
-
-    # Assert
-    assert schema.concept_domain == ConceptDomain.PERFORMANCE
-    assert schema.severity == "HIGH"  # field_validator 정규화 확인
+    assert schema.domains == ["performance"]
+    assert schema.severity == "HIGH"
 
 
-def test_extractor_schema_validation_both():
-    """교차 도메인(both) → concept_domain = both."""
-    # Arrange + Act
+def test_extractor_schema_validation_cross_domain():
+    """교차 도메인 → domains=['security','performance'], 'both' 없음."""
     schema = ConceptExtractionSchema(
         concept_name="MemoryLeak",
-        concept_domain="both",
+        domains=["security", "performance"],
         severity="HIGH",
         description_ko="메모리 누수",
     )
+    assert "both" not in schema.domains
+    assert set(schema.domains) == {"security", "performance"}
 
-    # Assert
-    assert schema.concept_domain == ConceptDomain.BOTH
 
-
-def test_extractor_schema_invalid_domain():
-    """잘못된 concept_domain → ValidationError 발생."""
-    # Arrange + Act + Assert
+def test_extractor_schema_empty_domains_raises():
+    """domains=[] → ValidationError (최소 1개 필요)."""
     with pytest.raises(ValidationError):
         ConceptExtractionSchema(
             concept_name="XSS",
-            concept_domain="unknown_domain",  # 유효하지 않은 값
+            domains=[],
             severity="HIGH",
             description_ko="테스트",
         )
 
 
 def test_extractor_schema_invalid_severity():
-    """잘못된 severity → ValidationError 발생."""
-    # Arrange + Act + Assert
+    """잘못된 severity → ValidationError."""
     with pytest.raises(ValidationError):
         ConceptExtractionSchema(
             concept_name="XSS",
-            concept_domain="security",
-            severity="SUPER_CRITICAL",  # 허용 범위 외
+            domains=["security"],
+            severity="SUPER_CRITICAL",
             description_ko="테스트",
         )
 
 
 def test_extractor_schema_optional_fields_default():
-    """선택 필드 미입력 시 기본값(빈 리스트/None) 적용."""
-    # Arrange + Act
+    """선택 필드 미입력 시 기본값 적용."""
     schema = ConceptExtractionSchema(
         concept_name="SQLi",
-        concept_domain="security",
+        domains=["security"],
         severity="CRITICAL",
         description_ko="SQL 인젝션",
     )
-
-    # Assert
     assert schema.aliases == []
     assert schema.security_mechanisms == []
     assert schema.affected_components == []

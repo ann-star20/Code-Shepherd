@@ -223,20 +223,20 @@ scripts/
 ### 12.4. 커밋 예시
 
 ```bash
-# 기능 추가
-feat(extractor): add concept_domain field to gemini extraction schema
+# 기능 추가 — concept_domain 폐기 및 domains 다중 배열 구조 적용 반영
+feat(extractor): add dynamic domains array field to gemini extraction schema
 
 # 버그 수정
 fix(writer): rollback postgresql on neo4j connection timeout
 
-# 테스트
-test(writer): add T04 neo4j multilabel dedup harness test
+# 테스트 — both 폐기 후 물리 다중 라벨 결합 유닛 테스트 명세 매핑
+test(writer): add T04 neo4j multilabel dynamic dedup harness test
 
 # 인프라
 chore(infra): add cloud-sql-proxy service with gcp profile
 
-# DB 스키마
-feat(db): add staging_concepts table with state machine columns
+# DB 스키마 — both 대신 TEXT[] 배열 구조 수용 DDL 반영
+feat(db): add staging_concepts table with array validation and state machine columns
 
 # 리팩터
 refactor(resolver): extract alias similarity into shared util

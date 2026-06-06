@@ -58,7 +58,7 @@ neo4j_session.run("MERGE (c:Concept {name: 'MemoryLeak'})")
 # Act — Tag Node 방식
 neo4j_session.run("""
     MATCH (c:Concept {name: 'MemoryLeak'})
-    MERGE (t:Tag {name: 'Security'})
+    MERGE (t:Tag {name: 'security'})
     MERGE (c)-[:TAGGED_WITH]->(t)
 """)
 # Assert
@@ -66,7 +66,7 @@ result = neo4j_session.run("""
     MATCH (c:Concept {name:'MemoryLeak'})-[:TAGGED_WITH]->(t:Tag)
     RETURN collect(t.name) AS tags
 """).single()
-assert "Security" in result["tags"]`
+assert "security" in result["tags"]`
 ## D. 파이프라인 코어
 
 `D1-Spec   PipelineTask 프로토콜 (execute/cancel)

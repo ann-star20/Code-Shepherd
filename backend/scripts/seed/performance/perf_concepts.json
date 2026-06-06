@@ -2,58 +2,58 @@
   "concepts": [
     {
       "name": "N+1Query",
-      "concept_domain": "performance",
       "concept_type": "performance_antipattern",
       "cwe_id": "CWE-1072",
-      "perf_category": "ORM_Performance",
-      "severity": "HIGH",
+      "perf_category": "orm_performance",
+      "severity": "high",
       "description_ko": "ORM 관계 조회 시 루프마다 추가 쿼리가 N번 실행되어 DB에 과부하를 유발하는 안티패턴. select_related/prefetch_related로 해결.",
       "aliases": ["N+1 Problem", "N+1 Query", "N+1 쿼리 문제"],
-      "affected_components": ["ORM 레이어", "데이터베이스 레이어"],
+      "affected_components": ["orm_layer", "database_layer"],
       "root_cause": "ORM 지연 로딩(Lazy Loading)으로 관계 엔티티를 개별 쿼리로 조회함",
-      "config_properties": []
+      "config_properties": [],
+      "domains": ["performance"]
     },
     {
       "name": "MissingIndex",
-      "concept_domain": "performance",
       "concept_type": "performance_antipattern",
       "cwe_id": "CWE-1052",
-      "perf_category": "DB_Query",
-      "severity": "HIGH",
+      "perf_category": "db_query",
+      "severity": "high",
       "description_ko": "인덱스 미설정으로 인한 Full Table Scan 발생. 데이터 증가에 비례하여 응답 지연이 급격히 악화됨.",
       "aliases": ["Missing Database Index", "인덱스 누락", "Full Table Scan"],
-      "affected_components": ["데이터베이스 레이어", "쿼리 실행 계획"],
+      "affected_components": ["database_layer", "query_execution_plan"],
       "root_cause": "WHERE 절 또는 JOIN 조건에 사용되는 컬럼에 인덱스 미생성",
-      "config_properties": []
+      "config_properties": [],
+      "domains": ["performance"]
     },
     {
       "name": "ConnPoolExhaustion",
-      "concept_domain": "both",
       "concept_type": "performance_antipattern",
       "cwe_id": "CWE-400",
-      "perf_category": "Resource_Management",
-      "severity": "CRITICAL",
+      "perf_category": "resource_management",
+      "severity": "critical",
       "description_ko": "커넥션 반환 실패 또는 풀 설정 미흡으로 DB 커넥션 풀이 고갈되어 새로운 요청이 대기 또는 실패. 보안·성능 양 도메인에 걸치는 자원 고갈 취약점.",
       "aliases": ["Connection Pool Exhaustion", "커넥션 풀 고갈", "DB Connection Leak"],
-      "affected_components": ["커넥션 풀", "데이터베이스 레이어", "미들웨어"],
+      "affected_components": ["connection_pool", "database_layer", "middleware"],
       "root_cause": "커넥션 미반환(컨텍스트 매니저 미사용) 또는 max_size 설정 과소",
       "config_properties": [
-        {"key": "POOL_MAX_SIZE", "value": "10"},
-        {"key": "POOL_TIMEOUT", "value": "30"}
-      ]
+        { "key": "pool_max_size", "value": "10" },
+        { "key": "pool_timeout", "value": "30" }
+      ],
+      "domains": ["security", "performance"]
     },
     {
       "name": "MemoryLeak",
-      "concept_domain": "both",
       "concept_type": "performance_antipattern",
       "cwe_id": "CWE-401",
-      "perf_category": "Resource_Management",
-      "severity": "HIGH",
+      "perf_category": "resource_management",
+      "severity": "high",
       "description_ko": "객체 참조가 해제되지 않아 GC 부하 및 힙 메모리가 점진적으로 소진되는 패턴. 보안(CWE-401 자원 미해제)이자 성능 안티패턴.",
       "aliases": ["Memory Leak", "메모리 누수", "Heap Exhaustion"],
-      "affected_components": ["힙 메모리", "GC", "캐시 레이어"],
+      "affected_components": ["heap_memory", "gc", "cache_layer"],
       "root_cause": "전역 컬렉션에 추가 후 제거하지 않거나 순환 참조로 인한 GC 회수 불가",
-      "config_properties": []
+      "config_properties": [],
+      "domains": ["security", "performance"]
     }
   ]
 }

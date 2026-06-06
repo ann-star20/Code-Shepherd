@@ -2,6 +2,9 @@
 fastapi==0.115.0
 uvicorn[standard]==0.30.6
 
+# Task queue
+celery[redis]==5.4.0
+
 # Validation & settings
 pydantic==2.9.2
 pydantic-settings==2.5.2

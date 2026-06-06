@@ -1,4 +1,4 @@
-"""G6: PipelineTaskImpl 통합 테스트."""
+"""G6: PipelineTaskImpl 통합 테스트 — domains: list[str] 스키마."""
 
 import uuid
 from unittest.mock import patch
@@ -6,17 +6,13 @@ from unittest.mock import patch
 import aiohttp
 import pytest
 
-from app.domain.models import ConceptExtractionSchema, ConceptDomain
+from app.domain.models import ConceptExtractionSchema
 from app.infrastructure.llm.interface import ILLMClient
 from app.usecases.interfaces.pipeline_task import PipelineTask
 from app.usecases.pipeline_task_impl import PipelineTaskImpl
 
 
-# ── aiohttp 페이크 ────────────────────────────────────────────────────────────
-
 class _FakeResp:
-    """aiohttp ClientResponse 흉내 (async context manager + response)."""
-
     def __init__(self, html: str):
         self.status = 200
         self.headers = {}
@@ -47,13 +43,10 @@ class _FakeSession:
 
 
 class _ErrorSession:
-    """session.get() 진입 시 ClientError 발생."""
-
     def get(self, url, **kwargs):
         class _Err:
             async def __aenter__(self_):
                 raise aiohttp.ClientError("network error")
-
             async def __aexit__(self_, *args):
                 pass
         return _Err()
@@ -65,11 +58,9 @@ class _ErrorSession:
         pass
 
 
-# ── Mock LLM ─────────────────────────────────────────────────────────────────
-
 _XSS = dict(
     concept_name="XSS",
-    concept_domain=ConceptDomain.SECURITY,
+    domains=["security"],
     severity="HIGH",
     description_ko="크로스 사이트 스크립팅",
 )
@@ -83,27 +74,21 @@ class _MockLLM(ILLMClient):
         return False
 
 
-# ── DB 헬퍼 ───────────────────────────────────────────────────────────────────
-
 async def _insert_doc(conn, doc_id: str) -> None:
     await conn.execute(
-        "INSERT INTO documents (doc_id, url) VALUES ($1, $2) ON CONFLICT DO NOTHING",
+        "INSERT INTO documents (doc_id, source_prefix, original_url, content_hash) "
+        "VALUES ($1,'EXT','https://example.com/pipeline-impl-test','abcd1234') "
+        "ON CONFLICT DO NOTHING",
         doc_id,
-        "https://example.com/pipeline-impl-test",
     )
 
 
 async def _cleanup(conn, session_id: str, doc_id: str) -> None:
-    await conn.execute(
-        "DELETE FROM staging_concepts WHERE session_id = $1::uuid", session_id
-    )
-    await conn.execute("DELETE FROM documents WHERE doc_id = $1", doc_id)
+    await conn.execute("DELETE FROM staging_concepts WHERE session_id=$1::uuid", session_id)
+    await conn.execute("DELETE FROM documents WHERE doc_id=$1", doc_id)
 
-
-# ── 테스트 ────────────────────────────────────────────────────────────────────
 
 def test_impl_protocol():
-    """PipelineTaskImpl은 PipelineTask 프로토콜을 만족한다."""
     impl = PipelineTaskImpl(llm=_MockLLM(), pool=None)  # type: ignore[arg-type]
     assert isinstance(impl, PipelineTask)
 
@@ -119,14 +104,13 @@ async def test_impl_writes_draft(asyncpg_pool):
 
     try:
         impl = PipelineTaskImpl(llm=_MockLLM(), pool=asyncpg_pool)
-
         with patch("aiohttp.ClientSession", return_value=_FakeSession("<p>Hello</p>")):
             await impl.execute(session_id, doc_id, "https://example.com/")
 
         async with asyncpg_pool.acquire() as conn:
             count = await conn.fetchval(
                 "SELECT count(*) FROM staging_concepts "
-                "WHERE session_id = $1::uuid AND status = 'DRAFT'",
+                "WHERE session_id=$1::uuid AND state='DRAFT'",
                 session_id,
             )
         assert count >= 1
@@ -146,14 +130,13 @@ async def test_impl_crawl_error(asyncpg_pool):
 
     try:
         impl = PipelineTaskImpl(llm=_MockLLM(), pool=asyncpg_pool)
-
         with pytest.raises(aiohttp.ClientError):
             with patch("aiohttp.ClientSession", return_value=_ErrorSession()):
                 await impl.execute(session_id, doc_id, "https://example.com/")
 
         async with asyncpg_pool.acquire() as conn:
             count = await conn.fetchval(
-                "SELECT count(*) FROM staging_concepts WHERE session_id = $1::uuid",
+                "SELECT count(*) FROM staging_concepts WHERE session_id=$1::uuid",
                 session_id,
             )
         assert count == 0

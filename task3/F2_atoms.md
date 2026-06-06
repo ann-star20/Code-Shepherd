@@ -7,16 +7,17 @@ source_of_truth:
 
 ### SDD
 
-**아토믹 규칙**: 상태·로직·API 호출 불가. Props + 렌더링만.
+**아토믹 규칙**: 상태·로직·API 호출 불가. Props + 렌더링만 처리.
 
 **파일**: `src/components/atoms/Badge.tsx`
 ```typescript
 interface BadgeProps {
-  domain: ConceptDomain   // 색상 결정
-  label?: string          // 기본값: domain 값 그대로
+  domain: string           // 단일 도메인 식별자 (예: "security", "compliance")
+  colorHex?: string        // domain_registry DB에서 조회된 런타임 hex 색상값 (동적 확장)
+  label?: string           // 화면 표기용 텍스트 (기본값: domain 값 그대로 사용)
   size?: "sm" | "md"
 }
-// :Security → 초록 배지 / :Performance → 주황 / :both → 보라
+// 하드코딩 제거: colorHex가 주입되면 인라인 스타일로 반영, 없을 때만 fallback 기본 테마 적용
 ```
 
 **파일**: `src/components/atoms/StatusDot.tsx`
@@ -49,13 +50,13 @@ interface SpinnerProps { size?: "sm" | "md" | "lg" }
 파일: `src/components/atoms/__tests__/Badge.test.tsx`
 
 | ID | Arrange | Act | Assert |
-|----|---------|-----|--------|
-| T_F2_badge_security | `<Badge domain="security" />` | `render(...)` | 초록 계열 클래스 포함 (`text-teal` 또는 custom) |
-| T_F2_badge_both | `<Badge domain="both" label="교차" />` | `render(...)` | "교차" 텍스트 노출 |
-| T_F2_status_dot_running | `<StatusDot status="RUNNING" />` | `render(...)` | `animate-pulse` 클래스 존재 |
-| T_F2_status_dot_done | `<StatusDot status="DONE" />` | `render(...)` | 체크 아이콘 또는 `done` 관련 클래스 |
-| T_F2_button_disabled | `<Button variant="primary" disabled onClick={fn}>텍스트</Button>` | `userEvent.click(...)` | `fn` 호출 0회 |
-| T_F2_button_loading | `<Button loading>저장</Button>` | `render(...)` | Spinner 컴포넌트 렌더링됨 |
+| --- | --- | --- | --- |
+| T_F2_badge_dynamic_color | `<Badge domain="compliance" colorHex="#884488" />` | `render(...)` | 요소의 인라인 스타일 또는 스타일에 `background-color: #884488` 반영 확인 (런타임 확장 검증) |
+| T_F2_badge_fallback_label | `<Badge domain="security" label="보안 메커니즘" />` | `render(...)` | `domain` 대신 명시된 `label` 텍스트("보안 메커니즘") 노출 확인 |
+| T_F2_status_dot_running | `<StatusDot status="RUNNING" />` | `render(...)` | `animate-pulse` 클래스 존재 여부 검증 |
+| T_F2_status_dot_done | `<StatusDot status="DONE" />` | `render(...)` | 완료 상태 디자인을 상징하는 특정 스타일/클래스 결합 확인 |
+| T_F2_button_disabled | `<Button variant="primary" disabled onClick={fn}>텍스트</Button>` | `userEvent.click(...)` | 클릭 인터랙션 발생 시에도 `fn` 호출 횟수가 **0회**인지 검증 |
+| T_F2_button_loading | `<Button loading variant="primary">저장</Button>` | `render(...)` | 버튼 컴포넌트 내부에 `Spinner` (또는 `data-testid="spinner"`)가 정상 주입 및 노출되는지 검증 |
 
 ### COMMIT
 ```

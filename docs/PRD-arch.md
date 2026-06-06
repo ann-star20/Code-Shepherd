@@ -81,7 +81,7 @@ backend/
 │   │   │   ├── celery_app.py          # Celery 앱 인스턴스 및 설정
 │   │   │   └── tasks/                 # 에이전트별 비동기 태스크
 │   │   │       ├── crawler_task.py
-│   │   │       ├── extractor_task.py
+│   │   │       ├── extractor_task.py  -- domain_registry 교차 체크 후 DOMAIN_PENDING 포획 분기 수립
 │   │   │       ├── writer_task.py
 │   │   │       └── resolver_task.py
 │   │   └── llm/
@@ -106,14 +106,14 @@ backend/
 ├── scripts/
 │   └── seed/                          # § 9 형상 관리 정책 대상 스크립트 디렉토리
 │       ├── security/
-│       │   ├── schema.sql
-│       │   ├── seed_data.sql
-│       │   └── seed_data.cypher
+│       │   ├── schema.sql            # 통합 PostgreSQL 마스터 DDL (TEXT[] 및 GIN 인덱스)
+│       │   ├── seed_data.sql         # OWASP Top 10 2025 벌크 인서트
+│       │   └── seed_data.cypher      # Neo4j 보안 온톨로지 MERGE
 │       ├── performance/
 │       │   ├── perf_antipattern_schema.sql
 │       │   ├── perf_seed_data.sql
 │       │   └── perf_seed_data.cypher
-│       └── verify_seed.py
+│       └── verify_seed.py            # 적재 후 다중 라벨 및 노드 수 정합성 검증 유틸
 │
 ├── tests/
 │   └── harness/                       # § 10 QA 테스트 하네스 (레이어 A~D)
@@ -137,12 +137,13 @@ backend/
 
 **레이어-테스트 경계 매핑**:
 
-| 레이어 | 테스트 파일 | 검증 방식 | 인프라 의존 |
-|--------|------------|-----------|-------------|
-| `domain` | `test_utils.py` (레이어 A) | 순수 함수 단위 테스트 | 없음 |
-| `usecases` + `infrastructure` (DB) | `test_db_migration.py` (레이어 B) | 격리 컨테이너 실물 DB | PostgreSQL, Neo4j |
-| `usecases` + `infrastructure` (queue) | `test_pipeline_gate.py` (레이어 C) | `ALWAYS_EAGER` 동기화 | PostgreSQL, Neo4j, Redis |
-| `infrastructure/llm` | `test_llm_eval.py` (레이어 D) | Pydantic 검증 + SDK Mock | LangSmith Mock |
+| 검증 타겟 레이어 | 물리 테스트 파일 | 구체적 검증 방식 및 Assert 목표 | 인프라 격리 자원 |
+| --- | --- | --- | --- |
+| `domain` | `test_utils.py` (레이어 A) | SHA-256 알고리즘 및 멱등성 발급 유닛 테스트 | 없음 (순수 I/O 프리) |
+| `usecases` + `infrastructure (DB)` | `test_db_migration.py` (레이어 B) | GIN 인덱스 탐색 및 런타임 다중 라벨 결합 멱등성 검증 | PostgreSQL, Neo4j |
+| `usecases` + `infrastructure (queue)` | `test_pipeline_gate.py` (레이어 C) | `ALWAYS_EAGER` 동기 변환 하에 이중 승인 API 레이스 컨디션 차단 검증 | PostgreSQL, Neo4j, Redis |
+| `infrastructure/llm` | `test_llm_eval.py` (레이어 D) | `MockClient` 4종 규격 반환 확인 및 미등록 도메인 페일세이프 검증 | LangSmith Mock 레이어 |
+
 ### 14.5. 루트 모노레포 레이아웃
 
 ```
@@ -153,8 +154,6 @@ project-root/
 │   ├── docker-compose.yml     # §5.2 애플리케이션 3-서비스 컴포즈
 │   ├── .env.local             # 로컬 외부 컨테이너 환경변수
 │   └── .env.prod              # GCP Cloud SQL Auth Proxy 환경변수
-├── docs/
-│   └── PRD_Knowledge_Graph_Agent.md   # 본 문서
 └── .github/
     └── workflows/             # CI: pytest → LangSmith Pre-Eval → Docker build
 ```

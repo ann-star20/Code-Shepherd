@@ -1,4 +1,4 @@
----
+<!-- ---
 source_of_truth:
   - docs/PRD-domain.md (§3.1.4 doc_id 마스터 키 설계, §7 데이터 모델 개요)
 ---
@@ -21,7 +21,7 @@ export interface ConceptNode {
   severity?: Severity
   description_ko?: string
   aliases: string[]
-  tags: string[]          // Tag Node 방식: ["Security", "Performance"]
+  tags: string[]          // Tag Node 방식: ["security", "performance"]
 }
 ```
 
@@ -99,4 +99,4 @@ export function parseDocId(docId: string): { prefix: string; urlPart: string; ha
 feat(frontend): add TypeScript domain types concept pipeline graph
 test(frontend): add nodeStyler docId util unit tests with AAA pattern
 feat(frontend): implement nodeStyler getDomainColor getNodeStyle pure functions
-```
+``` -->

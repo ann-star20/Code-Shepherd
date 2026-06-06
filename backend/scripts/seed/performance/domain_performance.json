@@ -1,21 +1,21 @@
 {
   "domain": {
-    "name": "Performance",
+    "name": "performance",
     "description_ko": "백엔드 성능 결함 및 안티패턴 식별 도메인 (OWASP 미사용, 독자 분류 체계)"
   },
   "perf_antipattern_categories": [
     {
-      "name": "ORM_Performance",
+      "name": "orm_performance",
       "description_ko": "ORM 사용 시 발생하는 쿼리 비효율 패턴 (N+1 Query 등)",
       "authority": "internal"
     },
     {
-      "name": "DB_Query",
+      "name": "db_query",
       "description_ko": "데이터베이스 쿼리 설계 결함 (인덱스 누락, Full Table Scan 등)",
       "authority": "internal"
     },
     {
-      "name": "Resource_Management",
+      "name": "resource_management",
       "description_ko": "자원 할당·해제 관리 실패로 인한 성능 저하 (커넥션 고갈, 메모리 누수 등)",
       "authority": "internal"
     }
@@ -23,22 +23,22 @@
   "cwe_nodes": [
     {
       "cwe_id": "CWE-1072",
-      "name": "Data Resource Access without Use of Connection Pooling",
+      "name": "data_resource_access_without_use_of_connection_pooling",
       "description_ko": "커넥션 풀 미사용으로 인한 DB 연결 오버헤드"
     },
     {
       "cwe_id": "CWE-1052",
-      "name": "Excessive Use of Hard-Coded Literals in Initialization",
+      "name": "excessive_use_of_hard_coded_literals_in_initialization",
       "description_ko": "인덱스 미설정 등 하드코딩 방식으로 인한 쿼리 성능 저하"
     },
     {
       "cwe_id": "CWE-400",
-      "name": "Uncontrolled Resource Consumption",
+      "name": "uncontrolled_resource_consumption",
       "description_ko": "자원 소비에 대한 적절한 제한 없음 — 커넥션 고갈, 스레드 폭발 등"
     },
     {
       "cwe_id": "CWE-401",
-      "name": "Missing Release of Memory after Effective Lifetime",
+      "name": "missing_release_of_memory_after_effective_lifetime",
       "description_ko": "객체 참조 미해제로 인한 GC 부하 및 힙 메모리 소진"
     }
   ]

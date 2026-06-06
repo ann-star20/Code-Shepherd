@@ -1,6 +1,6 @@
-"""Neo4j 온톨로지 시드 스크립트 v2.
+"""Neo4j 온톨로지 시드 스크립트 v3.
 
-APOC addLabels를 사용하여 물리적 다중 라벨(:Concept:Security:Performance)을 부여.
+APOC addLabels로 물리적 다중 라벨(:Concept:security:performance) 부여.
 Neo4j Community Edition + APOC 플러그인 필수.
 
 Usage:
@@ -11,25 +11,24 @@ import json
 import os
 import sys
 from pathlib import Path
-
 from neo4j import GraphDatabase
 
 SEED_DIR = Path(__file__).parent / "seed"
-SEC_DIR = SEED_DIR / "security"
+SEC_DIR  = SEED_DIR / "security"
 PERF_DIR = SEED_DIR / "performance"
 
-# ── 노드 인덱스 ───────────────────────────────────────────────────────────
+# ── 인덱스 ────────────────────────────────────────────────────────────────
 
 _INDEXES = [
-    "CREATE INDEX domain_name_idx IF NOT EXISTS FOR (d:Domain) ON (d.name)",
-    "CREATE INDEX owasp_id_idx IF NOT EXISTS FOR (o:OWASPCategory) ON (o.owasp_id)",
-    "CREATE INDEX perf_cat_name_idx IF NOT EXISTS FOR (p:PerfAntipatternCategory) ON (p.name)",
-    "CREATE INDEX cwe_id_idx IF NOT EXISTS FOR (c:CWE) ON (c.cwe_id)",
-    "CREATE INDEX concept_name_idx IF NOT EXISTS FOR (c:Concept) ON (c.name)",
-    "CREATE INDEX secmech_name_idx IF NOT EXISTS FOR (s:SecurityMechanism) ON (s.name)",
-    "CREATE INDEX rootcause_name_idx IF NOT EXISTS FOR (r:RootCause) ON (r.name)",
-    "CREATE INDEX component_name_idx IF NOT EXISTS FOR (comp:Component) ON (comp.name)",
-    "CREATE INDEX document_doc_id_idx IF NOT EXISTS FOR (doc:Document) ON (doc.doc_id)",
+    "CREATE INDEX domain_name_idx        IF NOT EXISTS FOR (d:Domain)                  ON (d.name)",
+    "CREATE INDEX owasp_id_idx           IF NOT EXISTS FOR (o:OWASPCategory)           ON (o.owasp_id)",
+    "CREATE INDEX perf_cat_name_idx      IF NOT EXISTS FOR (p:PerfAntipatternCategory) ON (p.name)",
+    "CREATE INDEX cwe_id_idx             IF NOT EXISTS FOR (c:CWE)                     ON (c.cwe_id)",
+    "CREATE INDEX concept_name_idx       IF NOT EXISTS FOR (c:Concept)                 ON (c.name)",
+    "CREATE INDEX secmech_name_idx       IF NOT EXISTS FOR (s:SecurityMechanism)       ON (s.name)",
+    "CREATE INDEX rootcause_name_idx     IF NOT EXISTS FOR (r:RootCause)               ON (r.name)",
+    "CREATE INDEX component_name_idx     IF NOT EXISTS FOR (comp:Component)            ON (comp.name)",
+    "CREATE INDEX document_doc_id_idx    IF NOT EXISTS FOR (doc:Document)              ON (doc.doc_id)",
 ]
 
 # ── Cypher 템플릿 ─────────────────────────────────────────────────────────
@@ -41,30 +40,30 @@ ON CREATE SET d.description_ko = $description_ko
 
 _MERGE_OWASP = """
 MERGE (o:OWASPCategory {owasp_id: $owasp_id})
-ON CREATE SET o.name         = $name,
-              o.severity     = $severity,
+ON CREATE SET o.name           = $name,
+              o.severity       = $severity,
               o.description_ko = $description_ko
 """
 
 _MERGE_PERF_CAT = """
 MERGE (p:PerfAntipatternCategory {name: $name})
-ON CREATE SET p.authority    = $authority,
+ON CREATE SET p.authority      = $authority,
               p.description_ko = $description_ko
 """
 
 _MERGE_CWE = """
 MERGE (c:CWE {cwe_id: $cwe_id})
-ON CREATE SET c.name         = $name,
+ON CREATE SET c.name           = $name,
               c.description_ko = $description_ko
 """
 
 _BELONGS_TO_DOMAIN_OWASP = """
-MATCH (d:Domain {name:'Security'}), (o:OWASPCategory {owasp_id: $owasp_id})
+MATCH (d:Domain {name: 'security'}), (o:OWASPCategory {owasp_id: $owasp_id})
 MERGE (d)-[:BELONGS_TO]->(o)
 """
 
 _BELONGS_TO_DOMAIN_PERF = """
-MATCH (d:Domain {name:'Performance'}), (p:PerfAntipatternCategory {name: $name})
+MATCH (d:Domain {name: 'performance'}), (p:PerfAntipatternCategory {name: $name})
 MERGE (d)-[:BELONGS_TO]->(p)
 """
 
@@ -81,16 +80,17 @@ MERGE (p)-[:REF_TO]->(c)
 _MERGE_CONCEPT = """
 MERGE (c:Concept {name: $name})
 ON CREATE SET c.cwe_id         = $cwe_id,
-              c.owasp_id        = $owasp_id,
-              c.severity        = $severity,
-              c.concept_domain  = $concept_domain,
-              c.concept_type    = $concept_type,
-              c.description_ko  = $description_ko,
-              c.aliases         = $aliases,
-              c.created_at      = timestamp()
+              c.owasp_id       = $owasp_id,
+              c.severity       = $severity,
+              c.domains        = $domains,
+              c.concept_type   = $concept_type,
+              c.description_ko = $description_ko,
+              c.aliases        = $aliases,
+              c.created_at     = timestamp()
 ON MATCH  SET c.updated_at     = timestamp()
 """
 
+# list()로 결과 강제 소비 — 드라이버가 쿼리 완료를 보장하도록 함
 _ADD_LABELS = """
 MATCH (c:Concept {name: $name})
 CALL apoc.create.addLabels(c, $labels) YIELD node
@@ -132,14 +132,6 @@ MATCH (c:Concept {name: $cname}), (comp:Component {name: $compname})
 MERGE (c)-[:AFFECTS]->(comp)
 """
 
-# ── 도메인 라벨 매핑 ─────────────────────────────────────────────────────
-
-DOMAIN_LABEL_MAP = {
-    "security":    ["Security"],
-    "performance": ["Performance"],
-    "both":        ["Security", "Performance"],
-}
-
 
 # ── 적재 함수 ─────────────────────────────────────────────────────────────
 
@@ -149,9 +141,9 @@ def _seed_indexes(session):
 
 
 def _seed_security_domain(session, data: dict):
-    """Domain(Security) → OWASPCategory → CWE."""
+    """Domain(security) → OWASPCategory → CWE."""
     domain = data["domain"]
-    session.run(_MERGE_DOMAIN, name=domain["name"], description_ko=domain["description_ko"])
+    session.run(_MERGE_DOMAIN, name=domain["name"].lower(), description_ko=domain["description_ko"])
 
     for cat in data["owasp_categories"]:
         session.run(
@@ -171,16 +163,15 @@ def _seed_security_domain(session, data: dict):
             description_ko=cwe["description_ko"],
         )
 
-    # OWASP → CWE MAPS_TO 관계
     for cat in data["owasp_categories"]:
         for cwe_id in cat.get("cwe_ids", []):
             session.run(_MAPS_TO_CWE, owasp_id=cat["owasp_id"], cwe_id=cwe_id)
 
 
 def _seed_performance_domain(session, data: dict):
-    """Domain(Performance) → PerfAntipatternCategory → CWE."""
+    """Domain(performance) → PerfAntipatternCategory → CWE."""
     domain = data["domain"]
-    session.run(_MERGE_DOMAIN, name=domain["name"], description_ko=domain["description_ko"])
+    session.run(_MERGE_DOMAIN, name=domain["name"].lower(), description_ko=domain["description_ko"])
 
     for cat in data["perf_antipattern_categories"]:
         session.run(
@@ -201,61 +192,60 @@ def _seed_performance_domain(session, data: dict):
 
 
 def _seed_concepts(session, concepts: list):
-    """Concept 노드 MERGE + APOC addLabels + 관계."""
+    """Concept MERGE + APOC 다중 라벨 + 온톨로지 관계 전체."""
     for c in concepts:
-        name = c["name"]
-        domain = c["concept_domain"]
+        name    = c["name"]
+        domains = c.get("domains", [])  # 입력 배열 직접 사용, 하드코딩 맵 없음
 
+        # 1. Concept 노드 MERGE
         session.run(
             _MERGE_CONCEPT,
             name=name,
             cwe_id=c.get("cwe_id", ""),
             owasp_id=c.get("owasp_id", ""),
-            severity=c.get("severity", ""),
-            concept_domain=domain,
-            concept_type=c.get("concept_type", ""),
+            severity=c.get("severity", "").lower(),
+            domains=[d.lower() for d in domains],
+            concept_type=c.get("concept_type", "").lower(),
             description_ko=c.get("description_ko", ""),
             aliases=c.get("aliases", []),
         )
 
-        # APOC 다중 라벨 부여
-        labels = DOMAIN_LABEL_MAP.get(domain, [])
+        # 2. APOC 다중 라벨 — list()로 강제 소비하여 완료 보장
+        #    domains 배열을 PascalCase로 변환하여 직접 주입 (하드코딩 맵 없음)
+        labels = [d.capitalize() for d in domains]
         if labels:
-            session.run(_ADD_LABELS, name=name, labels=labels)
+            rows = list(session.run(_ADD_LABELS, name=name, labels=labels))
+            if not rows:
+                print(
+                    f"  WARNING: APOC addLabels 결과 없음 '{name}' — APOC 플러그인 확인 필요",
+                    file=sys.stderr,
+                )
 
-        # CWE → Concept INSTANTIATED_BY
+        # 3. CWE → Concept INSTANTIATED_BY
         if c.get("cwe_id"):
             session.run(_INSTANTIATED_BY, cwe_id=c["cwe_id"], name=name)
 
-        # SecurityMechanism + MITIGATED_BY
+        # 4. PerfAntipatternCategory -[:REF_TO]-> CWE
+        #    perf_category 필드가 있는 모든 개념에 생성 — 이 관계가 없으면 성능 온톨로지와 고립됨
+        perf_cat = c.get("perf_category", "")
+        if perf_cat and c.get("cwe_id"):
+            session.run(_REF_TO_CWE, cat_name=perf_cat, cwe_id=c["cwe_id"])
+
+        # 5. SecurityMechanism + MITIGATED_BY
         for mech in c.get("security_mechanisms", []):
             session.run(_MERGE_SEC_MECH, name=mech)
             session.run(_MITIGATED_BY, cname=name, mname=mech)
 
-        # RootCause + CAUSED_BY
+        # 6. RootCause + CAUSED_BY
         if c.get("root_cause"):
-            root_name = c["root_cause"][:120]  # 길이 제한
+            root_name = c["root_cause"][:120]
             session.run(_MERGE_ROOT_CAUSE, name=root_name, description_ko=root_name)
             session.run(_CAUSED_BY, cname=name, rname=root_name)
 
-        # Component + AFFECTS
+        # 7. Component + AFFECTS
         for comp in c.get("affected_components", []):
             session.run(_MERGE_COMPONENT, name=comp)
             session.run(_AFFECTS, cname=name, compname=comp)
-
-
-def _perf_concept_to_category_ref(session, concepts: list, perf_data: dict):
-    """성능 Concept → PerfAntipatternCategory REF_TO (CWE 경유)."""
-    cat_cwe_map = {cat["name"]: [] for cat in perf_data["perf_antipattern_categories"]}
-    for cwe in perf_data["cwe_nodes"]:
-        # perf_data CWE와 concept의 cwe_id 매칭으로 카테고리 REF_TO 생성
-        pass
-
-    for c in concepts:
-        cat = c.get("perf_category", "")
-        cwe_id = c.get("cwe_id", "")
-        if cat and cwe_id:
-            session.run(_REF_TO_CWE, cat_name=cat, cwe_id=cwe_id)
 
 
 # ── 진입점 ────────────────────────────────────────────────────────────────
@@ -282,35 +272,37 @@ def main():
             print("▶ 성능 도메인 온톨로지 적재...")
             _seed_performance_domain(session, perf_domain_data)
 
-            print("▶ 보안 Concept 시드 적재 (APOC addLabels)...")
+            print("▶ 보안 Concept 시드 적재...")
             _seed_concepts(session, sec_concepts)
 
-            print("▶ 성능/교차 Concept 시드 적재 (APOC addLabels)...")
+            print("▶ 성능/교차 Concept 시드 적재...")
             _seed_concepts(session, perf_concepts)
 
-            # 통계 출력 — Neo4j 5.18 호환 구문 사용
             def _count(label):
                 return session.run(f"MATCH (n:{label}) RETURN count(n) AS n").single()["n"]
 
-            domains = [r["name"] for r in session.run("MATCH (d:Domain) RETURN d.name AS name")]
-            owasp_count   = _count("OWASPCategory")
-            perf_count    = _count("PerfAntipatternCategory")
-            cwe_count     = _count("CWE")
+            domain_names = [r["name"] for r in session.run("MATCH (d:Domain) RETURN d.name AS name")]
+            owasp_count  = _count("OWASPCategory")
+            perf_count   = _count("PerfAntipatternCategory")
+            cwe_count    = _count("CWE")
             concept_count = _count("Concept")
-            sec_count     = _count("Concept:Security")
-            perf_c_count  = _count("Concept:Performance")
-            both_count    = _count("Concept:Security:Performance")
+            sec_count    = _count("Concept:security")
+            perf_c_count = _count("Concept:performance")
+            both_count   = _count("Concept:security:performance")
 
             print(f"""
-seed OK:
-   Domain       : {domains}
-   OWASPCategory: {owasp_count}
-   PerfCategory : {perf_count}
-   CWE          : {cwe_count}
-   Concept total: {concept_count}
-   :Security    : {sec_count}
-   :Performance : {perf_c_count}
-   :Both        : {both_count}
+==================================================================
+ 지식 그래프 시드 적재 완료
+==================================================================
+   Domain 목록        : {domain_names}
+   OWASPCategory      : {owasp_count}
+   PerfCategory       : {perf_count}
+   CWE                : {cwe_count}
+   Concept (총합)     : {concept_count}
+   ├─ :security       : {sec_count}
+   ├─ :performance    : {perf_c_count}
+   └─ :security:performance  : {both_count}  ← 교차 도메인
+==================================================================
 """)
     except Exception as e:
         print(f"ERROR: {e}", file=sys.stderr)

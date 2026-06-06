@@ -13,7 +13,6 @@
 관리자가 최종 승인 전에 **실제 그래프에 적용됐을 때의 모습**을 미리 확인할 수 있도록, 클라이언트 사이드에서 기존 Neo4j 데이터와 DRAFT 노드를 **가상으로 병합**하여 시각화한다. 실제 DB는 변경되지 않는다.
 
 **가상 병합 렌더링 규칙**:
-
 | 노드 유형 | 시각 처리 |
 |-----------|-----------|
 | 기존 확정 노드 | 기본 스타일 (실선, 불투명) |
@@ -50,7 +49,7 @@ frontend/
 │   │
 │   ├── components/                    # 아토믹 디자인 격리 레이어
 │   │   ├── atoms/                     # [원자] 최소 단위 — 상태·로직 없음
-│   │   │   ├── Badge.tsx              #   도메인 라벨 배지 (Security · Performance · 교차)
+│   │   │   ├── Badge.tsx              #   도메인 라벨 배지 (security · performance · 교차)
 │   │   │   ├── Button.tsx             #   범용 버튼 (승인·거부·제출)
 │   │   │   ├── Spinner.tsx            #   로딩 인디케이터
 │   │   │   └── StatusDot.tsx          #   파이프라인 단계 상태 점 (PENDING/RUNNING/DONE)
@@ -128,4 +127,3 @@ const merged = mergeVirtualGraph(confirmedNodes, draftNodes)
 // - DRAFT 노드 count === draftNodes.length
 // - COMMITTED 노드 style.opacity === 1
 ```
-

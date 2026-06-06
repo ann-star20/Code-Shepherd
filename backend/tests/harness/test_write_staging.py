@@ -1,98 +1,108 @@
-"""G5: write_staging_draft usecase 통합 테스트."""
+"""write_staging_draft — JSONB v2 + DOMAIN_PENDING 분류 테스트 (Phase 2 SDD T_ws_01~03).
 
+SDD 스펙:
+  - concept_json JSONB 저장 (개별 컬럼 아님)
+  - 등록 도메인 → state='DRAFT', known_domains 채움
+  - 미등록 도메인 → state='DOMAIN_PENDING', unknown_domains 채움
+  - registered_domains=None → 분류 없이 DRAFT
+"""
+
+import json
 import uuid
 import pytest
 
-from app.domain.models import ConceptExtractionSchema, ConceptDomain
+
+def _parse_jsonb(val) -> dict:
+    """asyncpg는 JSONB를 str로 반환 — dict로 변환."""
+    return json.loads(val) if isinstance(val, str) else val
+
+from app.domain.models import ConceptExtractionSchema
 from app.usecases.write_staging_draft import write_staging_draft
 
 
-# ── 테스트 데이터 ────────────────────────────────────────────────────────────
-
-def _make_concept(name: str, description_ko: str = "설명", domain: str = "security") -> ConceptExtractionSchema:
+def _concept(name: str, domains: list[str]) -> ConceptExtractionSchema:
     return ConceptExtractionSchema(
-        concept_name=name,
-        concept_domain=domain,
-        severity="HIGH",
-        description_ko=description_ko,
+        concept_name=name, domains=domains,
+        severity="HIGH", description_ko="설명",
     )
 
 
-async def _insert_doc(conn, doc_id: str) -> None:
+async def _doc(conn, doc_id: str) -> None:
     await conn.execute(
-        "INSERT INTO documents (doc_id, url) VALUES ($1, $2) ON CONFLICT DO NOTHING",
+        "INSERT INTO documents (doc_id, source_prefix, original_url, content_hash) "
+        "VALUES ($1,'EXT','https://test.example.com','abcd1234') ON CONFLICT DO NOTHING",
         doc_id,
-        "https://example.com/write-staging-test",
     )
 
 
 async def _cleanup(conn, session_id: str, doc_id: str) -> None:
-    await conn.execute(
-        "DELETE FROM staging_concepts WHERE session_id = $1::uuid", session_id
-    )
-    await conn.execute("DELETE FROM documents WHERE doc_id = $1", doc_id)
+    await conn.execute("DELETE FROM staging_concepts WHERE session_id=$1::uuid", session_id)
+    await conn.execute("DELETE FROM documents WHERE doc_id=$1", doc_id)
 
 
-# ── T_write_draft_inserts ────────────────────────────────────────────────────
-
+# T_ws_01: 등록 도메인 → state='DRAFT', concept_json 저장
 @pytest.mark.anyio
-async def test_write_draft_inserts(asyncpg_pool):
-    """2개 concept → DB에 2행, status='DRAFT'."""
-    session_id = str(uuid.uuid4())
-    doc_id = f"EXT_wsd_{uuid.uuid4().hex[:8]}"
-
+async def test_ws_draft_insert(asyncpg_pool):
+    sid = str(uuid.uuid4())
+    did = f"EXT_ws_{uuid.uuid4().hex[:8]}"
     async with asyncpg_pool.acquire() as conn:
-        await _insert_doc(conn, doc_id)
+        await _doc(conn, did)
         try:
-            concepts = [_make_concept("XSS"), _make_concept("SQLI")]
-            await write_staging_draft(session_id, doc_id, concepts, conn)
-
-            rows = await conn.fetch(
-                "SELECT status FROM staging_concepts WHERE session_id = $1::uuid",
-                session_id,
+            n = await write_staging_draft(
+                sid, did, [_concept("XSS", ["security"])], conn, {"security"}
             )
-            assert len(rows) == 2
-            assert all(r["status"] == "DRAFT" for r in rows)
-        finally:
-            await _cleanup(conn, session_id, doc_id)
-
-
-# ── T_write_draft_json ───────────────────────────────────────────────────────
-
-@pytest.mark.anyio
-async def test_write_draft_json(asyncpg_pool):
-    """description_ko 값이 DB에 올바르게 저장된다."""
-    session_id = str(uuid.uuid4())
-    doc_id = f"EXT_wsd_{uuid.uuid4().hex[:8]}"
-
-    async with asyncpg_pool.acquire() as conn:
-        await _insert_doc(conn, doc_id)
-        try:
-            concepts = [_make_concept("XSS", description_ko="테스트")]
-            await write_staging_draft(session_id, doc_id, concepts, conn)
-
-            value = await conn.fetchval(
-                "SELECT description_ko FROM staging_concepts WHERE session_id = $1::uuid",
-                session_id,
+            assert n == 1
+            row = await conn.fetchrow(
+                "SELECT state, known_domains, unknown_domains, concept_json "
+                "FROM staging_concepts WHERE session_id=$1::uuid",
+                sid,
             )
-            assert value == "테스트"
+            assert row["state"] == "DRAFT"
+            assert "security" in row["known_domains"]
+            assert list(row["unknown_domains"]) == []
+            cj = _parse_jsonb(row["concept_json"])
+            assert cj["concept_name"] == "XSS"
         finally:
-            await _cleanup(conn, session_id, doc_id)
+            await _cleanup(conn, sid, did)
 
 
-# ── T_write_draft_count ──────────────────────────────────────────────────────
-
+# T_ws_02: 미등록 도메인 → state='DOMAIN_PENDING'
 @pytest.mark.anyio
-async def test_write_draft_count(asyncpg_pool):
-    """3개 concept → 반환값 == 3."""
-    session_id = str(uuid.uuid4())
-    doc_id = f"EXT_wsd_{uuid.uuid4().hex[:8]}"
-
+async def test_ws_domain_pending(asyncpg_pool):
+    sid = str(uuid.uuid4())
+    did = f"EXT_ws_{uuid.uuid4().hex[:8]}"
     async with asyncpg_pool.acquire() as conn:
-        await _insert_doc(conn, doc_id)
+        await _doc(conn, did)
         try:
-            concepts = [_make_concept(f"C{i}") for i in range(3)]
-            count = await write_staging_draft(session_id, doc_id, concepts, conn)
-            assert count == 3
+            await write_staging_draft(
+                sid, did, [_concept("GDPR", ["compliance"])],
+                conn, {"security", "performance"},
+            )
+            row = await conn.fetchrow(
+                "SELECT state, unknown_domains FROM staging_concepts WHERE session_id=$1::uuid",
+                sid,
+            )
+            assert row["state"] == "DOMAIN_PENDING"
+            assert "compliance" in row["unknown_domains"]
         finally:
-            await _cleanup(conn, session_id, doc_id)
+            await _cleanup(conn, sid, did)
+
+
+# T_ws_03: registered_domains=None → 항상 DRAFT (분류 없음)
+@pytest.mark.anyio
+async def test_ws_no_registry_defaults_draft(asyncpg_pool):
+    sid = str(uuid.uuid4())
+    did = f"EXT_ws_{uuid.uuid4().hex[:8]}"
+    async with asyncpg_pool.acquire() as conn:
+        await _doc(conn, did)
+        try:
+            n = await write_staging_draft(
+                sid, did, [_concept("X", ["unknown_domain"])], conn, None
+            )
+            assert n == 1
+            row = await conn.fetchrow(
+                "SELECT state FROM staging_concepts WHERE session_id=$1::uuid", sid
+            )
+            assert row["state"] == "DRAFT"
+        finally:
+            await _cleanup(conn, sid, did)

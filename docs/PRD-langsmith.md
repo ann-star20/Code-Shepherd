@@ -240,18 +240,18 @@ class GeminiClient(ILLMClient):
 
 ### 16.5. 개발 모드 구현체 (`mock_client.py`)
 
-PRD-domain §3.3.3에 정의된 4종 컨셉 타겟을 커버하는 **고정 스펙 Mock 데이터**를 반환한다. 네트워크 I/O 없이 즉시 반환하며 LangSmith를 비활성화한다.
+PRD-domain §3.3.3에 정의된 4종 컨셉 타겟을 커버하는 고정 스펙 Mock 데이터를 반환한다. 데이터 주도형 확장 설계에 맞추어 concept_domain 단일 리터럴 및 "both" 상수 분류를 완전히 제거하고 문자열 배열(domains) 구조를 채택한다. 네트워크 I/O 없이 즉시 반환하며 LangSmith를 비활성화한다.
 
 ```python
 # backend/app/infrastructure/llm/mock_client.py
 from app.infrastructure.llm.interface import ILLMClient
 from app.domain.models import ConceptExtractionSchema
 
-# PRD-domain §3.3.3 4종 컨셉 타겟을 커버하는 고정 Mock 스펙
+# 동적 확장 배열 구조(domains)가 반영된 완성형 Mock 스펙 자산
 _MOCK_CONCEPTS: list[dict] = [
     {
         "concept_name":          "XSS",
-        "concept_domain":        "security",
+        "domains":               ["security"],
         "concept_type":          "vulnerability_root_cause",
         "cwe_id":                "CWE-79",
         "owasp_id":              "A03:2021",
@@ -265,7 +265,7 @@ _MOCK_CONCEPTS: list[dict] = [
     },
     {
         "concept_name":          "N+1Query",
-        "concept_domain":        "performance",
+        "domains":               ["performance"],
         "concept_type":          "vulnerability_root_cause",
         "cwe_id":                "CWE-1072",
         "severity":              "HIGH",
@@ -278,7 +278,7 @@ _MOCK_CONCEPTS: list[dict] = [
     },
     {
         "concept_name":          "MemoryLeak",
-        "concept_domain":        "both",          # 교차 도메인 — :Security:Performance
+        "domains":               ["security", "performance"],  -- both 완전 폐기 및 다중 도메인 동적 배열 바인딩
         "concept_type":          "vulnerability_root_cause",
         "cwe_id":                "CWE-401",
         "severity":              "HIGH",
@@ -291,8 +291,8 @@ _MOCK_CONCEPTS: list[dict] = [
     },
     {
         "concept_name":          "CSRFProtection",
-        "concept_domain":        "security",
-        "concept_type":          "security_mechanism",  # 보안 메커니즘 타겟
+        "domains":               ["security"],
+        "concept_type":          "security_mechanism",  -- 보안 메커니즘 타겟 명세 준수
         "cwe_id":                "CWE-352",
         "owasp_id":              "A01:2021",
         "severity":              "HIGH",
@@ -306,15 +306,12 @@ _MOCK_CONCEPTS: list[dict] = [
 ]
 
 class MockClient(ILLMClient):
-    """DEV 모드: 외부 API 호출 없이 고정 Mock 스펙 즉시 반환.
-    - LangSmith 트레이싱 비활성화 (네트워크 I/O 차단)
-    - 테스트 하네스 레이어 D (test_llm_eval.py) 의 Pydantic 검증 대상
-    """
+    """DEV 모드: 외부 API 호출 없이 고정 Mock 스펙 즉시 반환."""
 
     async def extract_concepts(
         self, text_chunk: str, doc_id: str, metadata: dict
     ) -> list[ConceptExtractionSchema]:
-        # 네트워크 I/O 없음 — 즉시 반환
+        # 네트워크 I/O 없이 Pydantic 밸리데이션 레이어 즉시 통과
         return [ConceptExtractionSchema(**item) for item in _MOCK_CONCEPTS]
 
     def is_tracing_enabled(self) -> bool:
@@ -398,15 +395,15 @@ class RunPipelineUsecase:
 
 ### 16.9. SDD & TDD (AAA 패턴) — Mock 레이어 검증 명세
 
-#### T09. MockClient 즉시 반환 및 스키마 검증 (레이어 D 확장)
+#### T09. MockClient 즉시 반환 및 배열 스키마 검증 (레이어 D 확장)
 
 | 항목 | 내용 |
 |------|------|
 | Spec (SDD) | `APP_MODE=development`일 때 LLM 호출 없이 4종 컨셉 Mock 데이터 반환 |
-| Assert 목표 | 반환값이 `ILLMClient` 계약을 만족하고 Pydantic 검증 통과 |
+| Assert 목표 | 반환값이 `ILLMClient` 계약을 만족하고 `domains` 다중 요소 추출 유효성 통과 |
 
 ```python
-# tests/harness/test_llm_eval.py — T09 추가
+# tests/harness/test_llm_eval.py — T09 수정본
 
 def test_mock_client_returns_spec_schema():
     # Arrange
@@ -421,22 +418,24 @@ def test_mock_client_returns_spec_schema():
         )
     )
 
-    # Assert 1: 4종 컨셉 타겟 모두 포함
-    domains   = {c.concept_domain for c in concepts}
-    types_set = {c.concept_type   for c in concepts}
-    assert "security"    in domains
-    assert "performance" in domains
-    assert "both"        in domains          # 교차 도메인 존재
+    # Assert 1: domains 중첩 리스트 평탄화(Flatten) 처리 후 4종 컨셉 타겟 범위 검증
+    all_domains = {domain for c in concepts for domain in c.domains}
+    types_set   = {c.concept_type for c in concepts}
+    
+    assert "security" in all_domains
+    assert "performance" in all_domains
+    assert "both" not in all_domains              -- 'both' 문자열 잔존 이탈 검증 (0% 차단)
     assert "vulnerability_root_cause" in types_set
-    assert "security_mechanism"       in types_set  # PRD-domain §3.3.3 4종 중 보안 메커니즘
+    assert "security_mechanism"       in types_set
 
-    # Assert 2: Pydantic 스키마 완전성
+    # Assert 2: Pydantic 데이터 스키마 완전성 (TEXT[] 매핑 신뢰도 검증)
     for c in concepts:
-        assert c.concept_domain in {"security", "performance", "both"}
+        assert isinstance(c.domains, list)
+        assert len(c.domains) > 0
         assert isinstance(c.aliases, list)
         assert len(c.description_ko) > 0
 
-    # Assert 3: LangSmith 트레이싱 비활성화
+    # Assert 3: LangSmith 트레이싱 완전 제어 확인
     assert mock_client.is_tracing_enabled() is False
 ```
 
@@ -470,14 +469,14 @@ def test_factory_injects_correct_client():
 
 | 항목 | 내용 |
 |------|------|
-| Spec (SDD) | MockClient가 주입된 상태에서 파이프라인을 실행하면 staging_concepts에만 DRAFT 레코드가 적재됨 |
-| Assert | concepts 테이블과 Neo4j = 0건, staging_concepts DRAFT = 1건 |
+| Spec (SDD) | MockClient 주입 상태에서 파이프라인 구동 시 격리 정책에 따라 master가 오염되지 않고 staging 레이어에만 안착 |
+| Assert | concepts 및 Neo4j Count = 0건 고정, staging_concepts DRAFT = 4건 적재 확인 |
 
 ```python
 def test_pipeline_with_mock_llm_isolates_master_db(
     db_session, neo4j_session, celery_app
 ):
-    # Arrange: MockClient 주입 (Gemini API 호출 없음)
+    # Arrange: MockClient 인터페이스 주입 (의존성 역전)
     mock_llm = MockClient()
     usecase  = RunPipelineUsecase(
         llm_client=mock_llm,
@@ -485,22 +484,22 @@ def test_pipeline_with_mock_llm_isolates_master_db(
         graph_service=Neo4jService(neo4j_session),
     )
 
-    # Act: 파이프라인 실행 (ALWAYS_EAGER = 동기)
+    # Act: 런타임 파이프라인 동기 실행 유도 (ALWAYS_EAGER = True 환경)
     asyncio.run(usecase.execute(
         doc_id="EXT_test_mock_abc12345",
         text_chunks=["dummy chunk"],
         metadata={"framework": "Django", "version": "5.0", "lang": "EN"},
     ))
 
-    # Assert 1: 운영 테이블 미접촉
+    # Assert 1: 최종 마스터 운영 DB 완벽 차단 및 격리 검증
     assert db_session.execute("SELECT COUNT(*) FROM concepts").scalar() == 0
     assert neo4j_session.run("MATCH (c:Concept) RETURN count(c) AS n").single()["n"] == 0
 
-    # Assert 2: staging에만 DRAFT 적재
+    # Assert 2: 임시 격리 보관 레이어인 staging_concepts에만 명세된 4건 적재 완료 검증
     draft_count = db_session.execute(
         "SELECT COUNT(*) FROM staging_concepts WHERE state='DRAFT'"
     ).scalar()
-    assert draft_count == len(_MOCK_CONCEPTS)  # 4종 Mock 개념 수
+    assert draft_count == len(_MOCK_CONCEPTS)  # 4종 원자적 개념 수 정합성 일치 (4건)
 ```
 
 **DoD 업데이트 — QA 기준 추가**:

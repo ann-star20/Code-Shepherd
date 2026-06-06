@@ -13,7 +13,8 @@ services:
     ports:
       - "5433:5432"
     volumes:
-      - pg_data:/var/lib/postgresql/data
+      # - pg_data:/var/lib/postgresql/data
+      - "C:/data/postgres:/var/lib/postgresql/data"
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U postgres"]
       interval: 5s
@@ -35,8 +36,8 @@ services:
       - "7475:7474"   # HTTP Browser (7474 은 onboarding-neo4j 점유)
       - "7688:7687"   # Bolt (7687 은 onboarding-neo4j 점유)
     volumes:
-      - neo4j_data:/data
-      - neo4j_logs:/logs
+      - "C:/data/neo4j:/data"
+      - "C:/data/neo4j/logs:/logs"
     healthcheck:
       test: ["CMD-SHELL", "wget -qO- http://localhost:7474 || exit 1"]
       interval: 10s
@@ -111,11 +112,9 @@ services:
   frontend:
     build: ./frontend
     ports:
-      - "3000:80"
+      - "3000:3000"
     depends_on:
       - backend
 
-volumes:
-  pg_data:
-  neo4j_data:
-  neo4j_logs:
+# volumes:
+  # pg_data:

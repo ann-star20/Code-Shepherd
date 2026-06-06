@@ -4,6 +4,7 @@ T06: 동시 approve 요청 → 단 하나만 성공, 나머지는 StagingConflic
 """
 
 import asyncio
+import json
 import uuid
 import pytest
 
@@ -19,18 +20,27 @@ async def _setup_session(conn, session_id: str, n_concepts: int = 3) -> str:
     doc_id = f"EXT_test-staging_{uuid.uuid4().hex[:8]}"
 
     await conn.execute(
-        "INSERT INTO documents (doc_id, url) VALUES ($1, $2) ON CONFLICT DO NOTHING",
+        "INSERT INTO documents (doc_id, source_prefix, original_url, content_hash) "
+        "VALUES ($1,'EXT','https://example.com/staging-test','abcd1234') ON CONFLICT DO NOTHING",
         doc_id,
-        "https://example.com/staging-test",
     )
     for i in range(n_concepts):
+        name = f"TestConcept_{i}_{uuid.uuid4().hex[:4]}"
+        cj = json.dumps({
+            "concept_name": name,
+            "domains": ["security"],
+            "severity": "HIGH",
+            "description_ko": "테스트 개념",
+            "aliases": [],
+        })
         await conn.execute(
             """INSERT INTO staging_concepts
-               (session_id, doc_id, concept_name, concept_domain, severity, description_ko)
-               VALUES ($1::uuid, $2, $3, 'security', 'high', '테스트 개념')""",
+               (session_id, doc_id, concept_json, state, known_domains, unknown_domains)
+               VALUES ($1::uuid, $2, $3::jsonb, 'DRAFT', $4, '{}')""",
             session_id,
             doc_id,
-            f"TestConcept_{i}_{uuid.uuid4().hex[:4]}",
+            cj,
+            ["security"],
         )
     return doc_id
 
@@ -109,12 +119,10 @@ async def test_T06_approve_idempotency_second_call_fails(asyncpg_pool):
         doc_id = await _setup_session(setup_conn, session_id, n_concepts=2)
 
     try:
-        # 1회차 승인
         async with asyncpg_pool.acquire() as conn:
             count = await approve_staging(session_id, conn)
         assert count == 2
 
-        # 2회차 — DRAFT 행 없으므로 StagingConflictError
         with pytest.raises(StagingConflictError):
             async with asyncpg_pool.acquire() as conn:
                 await approve_staging(session_id, conn)

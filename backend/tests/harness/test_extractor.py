@@ -1,17 +1,15 @@
-"""G4: extract_concepts usecase 테스트."""
+"""G4: extract_concepts usecase 테스트 — domains: list[str] 스키마."""
 
 import pytest
 from pydantic import ValidationError
 
-from app.domain.models import ConceptExtractionSchema, ConceptDomain
+from app.domain.models import ConceptExtractionSchema
 from app.infrastructure.llm.interface import ILLMClient
 from app.usecases.extract_concepts import extract_concepts
 
-# ── 테스트용 Mock LLM ────────────────────────────────────────────────────────
-
 _VALID_XSS = {
     "concept_name": "XSS",
-    "concept_domain": ConceptDomain.SECURITY,
+    "domains": ["security"],
     "concept_type": "vulnerability_root_cause",
     "cwe_id": "CWE-79",
     "severity": "HIGH",
@@ -21,7 +19,7 @@ _VALID_XSS = {
 
 _VALID_BOTH = {
     "concept_name": "MemoryLeak",
-    "concept_domain": "both",
+    "domains": ["security", "performance"],
     "concept_type": "vulnerability_root_cause",
     "severity": "HIGH",
     "description_ko": "메모리 누수",
@@ -45,16 +43,14 @@ class _InvalidMock(ILLMClient):
     async def extract_concepts(self, text_chunk, doc_id, metadata):
         return [ConceptExtractionSchema(
             concept_name="Bad",
-            concept_domain="security",
-            severity="UNKNOWN",  # 잘못된 값 → validator 에러
+            domains=["security"],
+            severity="UNKNOWN",
             description_ko="invalid",
         )]
 
     def is_tracing_enabled(self):
         return False
 
-
-# ── 테스트 ────────────────────────────────────────────────────────────────────
 
 @pytest.mark.anyio
 async def test_extract_schema_valid():
@@ -67,7 +63,6 @@ async def test_extract_schema_valid():
 
 @pytest.mark.anyio
 async def test_extract_dedup():
-    # 2청크 모두 XSS 반환 → 중복 제거 → 1개
     mock = _FixedMock([_VALID_XSS])
     result = await extract_concepts("doc1", ["chunk1", "chunk2"], mock)
     assert len(result) == 1
@@ -77,12 +72,12 @@ async def test_extract_dedup():
 async def test_extract_domain_both():
     mock = _FixedMock([_VALID_BOTH])
     result = await extract_concepts("doc1", ["chunk1"], mock)
-    assert result[0].concept_domain == ConceptDomain.BOTH
+    assert "security" in result[0].domains
+    assert "performance" in result[0].domains
 
 
 @pytest.mark.anyio
 async def test_extract_invalid_filtered():
-    # ValidationError 발생 시 해당 항목 제외 (빈 결과 반환)
     mock = _InvalidMock()
     result = await extract_concepts("doc1", ["chunk1"], mock)
     assert result == []

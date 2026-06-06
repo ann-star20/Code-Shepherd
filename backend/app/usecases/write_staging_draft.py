@@ -1,4 +1,8 @@
-"""G5: write_staging_draft — staging_concepts DRAFT 행 삽입."""
+"""write_staging_draft — staging_concepts DRAFT / DOMAIN_PENDING 행 삽입 (PRD §3.9.2 v2).
+
+스키마 v2: concept_json JSONB (개별 컬럼 아님).
+domain 분류: registered_domains와 교차 → known/unknown 분리 → state 결정.
+"""
 
 import json
 
@@ -12,31 +16,37 @@ async def write_staging_draft(
     doc_id: str,
     concepts: list[ConceptExtractionSchema],
     conn: asyncpg.Connection,
+    registered_domains: set[str] | None = None,
 ) -> int:
+    """staging_concepts에 DRAFT 또는 DOMAIN_PENDING 행 삽입.
+
+    Args:
+        registered_domains: None이면 분류 없이 모두 DRAFT.
+    Returns:
+        삽입된 행 수.
+    """
     count = 0
     for concept in concepts:
+        concept_json = json.dumps(concept.model_dump())
+
+        if registered_domains is not None:
+            known = [d for d in concept.domains if d in registered_domains]
+            unknown = [d for d in concept.domains if d not in registered_domains]
+        else:
+            known, unknown = list(concept.domains), []
+
+        state = "DOMAIN_PENDING" if unknown else "DRAFT"
+
         await conn.execute(
             """INSERT INTO staging_concepts
-               (session_id, doc_id, concept_name, concept_domain, severity,
-                description_ko, concept_type, cwe_id, owasp_id,
-                aliases, security_mechanisms, affected_components,
-                config_properties, root_cause)
-               VALUES ($1::uuid, $2, $3, $4, $5, $6, $7, $8, $9,
-                       $10::jsonb, $11::jsonb, $12::jsonb, $13::jsonb, $14)""",
+               (session_id, doc_id, concept_json, state, known_domains, unknown_domains)
+               VALUES ($1::uuid, $2, $3::jsonb, $4, $5, $6)""",
             session_id,
             doc_id,
-            concept.concept_name,
-            concept.concept_domain.value,          # enum → 소문자 문자열
-            concept.severity.lower(),              # "HIGH" → "high" (DB CHECK 소문자)
-            concept.description_ko,
-            concept.concept_type,
-            concept.cwe_id,
-            getattr(concept, "owasp_id", None),
-            json.dumps(concept.aliases),
-            json.dumps(concept.security_mechanisms),
-            json.dumps(concept.affected_components),
-            json.dumps(concept.config_properties),
-            concept.root_cause,
+            concept_json,
+            state,
+            known,
+            unknown,
         )
         count += 1
     return count

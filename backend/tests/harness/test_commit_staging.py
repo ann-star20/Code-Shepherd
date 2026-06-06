@@ -1,5 +1,6 @@
 """G9: commit_staging usecase 통합 테스트."""
 
+import json
 import uuid
 import pytest
 
@@ -14,18 +15,28 @@ def _uid(base: str) -> str:
 
 async def _insert_doc(conn, doc_id: str) -> None:
     await conn.execute(
-        "INSERT INTO documents (doc_id, url) VALUES ($1, $2) ON CONFLICT DO NOTHING",
-        doc_id, "https://example.com/commit-test",
+        "INSERT INTO documents (doc_id, source_prefix, original_url, content_hash) "
+        "VALUES ($1,'EXT','https://example.com/commit-test','abcd1234') ON CONFLICT DO NOTHING",
+        doc_id,
     )
 
 
 async def _insert_approved(conn, session_id: str, doc_id: str, name: str) -> None:
+    cj = json.dumps({
+        "concept_name": name,
+        "domains": ["security"],
+        "severity": "HIGH",
+        "description_ko": "테스트",
+        "aliases": [],
+        "security_mechanisms": [],
+        "affected_components": [],
+        "config_properties": [],
+    })
     await conn.execute(
         """INSERT INTO staging_concepts
-           (session_id, doc_id, concept_name, concept_domain, severity, description_ko,
-            aliases, security_mechanisms, affected_components, config_properties, status)
-           VALUES ($1::uuid, $2, $3, 'security', 'high', '테스트', '[]', '[]', '[]', '[]', 'APPROVED')""",
-        session_id, doc_id, name,
+           (session_id, doc_id, concept_json, state, known_domains, unknown_domains)
+           VALUES ($1::uuid, $2, $3::jsonb, 'APPROVED', $4, '{}')""",
+        session_id, doc_id, cj, ["security"],
     )
 
 
@@ -74,10 +85,10 @@ async def test_commit_writes_concepts(asyncpg_pool, async_neo4j_driver):
     await _cleanup_neo4j(async_neo4j_driver, names)
 
 
-# ── T_commit_status_committed ─────────────────────────────────────────────────
+# ── T_commit_state_committed ──────────────────────────────────────────────────
 
 @pytest.mark.anyio
-async def test_commit_status_committed(asyncpg_pool, async_neo4j_driver):
+async def test_commit_state_committed(asyncpg_pool, async_neo4j_driver):
     """2행 APPROVED → commit_staging → staging 모두 COMMITTED."""
     session_id = str(uuid.uuid4())
     doc_id = f"EXT_cs_{uuid.uuid4().hex[:8]}"
@@ -90,11 +101,11 @@ async def test_commit_status_committed(asyncpg_pool, async_neo4j_driver):
         try:
             await commit_staging(session_id, conn, async_neo4j_driver)
 
-            statuses = await conn.fetch(
-                "SELECT status FROM staging_concepts WHERE session_id = $1::uuid",
+            states = await conn.fetch(
+                "SELECT state FROM staging_concepts WHERE session_id = $1::uuid",
                 session_id,
             )
-            assert all(r["status"] == "COMMITTED" for r in statuses)
+            assert all(r["state"] == "COMMITTED" for r in states)
         finally:
             await _cleanup_pg(conn, session_id, doc_id, names)
     await _cleanup_neo4j(async_neo4j_driver, names)

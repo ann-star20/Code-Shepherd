@@ -7,13 +7,19 @@ GET    /api/staging/{session_id}/diff
 PATCH  /api/staging/{session_id}/nodes/{node_id}
 """
 
-from typing import Literal
+import json
+from typing import Literal, Optional
 
 from fastapi import APIRouter, Depends, HTTPException, status
 import asyncpg
 
 from app.usecases.approve_staging import approve_staging
 from app.usecases.exceptions import StagingConflictError
+
+
+def _write_graph(session_id: str, doc_id: str):
+    from app.worker.tasks import write_graph_task as _task
+    return _task.delay(session_id=session_id, doc_id=doc_id)
 
 router = APIRouter(prefix="/api/staging", tags=["staging"])
 
@@ -48,22 +54,36 @@ async def approve_session(
 
 @router.get(
     "/{session_id}",
-    summary="DRAFT 개념 목록 조회",
+    summary="개념 목록 조회 (기본: DRAFT, all_states=true 시 전체)",
     status_code=status.HTTP_200_OK,
 )
 async def list_draft(
     session_id: str,
+    all_states: bool = False,
     conn: asyncpg.Connection = Depends(_get_conn),
 ) -> dict:
-    rows = await conn.fetch(
-        """SELECT id, concept_name, concept_domain, severity, description_ko,
-                  concept_type, cwe_id, status, created_at
-           FROM staging_concepts
-           WHERE session_id = $1::uuid AND status = 'DRAFT'
-           ORDER BY id""",
-        session_id,
-    )
-    return {"items": [dict(r) for r in rows]}
+    if all_states:
+        rows = await conn.fetch(
+            """SELECT id, concept_json, state, created_at
+               FROM staging_concepts
+               WHERE session_id = $1::uuid
+               ORDER BY id""",
+            session_id,
+        )
+    else:
+        rows = await conn.fetch(
+            """SELECT id, concept_json, state, created_at
+               FROM staging_concepts
+               WHERE session_id = $1::uuid AND state = 'DRAFT'
+               ORDER BY id""",
+            session_id,
+        )
+    items = []
+    for r in rows:
+        raw = r["concept_json"]
+        data = json.loads(raw) if isinstance(raw, str) else dict(raw)
+        items.append({"id": str(r["id"]), "state": r["state"], "created_at": str(r["created_at"]), **data})
+    return {"items": items}
 
 
 # ── POST /{session_id}/reject ─────────────────────────────────────────────────
@@ -78,10 +98,9 @@ async def reject_session(
     conn: asyncpg.Connection = Depends(_get_conn),
 ) -> dict:
     result = await conn.execute(
-        "DELETE FROM staging_concepts WHERE session_id = $1::uuid AND status = 'DRAFT'",
+        "DELETE FROM staging_concepts WHERE session_id = $1::uuid AND state = 'DRAFT'",
         session_id,
     )
-    # asyncpg execute returns "DELETE N"
     n = int(result.split()[-1])
     return {"rejected": n}
 
@@ -98,18 +117,44 @@ async def diff_session(
     conn: asyncpg.Connection = Depends(_get_conn),
 ) -> dict:
     rows = await conn.fetch(
-        """SELECT status, count(*)::int AS cnt
+        """SELECT state, count(*)::int AS cnt
            FROM staging_concepts
            WHERE session_id = $1::uuid
-           GROUP BY status""",
+           GROUP BY state""",
         session_id,
     )
-    counts = {r["status"].lower(): r["cnt"] for r in rows}
+    counts = {r["state"].lower(): r["cnt"] for r in rows}
     return {
         "draft":     counts.get("draft", 0),
         "approved":  counts.get("approved", 0),
         "committed": counts.get("committed", 0),
     }
+
+
+# ── POST /{session_id}/commit ─────────────────────────────────────────────────
+
+@router.post(
+    "/{session_id}/commit",
+    summary="APPROVED → Neo4j 적재 트리거",
+    status_code=status.HTTP_202_ACCEPTED,
+)
+async def commit_session(
+    session_id: str,
+    conn: asyncpg.Connection = Depends(_get_conn),
+) -> dict:
+    """APPROVED 항목을 Graph Writer Celery 태스크로 전달."""
+    row = await conn.fetchrow(
+        "SELECT doc_id FROM staging_concepts WHERE session_id = $1::uuid LIMIT 1",
+        session_id,
+    )
+    if row is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="session not found")
+    doc_id = row["doc_id"]
+    try:
+        _write_graph(session_id=session_id, doc_id=doc_id)
+    except Exception:
+        pass
+    return {"session_id": session_id, "doc_id": doc_id, "message": "그래프 적재 시작됨"}
 
 
 # ── PATCH /{session_id}/nodes/{node_id} ───────────────────────────────────────
@@ -122,17 +167,17 @@ async def diff_session(
 async def patch_node(
     session_id: str,
     node_id: int,
-    target_status: Literal["APPROVED", "REJECTED"],
+    target_state: Literal["APPROVED", "REJECTED"],
     conn: asyncpg.Connection = Depends(_get_conn),
 ) -> dict:
     result = await conn.execute(
         """UPDATE staging_concepts
-           SET status = $1, updated_at = NOW()
+           SET state = $1, updated_at = NOW()
            WHERE id = $2 AND session_id = $3::uuid""",
-        target_status,
+        target_state,
         node_id,
         session_id,
     )
     if result == "UPDATE 0":
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Node not found")
-    return {"id": node_id, "status": target_status}
+    return {"id": node_id, "state": target_state}

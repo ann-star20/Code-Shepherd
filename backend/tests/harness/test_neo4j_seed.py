@@ -1,9 +1,9 @@
 """P1-T7 통합 테스트 — Neo4j APOC 다중 라벨 시드 (PRD-schema.md §15.3).
 
 T07: 보안 도메인 온톨로지 노드 — Domain/OWASPCategory/CWE MERGE 멱등성
-T08: 보안 Concept APOC 다중 라벨 — :Concept:Security 물리 라벨 검증
-T09: 성능 Concept APOC 다중 라벨 — :Concept:Performance 물리 라벨 검증
-T10: 교차 도메인 Concept — :Concept:Security:Performance 물리 라벨 검증
+T08: 보안 Concept APOC 다중 라벨 — :Concept:security 물리 라벨 검증
+T09: 성능 Concept APOC 다중 라벨 — :Concept:performance 물리 라벨 검증
+T10: 교차 도메인 Concept — :Concept:security:performance 물리 라벨 검증
 T11: MERGE 멱등성 — 동일 Concept MERGE 2회 시 노드 1개만 존재
 """
 
@@ -61,9 +61,9 @@ def _merge_concept_with_labels(session, name, cwe_id, severity, description_ko,
                                 aliases, concept_domain):
     """Concept MERGE 후 concept_domain에 따라 APOC addLabels 적용."""
     domain_label_map = {
-        "security":     ["Security"],
-        "performance":  ["Performance"],
-        "both":         ["Security", "Performance"],
+        "security":     ["security"],
+        "performance":  ["performance"],
+        "both":         ["security", "performance"],
     }
     labels = domain_label_map[concept_domain]
 
@@ -80,16 +80,16 @@ def _merge_concept_with_labels(session, name, cwe_id, severity, description_ko,
 
 
 def test_T07_domain_node_merge_idempotent(neo4j_driver):
-    """Arrange: Domain(Security) MERGE.
+    """Arrange: Domain(security) MERGE.
     Act: 동일 Cypher 2회 실행.
     Assert: Domain 노드 1개.
     """
     with neo4j_driver.session() as session:
-        session.run(_MERGE_DOMAIN, name="Security", description_ko="보안 도메인 테스트")
-        session.run(_MERGE_DOMAIN, name="Security", description_ko="보안 도메인 테스트")
+        session.run(_MERGE_DOMAIN, name="security", description_ko="보안 도메인 테스트")
+        session.run(_MERGE_DOMAIN, name="security", description_ko="보안 도메인 테스트")
 
         count = session.run(
-            "MATCH (d:Domain {name:'Security'}) RETURN count(d) AS n"
+            "MATCH (d:Domain {name:'security'}) RETURN count(d) AS n"
         ).single()["n"]
         assert count == 1, f"Domain 노드 {count}개 — MERGE 멱등성 실패"
 
@@ -140,8 +140,8 @@ def test_T07_cwe_node_merge(neo4j_driver):
 
 def test_T08_security_concept_apoc_label(neo4j_driver):
     """Arrange: concept_domain='security' 인 Concept.
-    Act: MERGE + apoc.create.addLabels(["Security"]).
-    Assert: MATCH (c:Concept:Security {name:...}) 1건.
+    Act: MERGE + apoc.create.addLabels(["security"]).
+    Assert: MATCH (c:Concept:security {name:...}) 1건.
     """
     name = f"XSS_apoc_{uuid.uuid4().hex[:6]}"
     with neo4j_driver.session() as session:
@@ -153,15 +153,15 @@ def test_T08_security_concept_apoc_label(neo4j_driver):
             )
 
             count = session.run(
-                "MATCH (c:Concept:Security {name:$name}) RETURN count(c) AS n", name=name
+                "MATCH (c:Concept:security {name:$name}) RETURN count(c) AS n", name=name
             ).single()["n"]
-            assert count == 1, ":Concept:Security 물리 라벨 부여 실패"
+            assert count == 1, ":Concept:security 물리 라벨 부여 실패"
 
-            # :Concept:Performance 라벨은 없어야 함
+            # :Concept:performance 라벨은 없어야 함
             perf_count = session.run(
-                "MATCH (c:Concept:Performance {name:$name}) RETURN count(c) AS n", name=name
+                "MATCH (c:Concept:performance {name:$name}) RETURN count(c) AS n", name=name
             ).single()["n"]
-            assert perf_count == 0, "security 전용 Concept에 :Performance 라벨이 붙으면 안 됨"
+            assert perf_count == 0, "security 전용 Concept에 :performance 라벨이 붙으면 안 됨"
         finally:
             session.run(_CLEANUP_CONCEPT, name=name)
 
@@ -171,8 +171,8 @@ def test_T08_security_concept_apoc_label(neo4j_driver):
 
 def test_T09_performance_concept_apoc_label(neo4j_driver):
     """Arrange: concept_domain='performance' 인 Concept.
-    Act: MERGE + apoc.create.addLabels(["Performance"]).
-    Assert: MATCH (c:Concept:Performance {name:...}) 1건.
+    Act: MERGE + apoc.create.addLabels(["performance"]).
+    Assert: MATCH (c:Concept:performance {name:...}) 1건.
     """
     name = f"N1Query_apoc_{uuid.uuid4().hex[:6]}"
     with neo4j_driver.session() as session:
@@ -184,25 +184,25 @@ def test_T09_performance_concept_apoc_label(neo4j_driver):
             )
 
             count = session.run(
-                "MATCH (c:Concept:Performance {name:$name}) RETURN count(c) AS n", name=name
+                "MATCH (c:Concept:performance {name:$name}) RETURN count(c) AS n", name=name
             ).single()["n"]
-            assert count == 1, ":Concept:Performance 물리 라벨 부여 실패"
+            assert count == 1, ":Concept:performance 물리 라벨 부여 실패"
 
             sec_count = session.run(
-                "MATCH (c:Concept:Security {name:$name}) RETURN count(c) AS n", name=name
+                "MATCH (c:Concept:security {name:$name}) RETURN count(c) AS n", name=name
             ).single()["n"]
-            assert sec_count == 0, "performance 전용 Concept에 :Security 라벨이 붙으면 안 됨"
+            assert sec_count == 0, "performance 전용 Concept에 :security 라벨이 붙으면 안 됨"
         finally:
             session.run(_CLEANUP_CONCEPT, name=name)
 
 
-# ── T10: 교차 도메인 Concept :Concept:Security:Performance ─────────────────
+# ── T10: 교차 도메인 Concept :Concept:security:performance ─────────────────
 
 
 def test_T10_both_domain_concept_dual_labels(neo4j_driver):
     """Arrange: concept_domain='both' 인 Concept (MemoryLeak).
-    Act: MERGE + apoc.create.addLabels(["Security","Performance"]).
-    Assert: MATCH (c:Concept:Security:Performance {name:...}) 1건.
+    Act: MERGE + apoc.create.addLabels(["security","performance"]).
+    Assert: MATCH (c:Concept:security:performance {name:...}) 1건.
     """
     name = f"MemoryLeak_apoc_{uuid.uuid4().hex[:6]}"
     with neo4j_driver.session() as session:
@@ -215,22 +215,22 @@ def test_T10_both_domain_concept_dual_labels(neo4j_driver):
 
             # 두 라벨 동시 보유 확인
             count = session.run(
-                "MATCH (c:Concept:Security:Performance {name:$name}) RETURN count(c) AS n",
+                "MATCH (c:Concept:security:performance {name:$name}) RETURN count(c) AS n",
                 name=name,
             ).single()["n"]
-            assert count == 1, ":Concept:Security:Performance 물리 다중 라벨 부여 실패"
+            assert count == 1, ":Concept:security:performance 물리 다중 라벨 부여 실패"
 
             # 보안 단독 조회도 가능해야 함
             sec = session.run(
-                "MATCH (c:Concept:Security {name:$name}) RETURN count(c) AS n", name=name
+                "MATCH (c:Concept:security {name:$name}) RETURN count(c) AS n", name=name
             ).single()["n"]
-            assert sec == 1, "both Concept이 :Concept:Security 조회에도 노출돼야 함"
+            assert sec == 1, "both Concept이 :Concept:security 조회에도 노출돼야 함"
 
             # 성능 단독 조회도 가능해야 함
             perf = session.run(
-                "MATCH (c:Concept:Performance {name:$name}) RETURN count(c) AS n", name=name
+                "MATCH (c:Concept:performance {name:$name}) RETURN count(c) AS n", name=name
             ).single()["n"]
-            assert perf == 1, "both Concept이 :Concept:Performance 조회에도 노출돼야 함"
+            assert perf == 1, "both Concept이 :Concept:performance 조회에도 노출돼야 함"
         finally:
             session.run(_CLEANUP_CONCEPT, name=name)
 
@@ -241,7 +241,7 @@ def test_T10_both_domain_concept_dual_labels(neo4j_driver):
 def test_T11_concept_merge_idempotent_with_apoc(neo4j_driver):
     """Arrange: 동일 Concept name.
     Act: MERGE + addLabels를 3회 반복.
-    Assert: Concept 노드 1개, :Security 라벨 1번만 부여(중복 없음).
+    Assert: Concept 노드 1개, :security 라벨 1번만 부여(중복 없음).
     """
     name = f"CSRF_idem_{uuid.uuid4().hex[:6]}"
     with neo4j_driver.session() as session:
@@ -264,7 +264,7 @@ def test_T11_concept_merge_idempotent_with_apoc(neo4j_driver):
             ).single()["labels"]
             label_set = set(labels_result)
             assert "Concept" in label_set
-            assert "Security" in label_set
+            assert "security" in label_set
             # 중복 라벨은 Neo4j가 허용하지 않으므로 labels() 반환 시 중복 없음 (APOC 보장)
         finally:
             session.run(_CLEANUP_CONCEPT, name=name)

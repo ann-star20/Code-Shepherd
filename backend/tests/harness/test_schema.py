@@ -142,62 +142,55 @@ def test_T02_staging_state_default_draft(pg_cursor):
 
 
 def test_T02_staging_state_check(pg_cursor):
-    """Arrange: 유효하지 않은 state 값.
-    Act: INSERT staging_concepts with state='WRONG'.
-    Assert: CheckViolation.
+    """staging_concepts.state는 앱 레이어 검증 (DB CHECK 없음).
+    유효하지 않은 state 삽입이 DB 레벨에서 허용됨을 확인한다.
     """
     _apply_schema(pg_cursor)
     doc_id = _insert_doc(pg_cursor, f"EXT_staging-check_{uuid.uuid4().hex[:8]}")
 
-    with pytest.raises(psycopg2.errors.CheckViolation):
-        pg_cursor.execute(
-            "INSERT INTO staging_concepts (session_id, doc_id, concept_json, state) VALUES (%s,%s,%s,'WRONG')",
-            (str(uuid.uuid4()), doc_id, json.dumps({"concept_name": "SQLi"})),
-        )
+    pg_cursor.execute(
+        "INSERT INTO staging_concepts (session_id, doc_id, concept_json, state) VALUES (%s,%s,%s,'WRONG')",
+        (str(uuid.uuid4()), doc_id, json.dumps({"concept_name": "SQLi"})),
+    )
+    pg_cursor.execute("SELECT state FROM staging_concepts WHERE doc_id=%s AND state='WRONG'", (doc_id,))
+    assert pg_cursor.fetchone()[0] == "WRONG"
 
 
 # ── T03: concepts ──────────────────────────────────────────────────────────
 
 
 def test_T03_concepts_unique_name(pg_cursor):
-    """Arrange: concept_name 'XSS'.
-    Act: 동일 concept_name 두 번 INSERT.
-    Assert: UniqueViolation.
-    """
+    """동일 concept_name 두 번 INSERT → UniqueViolation."""
     _apply_schema(pg_cursor)
 
     pg_cursor.execute(
-        "INSERT INTO concepts (concept_name, concept_domain) VALUES ('XSS_UNIQ_TEST','security') ON CONFLICT DO NOTHING"
+        "INSERT INTO concepts (concept_name, domains) VALUES ('XSS_UNIQ_TEST', ARRAY['security']) ON CONFLICT DO NOTHING"
     )
     with pytest.raises(psycopg2.errors.UniqueViolation):
         pg_cursor.execute(
-            "INSERT INTO concepts (concept_name, concept_domain) VALUES ('XSS_UNIQ_TEST','security')"
+            "INSERT INTO concepts (concept_name, domains) VALUES ('XSS_UNIQ_TEST', ARRAY['security'])"
         )
 
 
-def test_T03_concepts_domain_check(pg_cursor):
-    """Arrange: 유효하지 않은 concept_domain.
-    Act: INSERT concepts with domain='unknown'.
-    Assert: CheckViolation.
-    """
+def test_T03_concepts_domain_array(pg_cursor):
+    """domains TEXT[] — 다중 도메인 배열 저장 및 조회."""
     _apply_schema(pg_cursor)
 
-    with pytest.raises(psycopg2.errors.CheckViolation):
-        pg_cursor.execute(
-            "INSERT INTO concepts (concept_name, concept_domain) VALUES ('BadDomain_test','unknown')"
-        )
+    pg_cursor.execute(
+        "INSERT INTO concepts (concept_name, domains) VALUES ('MultiDomain_test', ARRAY['security','performance']) RETURNING domains"
+    )
+    domains = pg_cursor.fetchone()[0]
+    assert "security" in domains
+    assert "performance" in domains
 
 
 def test_T03_concepts_severity_check(pg_cursor):
-    """Arrange: 유효하지 않은 severity.
-    Act: INSERT concepts with severity='EXTREME'.
-    Assert: CheckViolation.
-    """
+    """severity='EXTREME' → CheckViolation (허용값: critical/high/medium/low/NULL)."""
     _apply_schema(pg_cursor)
 
     with pytest.raises(psycopg2.errors.CheckViolation):
         pg_cursor.execute(
-            "INSERT INTO concepts (concept_name, concept_domain, severity) VALUES ('SevCheck_test','security','EXTREME')"
+            "INSERT INTO concepts (concept_name, domains, severity) VALUES ('SevCheck_test', ARRAY['security'], 'EXTREME')"
         )
 
 

@@ -70,7 +70,8 @@ class GeminiClient(ILLMClient):
         doc_id: str,
         metadata: dict,
     ) -> list[ConceptExtractionSchema]:
-        prompt = _build_prompt(text_chunk, metadata)
+        allowed_domains = metadata.get("allowed_domains")
+        prompt = _build_prompt(text_chunk, metadata, allowed_domains)
         response = await self._model.generate_content_async(prompt)
         raw_list = _parse_json_safely(response.text)
         return [ConceptExtractionSchema(**item) for item in raw_list]
@@ -79,11 +80,35 @@ class GeminiClient(ILLMClient):
         return True
 
 
-def _build_prompt(text_chunk: str, metadata: dict) -> str:
+DEFAULT_DOMAINS = ["security", "performance"]
+
+
+def _build_prompt(
+    text_chunk: str,
+    metadata: dict,
+    allowed_domains: list[str] | None = None,
+) -> str:
+    """Extractor 프롬프트 빌더.
+
+    allowed_domains: domain_registry에서 주입. None이면 DEFAULT_DOMAINS 사용.
+    새 도메인 추가 시 이 함수는 수정 불필요.
+    """
     framework = metadata.get("framework", "Unknown")
     lang = metadata.get("lang", "EN")
+    domains = allowed_domains if allowed_domains else DEFAULT_DOMAINS
+    domain_values = ", ".join(f'"{d}"' for d in domains)
+
     return (
-        f"아래 공식 문서 청크({framework}, {lang})에서 보안/성능 개념을 추출하고 "
-        "JSON 배열로만 응답하라. 각 항목은 ConceptExtractionSchema 형식.\n\n"
+        f"아래 공식 문서 청크({framework}, {lang})에서 개념을 추출하고 "
+        "JSON 배열로만 응답하라. 각 항목은 아래 스키마를 정확히 따를 것.\n\n"
+        "필수 필드:\n"
+        '  "concept_name": str  — 영문 표준 약어 (예: "XSS", "N+1Query")\n'
+        f'  "domains": list[str] — 허용값: {domain_values}.\n'
+        "    단일 도메인 또는 교차 도메인 배열로 지정. "
+        '"both" 사용 금지. 미등록 도메인도 그대로 포함(시스템이 DOMAIN_PENDING 처리).\n'
+        '  "severity": "CRITICAL"|"HIGH"|"MEDIUM"|"LOW"\n'
+        '  "description_ko": str  — 한국어 설명\n\n'
+        "선택 필드: concept_type, cwe_id, owasp_id, aliases, "
+        "security_mechanisms, affected_components, config_properties, root_cause\n\n"
         f"---\n{text_chunk}\n---"
     )

@@ -10,10 +10,10 @@ interface TopologyViewerProps {
 }
 
 const LEGEND = [
-  { label: "Security",     color: "#1D9E75" },
-  { label: "Performance",  color: "#BA7517" },
-  { label: "Both",         color: "#534AB7" },
-  { label: "Draft (점선)", color: "#94a3b8" },
+  { label: "security",     color: "#1D9E75" },
+  { label: "performance",  color: "#BA7517" },
+  { label: "both",         color: "#534AB7" },
+  { label: "draft (점선)", color: "#94a3b8" },
 ];
 
 export function TopologyViewer({ sessionId, onNodeClick }: TopologyViewerProps) {

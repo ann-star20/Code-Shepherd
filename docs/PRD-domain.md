@@ -111,21 +111,22 @@ def build_doc_id(prefix: str, url: str, content: str = None, etag: str = None) -
 **PostgreSQL `documents` 테이블 핵심 컬럼**:
 
 ```sql
-CREATE TABLE documents (
-  doc_id         TEXT PRIMARY KEY,          -- 마스터 키: PREFIX_url_hash8
-  source_prefix  TEXT NOT NULL,             -- EXT | KMS | ...
-  original_url   TEXT NOT NULL,
-  content_hash   CHAR(8) NOT NULL,          -- SHA-256 앞 8자리
-  etag           TEXT,                      -- HTTP ETag (있을 경우 우선 사용)
-  lang           TEXT,                      -- EN | KO
-  framework      TEXT,
-  version        TEXT,
-  state          TEXT DEFAULT 'PENDING',    -- PENDING | CRAWLING | EXTRACTED | COMMITTED | FAILED
-  created_at     TIMESTAMPTZ DEFAULT now(),
-  updated_at     TIMESTAMPTZ
+CREATE TABLE IF NOT EXISTS documents (
+  doc_id           TEXT PRIMARY KEY,           -- 마스터 키: PREFIX_url_hash8
+  source_prefix    TEXT NOT NULL,              -- EXT | KMS | ...
+  original_url     TEXT NOT NULL,
+  content_hash     CHAR(8) NOT NULL,           -- SHA-256 앞 8자리
+  etag             TEXT,                       -- HTTP ETag (있을 경우 우선 사용)
+  lang             TEXT,                       -- EN | KO
+  framework        TEXT,
+  version          TEXT,
+  state            TEXT NOT NULL DEFAULT 'PENDING',  -- PENDING | CRAWLING | EXTRACTED | COMMITTED | FAILED
+  created_at       TIMESTAMPTZ DEFAULT now(),
+  updated_at       TIMESTAMPTZ,
+  CONSTRAINT documents_state_check CHECK (state IN ('PENDING','CRAWLING','EXTRACTED','COMMITTED','FAILED'))
 );
-CREATE INDEX ON documents(source_prefix, state);
-CREATE INDEX ON documents(original_url, content_hash);
+CREATE INDEX IF NOT EXISTS idx_documents_prefix_state ON documents(source_prefix, state);
+CREATE INDEX IF NOT EXISTS idx_documents_url_hash     ON documents(original_url, content_hash);
 ```
 
 **Neo4j `Document` 노드 구조**:
@@ -214,10 +215,10 @@ CREATE INDEX document_doc_id FOR (d:Document) ON (d.doc_id)
 
 **설계 원칙**: `Concept` 레이어는 도메인별로 쪼개지 않고 **단일 통합 허브**로 운영한다. 보안 분류(`OWASPCategory`)와 성능 분류(`PerfAntipatternCategory`) 양쪽이 동일한 `Concept` 레이어로 수렴한다. 도메인 귀속은 노드 분리가 아닌 **다중 라벨(Multi-Label)**로 표현한다.
 
-**이유**: `MemoryLeak`처럼 보안 취약점(CWE-401 자원 미해제)이자 성능 안티패턴(GC 부하)이기도 한 개념이 존재한다. 도메인별로 Concept을 분리하면 동일 개념이 중복 노드로 생성되고, 후속 병합(Link Resolver)이 필요해진다. 통합 허브 + 다중 라벨이 근본 해결책이다.
+**이유**: `MemoryLeak`처럼 보안 취약점(CWE-401 자원 미해제)이자 성능 안티패턴(GC 부하)이기도 한 개념이 존재한다. 도메인별로 Concept을 분리하면 동일 개념이 중복 노드로 생성되므로, 통합 허브 + 동적 다중 라벨 배열을 통해 소스코드 수정 없는 무한한 도메인 확장을 달성한다.
 
 ```
-[Domain:Security]                    [Domain:Performance]
+[Domain:security]                    [Domain:performance]
       │                                      │
       ▼ BELONGS_TO                           ▼ BELONGS_TO
 [OWASPCategory]                  [PerfAntipatternCategory]
@@ -230,10 +231,10 @@ CREATE INDEX document_doc_id FOR (d:Document) ON (d.doc_id)
                              ▼
               ┌──────────────────────────┐
               │   Concept (통합 허브)     │
-              │  :Concept:Security       │  ← 보안 전용
-              │  :Concept:Performance    │  ← 성능 전용
-              │  :Concept:Security       │  ← 교차 도메인
-              │  :Concept:Performance    │    (예: MemoryLeak)
+              │  :Concept:security       │  ← 보안 전용
+              │  :Concept:performance    │  ← 성능 전용
+              │  :Concept:security       │  ← 교차 도메인
+              │  :Concept:performance    │    (예: MemoryLeak)
               └──────────────────────────┘
                     │         │        │
           MITIGATED_BY   CAUSED_BY   AFFECTS ...
@@ -243,7 +244,7 @@ CREATE INDEX document_doc_id FOR (d:Document) ON (d.doc_id)
 
 | 노드 레이블 | 설명 | 식별 키 |
 |-------------|------|---------|
-| `Domain` | 최상위 도메인 (`Security`, `Performance`) | `name` (영문) |
+| `Domain` | 최상위 도메인 (`security`, `performance`) | `name` (영문) |
 | `OWASPCategory` | OWASP Top 10 항목 (보안 도메인 전용) | `owasp_id` (예: A03:2021) |
 | `PerfAntipatternCategory` | 독자 성능 안티패턴 분류 (성능 도메인 전용, OWASP 미사용) | `name` |
 | `CWE` | CWE 번호 기반 취약점/결함 분류 (양 도메인 참조) | `cwe_id` (예: CWE-79, CWE-400) |
@@ -256,11 +257,50 @@ CREATE INDEX document_doc_id FOR (d:Document) ON (d.doc_id)
 
 **다중 라벨 부여 규칙**:
 
-| 추출 도메인 | 부여 라벨 | 예시 |
-|-------------|-----------|------|
-| 보안 문서에서 추출 | `:Concept:Security` | `XSS`, `SQLi`, `CSRF` |
-| 성능 문서에서 추출 | `:Concept:Performance` | `N+1Query`, `MissingIndex` |
-| 양쪽 모두 해당 | `:Concept:Security:Performance` | `MemoryLeak`, `ConnPoolExhaustion` |
+| 추출 domains 배열 | 부여되는 물리적 다중 라벨 | 예시 노드 타입 형태 |
+| --- | --- | --- |
+| `["security"]` | `:Concept:security` | XSS, SQLi, CSRF |
+| `["performance"]` | `:Concept:performance` | N+1Query, MissingIndex |
+| `["security","performance"]` | `:Concept:security:performance` | MemoryLeak, ConnPoolExhaustion |
+| `["security","compliance"]` | `:Concept:security:compliance` | AuditLogging (런타임 확장 예시) |
+
+
+
+**교차 도메인 동적 MERGE 및 APOC 라벨링 구현 지침**:
+
+```python
+# Graph Writer Agent 내부 동작 원칙 명세
+# raw_domains = concept.domains -> 예: ["security", "performance"]
+labels = [d.capitalize() for d in raw_domains] # Neo4j PascalCase 컨벤션 정규화
+
+if labels:
+    # 하드코딩 맵 사전 분기 없이 리스트를 APOC 프로시저에 직접 안전 바인딩
+    session.run("""
+        MATCH (c:Concept {name: $name})
+        CALL apoc.create.addLabels(c, $labels) YIELD node
+        RETURN node
+    """, name=concept.concept_name, labels=labels)
+
+```
+
+**Extractor Agent JSON 출력 스키마 명세 (Pydantic 동기화)**:
+
+```json
+{
+  "concept_name": "MemoryLeak",
+  "domains": ["security", "performance"], 
+  "concept_type": "vulnerability_root_cause",
+  "cwe_id": "CWE-401",
+  "severity": "HIGH",
+  "security_mechanisms": ["명시적 리소스 해제", "컨텍스트 매니저"],
+  "affected_components": ["힙 메모리", "GC 레이어"],
+  "config_properties": [],
+  "root_cause": "객체 참조 순환 또는 명시적 해제 누락",
+  "description_ko": "객체 참조 미해제로 인한 GC 부하 및 힙 메모리 소진.",
+  "aliases": ["Memory Leak", "메모리 누수"]
+}
+
+```
 
 **교차 도메인 MERGE Cypher**:
 
@@ -277,23 +317,23 @@ ON MATCH SET
 
 // 2. 도메인 라벨 누적 부여 (기존 라벨 제거 없이 추가만)
 WITH c
-CALL apoc.create.addLabels(c, ["Security", "Performance"]) YIELD node
+CALL apoc.create.addLabels(c, ["security", "performance"]) YIELD node
 RETURN node
 ```
 
 **조회 패턴**:
 ```cypher
 // 보안 도메인 Concept만 조회
-MATCH (c:Concept:Security) RETURN c
+MATCH (c:Concept:security) RETURN c
 
 // 성능 도메인 Concept만 조회
-MATCH (c:Concept:Performance) RETURN c
+MATCH (c:Concept:performance) RETURN c
 
 // 교차 도메인 Concept 조회 ("보안이면서 성능이기도 한" 노드)
-MATCH (c:Concept:Security:Performance) RETURN c
+MATCH (c:Concept:security:performance) RETURN c
 
 // "MemoryLeak" 키워드 + 보안 컨텍스트 조회
-MATCH (c:Concept:Security {name: "MemoryLeak"}) RETURN c
+MATCH (c:Concept:security {name: "MemoryLeak"}) RETURN c
 
 // aliases 포함 전체 검색 (키워드 "메모리 누수")
 MATCH (c:Concept) WHERE "메모리 누수" IN c.aliases RETURN c
@@ -304,9 +344,9 @@ Extractor가 LLM 추출 결과 JSON에서 `concept_domain` 필드를 반환하�
 
 ```python
 DOMAIN_LABEL_MAP = {
-    "security":     ["Security"],
-    "performance":  ["Performance"],
-    "both":         ["Security", "Performance"],
+    "security":     ["security"],
+    "performance":  ["performance"],
+    "both":         ["security", "performance"],
 }
 # LLM이 모호하게 판단한 경우 Link Resolver가 사후 라벨 추가
 ```
@@ -376,9 +416,9 @@ DOMAIN_LABEL_MAP = {
 
 ### 3.6. 초기 시드 데이터 구축 정책 (Dual-Domain Seed Data)
 
-시스템은 **보안(Security)** 과 **성능(Performance)** 두 도메인을 독립적인 온톨로지 서브트리로 분리하여 적재한다. 두 도메인은 `Domain` 루트 노드 아래 격리되며, 온톨로지 혼용 없이 각자의 분류 기준을 따른다.
+시스템은 **보안(security)** 과 **성능(performance)** 두 도메인을 독립적인 온톨로지 서브트리로 분리하여 적재한다. 두 도메인은 `Domain` 루트 노드 아래 격리되며, 온톨로지 혼용 없이 각자의 분류 기준을 따른다.
 
-#### 3.6.1. 보안 도메인 시드 (Security Domain)
+#### 3.6.1. 보안 도메인 시드 (security Domain)
 
 웹 애플리케이션 보안 취약점 식별을 위해 **OWASP Top 10 (2021 기준)** 소프트웨어 개발 파트 및 관련 CWE 매핑 데이터를 초기 시드로 사전 적재한다.
 
@@ -391,7 +431,7 @@ DOMAIN_LABEL_MAP = {
 | CWE Top 25 Most Dangerous (2023) | MITRE CWE | 핵심 취약점 CWE 노드 25개 |
 | OWASP ↔ CWE 매핑 관계 | OWASP Mapping | `MAPS_TO` 관계 일괄 적재 |
 
-**온톨로지 계층**: `Domain(Security)` → `OWASPCategory` → `CWE` → `Concept`
+**온톨로지 계층**: `Domain(security)` → `OWASPCategory` → `CWE` → `Concept`
 
 **보안 도메인 시드 Concept 예시**:
 
@@ -403,11 +443,11 @@ DOMAIN_LABEL_MAP = {
 | BrokenAccessControl | A01:2021 | CWE-284 | CRITICAL |
 | InsecureDeserialization | A08:2021 | CWE-502 | HIGH |
 
-#### 3.6.2. 성능 도메인 시드 (Performance Domain)
+#### 3.6.2. 성능 도메인 시드 (performance Domain)
 
 성능 결함 식별을 위해 **OWASP 가이드라인을 사용하지 않으며**, CWE의 자원 관리 범주(CWE-400 계열) 및 백엔드 빈출 성능 안티패턴을 정의한 **독자적인 성능 지식 분류 체계(`PerfAntipatternCategory`)**를 시드 데이터로 활용한다.
 
-**온톨로지 계층**: `Domain(Performance)` → `PerfAntipatternCategory` → `CWE(자원관리, 선택적)` → `Concept`
+**온톨로지 계층**: `Domain(performance)` → `PerfAntipatternCategory` → `CWE(자원관리, 선택적)` → `Concept`
 
 **성능 도메인 4종 핵심 안티패턴 시드**:
 
@@ -423,7 +463,7 @@ DOMAIN_LABEL_MAP = {
 {
   "name": "PerfAntipatternCategory",
   "label": "PerfAntipatternCategory",
-  "domain": "Performance",
+  "domain": "performance",
   "authority": "internal",
   "description_ko": "OWASP와 무관한 독자 성능 안티패턴 분류 체계. 백엔드 빈출 성능 결함 패턴을 정의한다.",
   "aliases": ["Performance Anti-pattern", "성능 안티패턴"]
@@ -478,57 +518,76 @@ scripts/
 
 DB 커넥션 풀 고갈 및 테이블 락(Lock) 으로 인한 시스템 행(Hang)을 방지하기 위해, Extractor 출력을 즉시 운영 DB에 반영하지 않고 **스테이징 상태(DRAFT)** 로 분리 보관한다. 관리자가 프론트엔드에서 가상 미리보기를 확인하고 **최종 승인**을 눌러야만 운영 DB에 반영된다.
 
-#### 3.9.1. 상태(State) 정의
+#### 3.9.1. 상태(State) 머신 정의 확장
 
-| 상태 | 의미 | DB 반영 |
-|------|------|---------|
-| `DRAFT` | Extractor 완료, 스테이징 테이블 대기 | ❌ 운영 DB 미반영 |
-| `APPROVED` | 관리자 승인 완료, Celery 큐 적재 | ✅ 반영 예정 |
-| `COMMITTED` | PostgreSQL + Neo4j 실제 반영 완료 | ✅ 완료 |
-| `REJECTED` | 관리자 거부, 스테이징 레코드 삭제 | ❌ 폐기 |
+| 상태 | 의미 | 데이터베이스 및 안전 통제 규칙 |
+| --- | --- | --- |
+| `DRAFT` | Extractor 완료, 스테이징 테이블 대기 | ❌ 운영 DB 미반영. 데이터 결합 격리 |
+| `DOMAIN_PENDING` | **[미등록 도메인 포획]** 레지스트리에 없는 신규 도메인 검출 상태 | ❌ 파이프라인 정지 후 HITL 게이트 인터락 발동 (관리자 승인 대기) |
+| `APPROVED` | 관리자 검토 및 수정 승인 완료 | ✅ 백엔드 이행 대기열(Celery 큐) 적재 상태 |
+| `COMMITTED` | PostgreSQL 마스터 + Neo4j 실제 영속 반영 완료 | ✅ 완료 및 동기화 종료 |
+| `REJECTED` | 관리자 거부 | ❌ 스테이징 내역 삭제 및 폐기 |
 
-#### 3.9.2. 스테이징 테이블 설계 (`staging_concepts`)
+#### 3.9.2. 스테이징 테이블 DDL 명세 (`staging_concepts` v2)
 
 Extractor 출력은 운영 `concepts` 테이블이 아닌 **별도 스테이징 테이블**에만 적재하여 운영 DB 락과 커넥션 풀 점유를 원천 차단한다.
 
 ```sql
-CREATE TABLE staging_concepts (
-  id          UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-  session_id  UUID NOT NULL,           -- 파이프라인 실행 단위
-  concept_json JSONB NOT NULL,         -- Extractor 원본 출력
-  state        TEXT NOT NULL DEFAULT 'DRAFT',  -- DRAFT | APPROVED | COMMITTED | REJECTED
-  reviewed_at  TIMESTAMPTZ,
-  committed_at TIMESTAMPTZ,
-  created_at   TIMESTAMPTZ DEFAULT now()
+CREATE TABLE IF NOT EXISTS staging_concepts (
+  id              UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  session_id      UUID NOT NULL,                  -- 파이프라인 실행 단위
+  doc_id          TEXT REFERENCES documents(doc_id) ON DELETE CASCADE,
+  concept_json    JSONB NOT NULL,                 -- Extractor 원본 출력 스키마
+  state           TEXT NOT NULL DEFAULT 'DRAFT',  -- DRAFT|APPROVED|COMMITTED|REJECTED|DOMAIN_PENDING
+  known_domains   TEXT[] DEFAULT '{}',            -- 이미 등록 확인된 도메인 목록
+  unknown_domains TEXT[] DEFAULT '{}',            -- 미등록 도메인 배열 -> HITL 중계 대상
+  reviewed_at     TIMESTAMPTZ,
+  committed_at    TIMESTAMPTZ,
+  created_at      TIMESTAMPTZ DEFAULT now()
 );
-CREATE INDEX ON staging_concepts(session_id, state);
-```
+CREATE INDEX IF NOT EXISTS idx_staging_session_state ON staging_concepts(session_id, state);
+CREATE INDEX IF NOT EXISTS idx_staging_domain_pending ON staging_concepts(state) WHERE state = 'DOMAIN_PENDING';
 
+```
 - 스테이징 테이블은 운영 테이블과 **트랜잭션을 공유하지 않는다.**
 - `DRAFT` 상태의 레코드는 운영 DB(concepts, Neo4j)에 일절 접근하지 않으므로 락 경쟁이 발생하지 않는다.
 
-#### 3.9.3. 논리적 트랜잭션 분리 흐름
+#### 3.9.3. 런타임 신규 도메인 확장 처리 흐름 (HITL API 레이어)
+1. **분리 검출**: Extractor 가동 후 `domain_registry` 테이블과 교차 검증하여 미등록 문자열 발견 시 즉시 `DOMAIN_PENDING` 처리.
+2. **인터락 액션 게이트**: 관리자는 아래 3개 유즈케이스 중 하나를 선택하여 파이프라인을 복구함.
+* **매핑**: 기존 활성 도메인 문자열로 치환 가공 후 승인 (`DOMAIN_PENDING` $\rightarrow$ `APPROVED`).
+* **등록**: `domain_registry` 테이블에 새 도메인명과 프론트엔드 테마용 `color_hex`를 실시간 `INSERT` 후 승인 처리.
+* **거부**: `REJECTED` 전이 후 파괴.
+
 
 ```
-[Extractor 완료]
-    │
-    ▼  ① 스테이징 적재 (state=DRAFT)
-[staging_concepts]  ← 운영 DB 비접촉, 커넥션풀 미사용
-    │
-    │  SSE로 세션 ID + DRAFT 목록 프론트엔드 전송
-    ▼
+[Extractor Agent 완료]
+       │
+       ▼ ① 스테이징 적재 (concept_json 저장)
+[staging_concepts] (RDB 격리 보관, 운영 DB 락 없음)
+       │
+       ├─► [검증 연동]: domain_registry 테이블과 domains 배열 교차 대조
+       │      │
+       │      ├── [Case A]: 미등록 도메인 포함 시 (unknown_domains 존재)
+       │      │      │
+       │      │      ▼ state = 'DOMAIN_PENDING' (파이프라인 일시정지 인터락)
+       │      │   [관리자 대시보드 HITL 알림] ──► (매핑 / 신규 등록 / 거부 선택)
+       │      │                                        │ (복구 API 완료 시)
+       │      │                                        ▼
+       │      └── [Case B]: 모든 도메인 정상 등록 상태 (state = 'DRAFT')
+       │
+       ▼ SSE로 세션 ID + 가상 노드 메타데이터 프론트엔드 전송
 [프론트엔드 가상 미리보기]
-    │  기존 Neo4j 노드 + DRAFT 노드를 클라이언트에서 병합 렌더링
-    │  관리자 검토: 노드별 승인 ✓ / 거부 ✗ 선택
-    ▼  ② POST /api/staging/{session_id}/approve
-[state → APPROVED]
-    │  승인된 항목만 Celery 큐에 적재
-    ▼  ③ 트랜잭션 경계 진입 (단일·짧은 락)
-[PostgreSQL UPSERT]  → concepts 테이블, state=COMMITTED
-[Neo4j MERGE]        → 노드/관계 증분 업데이트
-    │
-    ▼  SSE로 완료 이벤트 전송
-[프론트엔드 토폴로지 갱신]  가상 노드 → 실제 노드로 교체
+       │ * 기존 확정 데이터 + DRAFT(또는 DOMAIN_PENDING) 가상 병합
+       │ * 중복 노드 발견 시 "병합 예정" 가상 엣지(SAME_AS 후보) 오버레이 시각화
+       │ * 관리자 최종 검토: 노드별 승인(✓) / 거부(✗) 선택
+       ▼ ② POST /api/staging/{session_id}/approve
+[state → APPROVED] (Celery 비동기 큐 적재)
+       ▼ ③ 트랜잭션 경계 진입 (4대 커밋 규칙 원자 실행 - 단일·짧은 락)
+[PostgreSQL UPSERT] ──► concepts 마스터 테이블 반영 (domains TEXT[] 저장)
+[Neo4j MERGE]        ──► 물리 다중 라벨 결합 및 Link Resolver 자동 트리거
+       ▼ SSE로 최종 완료 이벤트 전송
+[프론트엔드 토폴로지 갱신] (가상 점선 노드가 실제 영속 실선 노드로 교체됨)
 ```
 
 **커넥션 풀 보호 원칙**:
@@ -539,15 +598,17 @@ CREATE INDEX ON staging_concepts(session_id, state);
 #### 3.9.4. 프론트엔드 가상 노드 미리보기 (Virtual Node Preview)
 
 관리자가 최종 승인 전에 **실제 그래프에 적용됐을 때의 모습**을 미리 확인할 수 있도록, 클라이언트 사이드에서 기존 Neo4j 데이터와 DRAFT 노드를 **가상으로 병합**하여 시각화한다. 실제 DB는 변경되지 않는다.
+데이터 주도형 시각화 규칙: 프론트엔드는 도메인 색상을 코드 내부에 하드코딩하지 않는다. 대시보드 진입 시 /api/graph/domains 스캔을 통해 레지스트리 오브젝트를 메모리에 캐시한 후, nodeStyler.ts 내에서 런타임 동적 스타일 룩업을 수행한다.
 
 **가상 병합 렌더링 규칙**:
 
-| 노드 유형 | 시각 처리 |
-|-----------|-----------|
-| 기존 확정 노드 | 기본 스타일 (실선, 불투명) |
-| 신규 DRAFT 노드 | 점선 테두리, 반투명(opacity 0.65), 색상 강조 |
-| DRAFT ↔ 기존 중복 (SAME_AS 후보) | 오버레이 배지 "병합 예정" + 연결선 강조 |
-| 거부된 노드 | 빨간 테두리, 흐리게, 클릭 불가 |
+| 노드 및 요소 유형 | 시각 처리 및 렌더링 규칙 |
+| --- | --- |
+| 기존 확정 노드 | `domain_registry` 캐시 테마 컬러 반영 (실선, 불투명) |
+| 신규 DRAFT 노드 | 점선 테두리, 반투명(`opacity: 0.65`), 테마 컬러 오버레이 강조 |
+| 미등록 도메인 배지 | 레지스트리 미등록 시 경고 스타일 뱃지 표출 및 수동 지정 UI 인터락 활성화 |
+| 거부된 노드 | 빨간 테두리, 블러(Blur) 처리, 클릭 액션 차단 |
+
 
 **인터랙션**:
 - 가상 노드 클릭 → 우측 인스펙터 패널에서 컨셉 상세 확인 및 개별 승인/거부 토글.
@@ -643,11 +704,43 @@ async def commit_to_master(session_id: str, approved_concepts: list):
         )
 ```
 
-**4대 규칙 요약**:
 
-| 규칙 | 핵심 보장 | 실패 시 동작 |
-|------|-----------|-------------|
-| ① 2단계 크로스 DB 트랜잭션 | PG + Neo4j 원자성 | Neo4j 실패 → PG 롤백 |
-| ② 멱등성 MERGE Commit | 이중 실행 안전 | 노드 중복 없이 타임스탬프만 갱신 |
-| ③ Link Resolver 자동 트리거 | 고립 노드 방지 | 관계 미연결 시 COMMITTED 미전환 |
-| ④ Document 상태 동기화 | 대시보드 정합성 | 동일 트랜잭션 내 즉시 반영 |
+### 4대 마스터 커밋 트랜잭션 규칙 (Core Pipeline Guard)
+
+#### 규칙 ① — 2단계 크로스 DB 트랜잭션 원자성 (Cross-DB Atomicity)
+
+* **명세**: RDB 마스터 테이블(`concepts`)과 NoSQL Graph DB(`Neo4j`)는 논리적으로 완전히 결합되어야 한다.
+* **구현**: PostgreSQL 테이블 백엔드 Upsert 바인딩에 성공하더라도, 뒤이어 실행되는 Neo4j 쿼리가 커넥션 에러 등으로 실패하면 **PostgreSQL 트랜잭션을 강제로 롤백(Rollback)** 처리하고 로그 레이어에 경보를 트리거한다.
+
+#### 규칙 ② — 멱등성 기반 자성 커밋 (Idempotent MERGE Commit)
+
+* **명세**: 네트워크 지연 또는 워커 복구 시 중복 승인 태스크가 인입되어도 마스터 DB 데이터는 불변해야 한다.
+* **구현**: 최종 `concepts` 마스터 적재 DDL의 `uq_concepts_name` 고유 인덱스와 Neo4j 내부의 `Concept.name` MERGE 속성 키를 기둥 삼아 데이터 주도형으로 커밋한다. 동일 승인 데이터 이중 처리 시 원자적 데이터 중복 적재 없이 `updated_at` 타임스탬프만 단조 증가한다.
+
+```sql
+-- ③ concepts 마스터 적재 스키마 v2 (both 하드코딩 완전 폐기 사양)
+CREATE TABLE IF NOT EXISTS concepts (
+  id             UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  concept_name   TEXT NOT NULL UNIQUE,         -- Neo4j MERGE 동기화 키
+  doc_id         TEXT REFERENCES documents(doc_id) ON DELETE SET NULL,
+  domains        TEXT[] NOT NULL,              -- 다중 및 교차 도메인을 동적으로 품는 배열
+  concept_type   TEXT,                         -- 4종 컨셉 타입
+  cwe_id         TEXT,
+  owasp_id       TEXT,
+  severity       TEXT,                         -- CRITICAL / HIGH / MEDIUM / LOW
+  description_ko TEXT,
+  aliases        TEXT[] DEFAULT '{}',
+  created_at     TIMESTAMPTZ DEFAULT now(),
+  updated_at     TIMESTAMPTZ
+);
+CREATE INDEX idx_concepts_domains_gin ON concepts USING GIN(domains); -- GIN 고속 검색 최적화
+
+```
+
+#### 규칙 ③ — 후행 Link Resolver 트리거 연동
+
+* **명세**: 개념 노드가 Neo4j 마스터에 최종 커밋 완료(`COMMITTED_PENDING_RESOLVE`)되는 즉시, 후행 Link Resolver 태스크를 비동기로 자동 기동한다. `aliases` 벡터 유사도 매칭 및 `SAME_AS` 관계 형성 절차가 종료되어야 세션의 최종 런타임 상태가 `COMMITTED`로 안전 완전 전이된다.
+
+#### 규칙 ④ — 소스 문서(`Document`) 상태 동기화 격리
+
+* **명세**: 개념 바인딩 트랜잭션이 성공하는 즉시 출처 `documents` 테이블 레코드의 `state`를 `'COMMITTED'`로 원자적 일괄 업데이트 처리하여 대시보드 인디케이터 신뢰도를 동기화한다.

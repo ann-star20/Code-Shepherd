@@ -1,5 +1,6 @@
 """G7: Staging Gate API 엔드포인트 통합 테스트."""
 
+import json
 import uuid
 import pytest
 import httpx
@@ -21,17 +22,29 @@ def _make_test_app(conn) -> FastAPI:
 
 async def _insert_doc(conn, doc_id: str) -> None:
     await conn.execute(
-        "INSERT INTO documents (doc_id, url) VALUES ($1, $2) ON CONFLICT DO NOTHING",
-        doc_id, "https://example.com/staging-api-test",
+        "INSERT INTO documents (doc_id, source_prefix, original_url, content_hash) "
+        "VALUES ($1,'EXT','https://example.com/staging-api-test','abcd1234') ON CONFLICT DO NOTHING",
+        doc_id,
     )
 
 
+def _make_concept_json(name: str) -> str:
+    return json.dumps({
+        "concept_name": name,
+        "domains": ["security"],
+        "severity": "HIGH",
+        "description_ko": "테스트",
+        "aliases": [],
+    })
+
+
 async def _insert_draft(conn, session_id: str, doc_id: str, name: str) -> None:
+    cj = _make_concept_json(name)
     await conn.execute(
         """INSERT INTO staging_concepts
-           (session_id, doc_id, concept_name, concept_domain, severity, description_ko)
-           VALUES ($1::uuid, $2, $3, 'security', 'high', '테스트')""",
-        session_id, doc_id, name,
+           (session_id, doc_id, concept_json, state, known_domains, unknown_domains)
+           VALUES ($1::uuid, $2, $3::jsonb, 'DRAFT', $4, '{}')""",
+        session_id, doc_id, cj, ["security"],
     )
 
 
@@ -110,11 +123,12 @@ async def test_diff_counts(asyncpg_pool):
         await _insert_doc(conn, doc_id)
         await _insert_draft(conn, session_id, doc_id, "XSS")
         await _insert_draft(conn, session_id, doc_id, "SQLI")
+        cj = _make_concept_json("CSRF")
         await conn.execute(
             """INSERT INTO staging_concepts
-               (session_id, doc_id, concept_name, concept_domain, severity, description_ko, status)
-               VALUES ($1::uuid, $2, 'CSRF', 'security', 'high', '테스트', 'APPROVED')""",
-            session_id, doc_id,
+               (session_id, doc_id, concept_json, state, known_domains, unknown_domains)
+               VALUES ($1::uuid, $2, $3::jsonb, 'APPROVED', $4, '{}')""",
+            session_id, doc_id, cj, ["security"],
         )
         try:
             app = _make_test_app(conn)

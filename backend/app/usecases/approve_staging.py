@@ -9,19 +9,10 @@ from app.usecases.exceptions import StagingConflictError
 
 
 async def approve_staging(session_id: str, conn: asyncpg.Connection) -> int:
-    """session_id의 모든 DRAFT 개념을 APPROVED로 전환한다.
-
-    Returns:
-        승인된 행 수.
-
-    Raises:
-        StagingConflictError: DRAFT 행이 없거나 다른 트랜잭션이 잠금 중.
-    """
     async with conn.transaction():
-        # SKIP LOCKED: 이미 잠긴 행은 건너뜀 → 동시 호출 시 두 번째는 0행 반환
         rows = await conn.fetch(
             """SELECT id FROM staging_concepts
-               WHERE session_id = $1::uuid AND status = 'DRAFT'
+               WHERE session_id = $1::uuid AND state = 'DRAFT'
                FOR UPDATE SKIP LOCKED""",
             session_id,
         )
@@ -37,9 +28,8 @@ async def approve_staging(session_id: str, conn: asyncpg.Connection) -> int:
         updated: int = await conn.fetchval(
             """WITH upd AS (
                    UPDATE staging_concepts
-                   SET status      = 'APPROVED',
-                       reviewed_at = NOW(),
-                       updated_at  = NOW()
+                   SET state       = 'APPROVED',
+                       reviewed_at = NOW()
                    WHERE id = ANY($1)
                    RETURNING 1
                )

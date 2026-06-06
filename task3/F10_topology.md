@@ -23,7 +23,7 @@ interface TopologyViewerProps {
 //   REJECTED → 빨간 테두리, opacity 0.3
 // SAME_AS_CANDIDATE edge → 점선 + "병합 예정" 레이블
 // 노드 클릭 → onNodeClick(node) 호출
-// 범례: Security(초록), Performance(주황), both(보라), DRAFT(점선)
+// 범례: security(초록), performance(주황), both(보라), DRAFT(점선)
 ```
 
 ### TDD (AAA)

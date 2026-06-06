@@ -23,14 +23,14 @@ SCHEMA_FILE = SEC_DIR / "schema.sql"
 
 _UPSERT_CONCEPT = """
 INSERT INTO concepts (
-    concept_name, concept_domain, concept_type,
+    concept_name, domains, concept_type,
     cwe_id, owasp_id, severity, description_ko, aliases
 ) VALUES (
-    %(concept_name)s, %(concept_domain)s, %(concept_type)s,
+    %(concept_name)s, %(domains)s, %(concept_type)s,
     %(cwe_id)s, %(owasp_id)s, %(severity)s, %(description_ko)s, %(aliases)s
 )
 ON CONFLICT (concept_name) DO UPDATE SET
-    concept_domain = EXCLUDED.concept_domain,
+    domains        = EXCLUDED.domains,
     concept_type   = EXCLUDED.concept_type,
     cwe_id         = EXCLUDED.cwe_id,
     owasp_id       = EXCLUDED.owasp_id,
@@ -43,14 +43,14 @@ ON CONFLICT (concept_name) DO UPDATE SET
 
 def _concept_row(c: dict) -> dict:
     return {
-        "concept_name":   c["name"],
-        "concept_domain": c["concept_domain"],
-        "concept_type":   c.get("concept_type", None),
-        "cwe_id":         c.get("cwe_id", None),
-        "owasp_id":       c.get("owasp_id", None),
-        "severity":       c.get("severity", None),
+        "concept_name": c["name"],
+        "domains":      c.get("domains", []),
+        "concept_type": c.get("concept_type", None),
+        "cwe_id":       c.get("cwe_id", None),
+        "owasp_id":     c.get("owasp_id", None),
+        "severity":     c.get("severity", None),
         "description_ko": c.get("description_ko", None),
-        "aliases":        c.get("aliases", []),
+        "aliases":      c.get("aliases", []),
     }
 
 
@@ -80,7 +80,7 @@ def main():
         conn.commit()
 
         with conn.cursor() as cur:
-            cur.execute("SELECT concept_domain, COUNT(*) FROM concepts GROUP BY concept_domain ORDER BY concept_domain")
+            cur.execute("SELECT unnest(domains) AS domain, COUNT(*) FROM concepts GROUP BY domain ORDER BY domain")
             rows = cur.fetchall()
 
         print("seed OK:")

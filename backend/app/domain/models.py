@@ -23,35 +23,27 @@ class PipelineState(str, Enum):
 
 
 class StagingState(str, Enum):
-    """staging_concepts.state 전이: DRAFT→APPROVED→COMMITTED | REJECTED"""
+    """staging_concepts.state 전이."""
 
     DRAFT = "DRAFT"
     APPROVED = "APPROVED"
     COMMITTED = "COMMITTED"
     REJECTED = "REJECTED"
-
-
-class ConceptDomain(str, Enum):
-    """LLM 추출 결과의 도메인 분류."""
-
-    SECURITY = "security"
-    PERFORMANCE = "performance"
-    BOTH = "both"
+    DOMAIN_PENDING = "DOMAIN_PENDING"  # 미등록 도메인 감지 → 관리자 검토 대기
 
 
 # ── LLM 추출 결과 스키마 ────────────────────────────────────────────────────
 
 
 class ConceptExtractionSchema(BaseModel):
-    """Extractor Agent가 Gemini로부터 받는 구조화 출력 스키마 (PRD §3.3.3).
+    """Extractor Agent가 Gemini로부터 받는 구조화 출력 스키마 (PRD §3.3.3 + task1_multi_domain).
 
-    필수 필드: concept_name, concept_domain, severity, description_ko
-    선택 필드: cwe_id, owasp_id, concept_type, aliases, security_mechanisms,
-               affected_components, config_properties, root_cause
+    concept_domain(Enum) 폐기 → domains(list[str]) 로 변경.
+    미등록 도메인은 ValidationError 없이 DOMAIN_PENDING 으로 분기.
     """
 
     concept_name: str
-    concept_domain: ConceptDomain
+    domains: list[str]               # ["security"], ["performance"], ["security","performance"]
     severity: str
     description_ko: str
     concept_type: str | None = None
@@ -62,6 +54,15 @@ class ConceptExtractionSchema(BaseModel):
     affected_components: list[str] = []
     config_properties: list[dict] = []
     root_cause: str | None = None
+
+    @field_validator("domains")
+    @classmethod
+    def validate_domains(cls, v: list[str]) -> list[str]:
+        if not v:
+            raise ValueError("domains는 최소 1개 이상이어야 합니다")
+        if not all(isinstance(d, str) and d.strip() for d in v):
+            raise ValueError("domains 값은 비어있지 않은 문자열이어야 합니다")
+        return [d.lower().strip() for d in v]
 
     @field_validator("severity")
     @classmethod
@@ -79,19 +80,7 @@ def build_doc_id(prefix: str, url: str, content: str = "", etag: str = "") -> st
     """문서 고유 식별자를 생성한다 (PRD §3.1.4).
 
     형식: {PREFIX}_{정규화된_URL}_{SHA256_앞8자리}
-
-    Args:
-        prefix:  출처 유형 (예: "EXT", "KMS")
-        url:     원본 URL (쿼리스트링·앵커 제거 후 정규화)
-        content: 본문 텍스트 (etag 없을 때 해시 소스)
-        etag:    HTTP ETag 헤더값 (있으면 content보다 우선)
-
-    Returns:
-        예) "EXT_https---docs-djangoproject-com-en-6-0-topics-security-_a3f9c21b"
-
-    Note:
-        동일 URL + 동일 content/etag → 항상 동일 doc_id (멱등성).
-        동일 URL + 다른 content/etag → 다른 해시 suffix (버전 추적).
+    동일 URL + 동일 content/etag → 항상 동일 doc_id (멱등성).
     """
     parsed = urlparse(url)
     normalized = urlunparse((parsed.scheme, parsed.netloc, parsed.path, "", "", ""))

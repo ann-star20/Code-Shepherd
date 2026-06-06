@@ -1,0 +1,28 @@
+# Neo4j 없이 기동하는 오버라이드 (mock/production 공용)
+#
+# mock 모드 (기본값): LLM 호출 없음, MockClient 사용
+#   docker compose -f docker-compose.yml -f docker-compose.mock.yml up postgres redis backend celery_worker
+#
+# production 모드: 실제 Gemini 호출
+#   APP_MODE=production GEMINI_API_KEY=AIza... docker compose -f docker-compose.yml -f docker-compose.mock.yml up postgres redis backend celery_worker
+
+services:
+  backend:
+    environment:
+      APP_MODE: ${APP_MODE:-mock}
+      GEMINI_API_KEY: ${GEMINI_API_KEY:-}
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+
+  celery_worker:
+    environment:
+      APP_MODE: ${APP_MODE:-mock}
+      GEMINI_API_KEY: ${GEMINI_API_KEY:-}
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy

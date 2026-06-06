@@ -1,13 +1,12 @@
-"""MockClient — DEV 모드 고정 스펙 반환 (네트워크 I/O 없음). PRD §16.5."""
+"""MockClient — DEV 모드 고정 스펙 반환 (네트워크 I/O 없음)."""
 
-from app.domain.models import ConceptExtractionSchema, ConceptDomain
+from app.domain.models import ConceptExtractionSchema
 from app.infrastructure.llm.interface import ILLMClient
 
-# OWASP 2025 ID 기준 (A03:2025 = Injection, A01:2025 = Broken Access Control)
 _MOCK_CONCEPTS: list[dict] = [
     {
         "concept_name": "XSS",
-        "concept_domain": ConceptDomain.SECURITY,
+        "domains": ["security"],
         "concept_type": "vulnerability_root_cause",
         "cwe_id": "CWE-79",
         "owasp_id": "A03:2025",
@@ -21,7 +20,7 @@ _MOCK_CONCEPTS: list[dict] = [
     },
     {
         "concept_name": "N+1Query",
-        "concept_domain": ConceptDomain.PERFORMANCE,
+        "domains": ["performance"],
         "concept_type": "vulnerability_root_cause",
         "cwe_id": "CWE-1072",
         "severity": "HIGH",
@@ -32,7 +31,7 @@ _MOCK_CONCEPTS: list[dict] = [
     },
     {
         "concept_name": "MemoryLeak",
-        "concept_domain": ConceptDomain.BOTH,
+        "domains": ["security", "performance"],   # "both" 없음 — 직접 배열
         "concept_type": "vulnerability_root_cause",
         "cwe_id": "CWE-401",
         "severity": "HIGH",
@@ -43,7 +42,7 @@ _MOCK_CONCEPTS: list[dict] = [
     },
     {
         "concept_name": "CSRFProtection",
-        "concept_domain": ConceptDomain.SECURITY,
+        "domains": ["security"],
         "concept_type": "security_mechanism",
         "cwe_id": "CWE-352",
         "owasp_id": "A01:2025",
@@ -58,14 +57,7 @@ _MOCK_CONCEPTS: list[dict] = [
 
 
 class MockClient(ILLMClient):
-    """DEV/TEST 전용 클라이언트. 네트워크 호출 없이 즉시 고정값 반환."""
-
-    async def extract_concepts(
-        self,
-        text_chunk: str,
-        doc_id: str,
-        metadata: dict,
-    ) -> list[ConceptExtractionSchema]:
+    async def extract_concepts(self, text_chunk: str, doc_id: str, metadata: dict) -> list[ConceptExtractionSchema]:
         return [ConceptExtractionSchema(**item) for item in _MOCK_CONCEPTS]
 
     def is_tracing_enabled(self) -> bool:

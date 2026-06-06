@@ -11,6 +11,7 @@ from app.interfaces.api.staging import router as staging_router
 from app.interfaces.api.documents import router as documents_router
 from app.interfaces.api.prescan import router as prescan_router
 from app.interfaces.api.pipeline import router as pipeline_router
+from app.interfaces.api.domains import router as domains_router, staging_router as domain_staging_router
 
 
 def _pg_dsn() -> str:
@@ -34,6 +35,8 @@ app = FastAPI(title="Code Shepherd — Knowledge Graph Agent", lifespan=lifespan
 app.include_router(documents_router)
 app.include_router(prescan_router)
 app.include_router(pipeline_router)
+app.include_router(domains_router)
+app.include_router(domain_staging_router)
 app.include_router(staging_router)
 
 
