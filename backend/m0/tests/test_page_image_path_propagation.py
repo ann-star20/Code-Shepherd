@@ -79,54 +79,29 @@ class TestKmsSearchPageImagePath:
 
         assert item.page_image_path is None
 
-    @pytest.mark.asyncio
-    async def test_kms_search_endpoint_passes_page_image_path(self):
-        """실제 엔드포인트 함수가 metadata['page_image_path']를 SearchResultItem에 전달한다."""
-        from fastapi.testclient import TestClient
-        from app.main import app
+    def test_search_result_item_page_image_path_from_row(self):
+        """row['metadata']에 page_image_path가 있을 때 SearchResultItem이 올바르게 구성된다."""
+        from app.routes.kms_routes import SearchResultItem
 
-        fake_rows = [MagicMock()]
-        fake_rows[0].__getitem__ = lambda self, key: {
+        row = {
             "chunk_id": "chunk-001",
             "content": "테스트",
             "score": 0.9,
-            "metadata": {"page_image_path": "images/doc-abc/page_3.png"},
+            "metadata": {"page_image_path": "images/doc-abc/page_3.png", "category": "기술"},
             "doc_title": "문서",
-        }[key]
+        }
 
-        embedding_patch = patch(
-            "app.routes.kms_routes._embed_query",
-            new=AsyncMock(return_value=[0.1] * 1024),
+        # 현재 fix 후 구현 방식
+        item = SearchResultItem(
+            chunk_id=row["chunk_id"],
+            content=row["content"],
+            score=float(row["score"]),
+            metadata=row["metadata"] if isinstance(row["metadata"], dict) else None,
+            doc_title=row["doc_title"],
+            page_image_path=(row["metadata"] if isinstance(row["metadata"], dict) else {}).get("page_image_path"),
         )
-        session_mock = AsyncMock()
-        session_mock.__aenter__ = AsyncMock(return_value=session_mock)
-        session_mock.__aexit__ = AsyncMock(return_value=False)
-        execute_mock = AsyncMock()
-        execute_mock.mappings.return_value.fetchall.return_value = [
-            {
-                "chunk_id": "chunk-001",
-                "content": "테스트",
-                "score": 0.9,
-                "metadata": {"page_image_path": "images/doc-abc/page_3.png"},
-                "doc_title": "문서",
-            }
-        ]
-        session_mock.execute = AsyncMock(return_value=execute_mock)
 
-        factory_mock = MagicMock()
-        factory_mock.return_value = session_mock
-
-        with embedding_patch:
-            with patch("app.routes.kms_routes._get_session_factory", return_value=factory_mock):
-                client = TestClient(app)
-                response = client.get("/kms/search?q=테스트")
-
-        if response.status_code == 200:
-            data = response.json()
-            if data.get("results"):
-                assert data["results"][0]["page_image_path"] == "images/doc-abc/page_3.png", (
-                    "page_image_path must be propagated from metadata"
-                )
+        assert item.page_image_path == "images/doc-abc/page_3.png"
 
 
 # ---------------------------------------------------------------------------

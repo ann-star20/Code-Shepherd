@@ -486,6 +486,7 @@ async def search_kms(
             score=float(row["score"]),
             metadata=row["metadata"] if isinstance(row["metadata"], dict) else None,
             doc_title=row["doc_title"],
+            page_image_path=(row["metadata"] if isinstance(row["metadata"], dict) else {}).get("page_image_path"),
         )
         for row in rows
     ]

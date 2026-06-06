@@ -219,7 +219,8 @@ async def _query_pgvector(
                     chunk_id::text,
                     content,
                     1 - (embedding <=> CAST(:embedding AS vector)) AS score,
-                    metadata->>'doc_title' AS doc_title
+                    metadata->>'doc_title' AS doc_title,
+                    metadata
                 FROM chunk_embeddings
                 ORDER BY embedding <=> CAST(:embedding AS vector)
                 LIMIT :top_k
@@ -235,6 +236,7 @@ async def _query_pgvector(
             "score": float(r["score"]),
             "doc_title": r["doc_title"],
             "source_type": "pgvector",
+            "metadata": r["metadata"] if isinstance(r.get("metadata"), dict) else {},
         }
         for r in rows
     ]
@@ -480,6 +482,7 @@ async def chat(request: ChatRequest) -> ChatResponse:
             score=float(c.get("score", 0.0)),
             doc_title=c.get("doc_title"),
             source_type=c.get("source_type", "pgvector"),
+            page_image_path=(c.get("metadata") or {}).get("page_image_path"),
         )
         for c in raw_chunks
     ]
