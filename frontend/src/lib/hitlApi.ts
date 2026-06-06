@@ -1,7 +1,7 @@
-import axios, { type InternalAxiosRequestConfig } from "axios";
+﻿import axios, { type InternalAxiosRequestConfig } from "axios";
 import type { ApproveRequest, HitlQueuePageResponse, RejectRequest, ReprocessRequest } from "../types/kms";
 
-// m0 전용 클라이언트 — /hitl/* 요청이 vite proxy → m0:8002로 라우팅됨
+// m0 ?꾩슜 ?대씪?댁뼵????/hitl/* ?붿껌??vite proxy ??m0:8002濡??쇱슦?낅맖
 const m0Client = axios.create({ baseURL: "" });
 m0Client.interceptors.request.use((config: InternalAxiosRequestConfig) => {
   const token = localStorage.getItem("access_token");
@@ -29,7 +29,7 @@ export async function suggestCategory(queueId: string): Promise<CategorySuggesti
     const { data } = await m0Client.get<CategorySuggestion>(`/hitl/queue/${queueId}/suggest-category`);
     return data;
   } catch (e) {
-    throw extractDetail(e, "카테고리 제안 조회 실패");
+    throw extractDetail(e, "移댄뀒怨좊━ ?쒖븞 議고쉶 ?ㅽ뙣");
   }
 }
 
@@ -46,7 +46,7 @@ export async function applyCategory(
     );
     return data;
   } catch (e) {
-    throw extractDetail(e, "카테고리 적용 실패");
+    throw extractDetail(e, "移댄뀒怨좊━ ?곸슜 ?ㅽ뙣");
   }
 }
 
@@ -61,7 +61,7 @@ export async function listHitlQueue(
     });
     return data;
   } catch (e) {
-    throw extractDetail(e, "HITL 큐 조회 실패");
+    throw extractDetail(e, "HITL ??議고쉶 ?ㅽ뙣");
   }
 }
 
@@ -77,7 +77,7 @@ export async function approveHitl(
     );
     return data;
   } catch (e) {
-    throw extractDetail(e, "승인 실패");
+    throw extractDetail(e, "?뱀씤 ?ㅽ뙣");
   }
 }
 
@@ -93,7 +93,7 @@ export async function rejectHitl(
     );
     return data;
   } catch (e) {
-    throw extractDetail(e, "거부 실패");
+    throw extractDetail(e, "嫄곕? ?ㅽ뙣");
   }
 }
 
@@ -104,7 +104,7 @@ export async function getHitlMarkdown(queueId: string): Promise<{ markdown: stri
     );
     return data;
   } catch (e) {
-    throw extractDetail(e, "Markdown 조회 실패");
+    throw extractDetail(e, "Markdown 議고쉶 ?ㅽ뙣");
   }
 }
 
@@ -120,6 +120,22 @@ export async function reprocessHitl(
     );
     return data;
   } catch (e) {
-    throw extractDetail(e, "재처리 실패");
+    throw extractDetail(e, "?ъ쿂由??ㅽ뙣");
+  }
+}
+
+export interface PageImage {
+  page: number;
+  url: string;
+}
+
+export async function getPageImages(queueId: string): Promise<PageImage[]> {
+  try {
+    const { data } = await m0Client.get<PageImage[]>(
+      `/hitl/queue/${queueId}/page-images`,
+    );
+    return data;
+  } catch (e) {
+    throw extractDetail(e, "페이지 이미지 조회 실패");
   }
 }

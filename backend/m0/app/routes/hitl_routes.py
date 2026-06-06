@@ -2,12 +2,14 @@
 HITL (Human-in-the-Loop) 큐 관리 API — SQLAlchemy async 버전
 
 엔드포인트:
-    GET  /hitl/queue                          대기 중인 HITL 항목 목록
-    GET  /hitl/queue/{queue_id}               특정 항목 상세
-    POST /hitl/queue/{queue_id}/approve       승인 (선택적 자동 재처리)
-    POST /hitl/queue/{queue_id}/reject        거부
-    POST /hitl/queue/{queue_id}/reprocess     재처리 (수정된 Markdown 주입 가능)
-    GET  /hitl/queue/{queue_id}/markdown      변환된 Markdown 반환
+    GET  /hitl/queue                              대기 중인 HITL 항목 목록
+    GET  /hitl/queue/{queue_id}                   특정 항목 상세
+    POST /hitl/queue/{queue_id}/approve           승인 (선택적 자동 재처리)
+    POST /hitl/queue/{queue_id}/reject            거부
+    POST /hitl/queue/{queue_id}/reprocess         재처리 (수정된 Markdown 주입 가능)
+    GET  /hitl/queue/{queue_id}/markdown          변환된 Markdown 반환
+    GET  /hitl/queue/{queue_id}/page-images       파싱 페이지 이미지 목록
+    GET  /hitl/queue/{queue_id}/page/{page_num}   특정 페이지 이미지 바이트 반환
     GET  /hitl/queue/{queue_id}/suggest-category  AI 카테고리 제안
     POST /hitl/queue/{queue_id}/apply-category    KB Evolution 카테고리 추가 + 재처리
 """
@@ -21,6 +23,7 @@ from typing import Annotated
 from uuid import UUID
 
 from fastapi import APIRouter, BackgroundTasks, Header, HTTPException, Query
+from fastapi.responses import Response
 from pydantic import BaseModel
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
@@ -335,6 +338,91 @@ async def reprocess_hitl(
 async def get_markdown_endpoint(queue_id: str) -> dict:
     """HITL 항목의 변환된 Markdown 내용 조회."""
     return await _get_hitl_markdown(queue_id)
+
+
+@router.get("/queue/{queue_id}/page-images")
+async def list_page_images(queue_id: str) -> list[dict]:
+    """HITL 항목 문서의 파싱 페이지 이미지 목록 반환.
+
+    chunk_embeddings.metadata.page_image_path에서 중복 제거 후 페이지 순서로 반환.
+    각 URL은 /hitl/queue/{queue_id}/page/{page_num} 엔드포인트를 가리킨다.
+    """
+    session_factory = _get_session_factory()
+    async with session_factory() as session:
+        result = await session.execute(
+            text("SELECT doc_id::text FROM hitl_queue WHERE queue_id = :queue_id"),
+            {"queue_id": str(UUID(queue_id))},
+        )
+        row = result.mappings().fetchone()
+    if row is None:
+        raise HTTPException(status_code=404, detail="HITL 항목 없음")
+
+    doc_id = row["doc_id"]
+    async with session_factory() as session:
+        result = await session.execute(
+            text("""
+                SELECT DISTINCT metadata->>'page_image_path' AS path
+                FROM chunk_embeddings
+                WHERE doc_id = :doc_id
+                  AND metadata->>'page_image_path' IS NOT NULL
+                ORDER BY path
+            """),
+            {"doc_id": doc_id},
+        )
+        paths = [r["path"] for r in result.mappings().fetchall() if r["path"]]
+
+    page_images = []
+    for i, path in enumerate(paths, start=1):
+        page_images.append({
+            "page": i,
+            "url": f"/hitl/queue/{queue_id}/page/{i}",
+            "gcs_path": path,
+        })
+    return page_images
+
+
+@router.get("/queue/{queue_id}/page/{page_num}")
+async def get_page_image_bytes(queue_id: str, page_num: int) -> Response:
+    """특정 페이지 이미지를 바이트로 반환한다."""
+    storage = _storage or get_storage()
+    session_factory = _get_session_factory()
+
+    async with session_factory() as session:
+        result = await session.execute(
+            text("SELECT doc_id::text FROM hitl_queue WHERE queue_id = :queue_id"),
+            {"queue_id": str(UUID(queue_id))},
+        )
+        row = result.mappings().fetchone()
+    if row is None:
+        raise HTTPException(status_code=404, detail="HITL 항목 없음")
+
+    doc_id = row["doc_id"]
+    async with session_factory() as session:
+        result = await session.execute(
+            text("""
+                SELECT DISTINCT metadata->>'page_image_path' AS path
+                FROM chunk_embeddings
+                WHERE doc_id = :doc_id
+                  AND metadata->>'page_image_path' IS NOT NULL
+                ORDER BY path
+            """),
+            {"doc_id": doc_id},
+        )
+        paths = [r["path"] for r in result.mappings().fetchall() if r["path"]]
+
+    if page_num < 1 or page_num > len(paths):
+        raise HTTPException(status_code=404, detail=f"페이지 {page_num} 없음 (총 {len(paths)}페이지)")
+
+    gcs_path = paths[page_num - 1]
+    try:
+        img_bytes = await storage.load(gcs_path)
+    except Exception as exc:
+        raise HTTPException(status_code=404, detail=f"이미지 로드 실패: {exc}") from exc
+
+    media_type = "image/png"
+    if gcs_path.lower().endswith((".jpg", ".jpeg")):
+        media_type = "image/jpeg"
+    return Response(content=img_bytes, media_type=media_type)
 
 
 @router.get("/queue/{queue_id}/suggest-category")
