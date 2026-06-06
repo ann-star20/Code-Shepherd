@@ -44,6 +44,7 @@ services:
     env_file: .env
     environment:
       GOOGLE_APPLICATION_CREDENTIALS: /root/.config/gcloud/application_default_credentials.json
+      GCS_KEY_PATH: /root/.config/gcloud/application_default_credentials.json
     volumes:
       - ./backend/_shared:/app/_shared:ro
       - ./backend/m0:/app/service
@@ -52,7 +53,7 @@ services:
     networks:
       - code-shepherd
     restart: unless-stopped
-    command: uv run uvicorn app.main:app --host 0.0.0.0 --port 8002 --reload --reload-exclude "*.pyc" --reload-exclude "*__pycache__*"
+    command: /app/.venv/bin/python -m uvicorn app.main:app --host 0.0.0.0 --port 8002
 
   m2:
     build:
