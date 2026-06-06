@@ -119,6 +119,9 @@ class DocListItem(BaseModel):
     file_type: str | None = None
     status: str
     created_at: str | None = None
+    neo4j_synced: bool | None = None
+    category: str | None = None
+    doc_complexity: str | None = None
 
 
 class DocListResponse(BaseModel):
@@ -527,7 +530,8 @@ async def list_documents(
         if status is not None:
             list_result = await session.execute(
                 text("""
-                    SELECT doc_id::text, title, file_type, upload_status, created_at
+                    SELECT doc_id::text, title, file_type, upload_status, created_at,
+                           neo4j_synced, category, doc_complexity
                     FROM documents
                     WHERE upload_status = :status
                     ORDER BY created_at DESC NULLS LAST
@@ -538,7 +542,8 @@ async def list_documents(
         else:
             list_result = await session.execute(
                 text("""
-                    SELECT doc_id::text, title, file_type, upload_status, created_at
+                    SELECT doc_id::text, title, file_type, upload_status, created_at,
+                           neo4j_synced, category, doc_complexity
                     FROM documents
                     ORDER BY created_at DESC NULLS LAST
                     LIMIT :limit OFFSET :offset
@@ -556,6 +561,9 @@ async def list_documents(
             file_type=r["file_type"],
             status=r["upload_status"],
             created_at=r["created_at"].isoformat() if r["created_at"] else None,
+            neo4j_synced=r["neo4j_synced"],
+            category=r["category"],
+            doc_complexity=r["doc_complexity"],
         )
         for r in rows
     ]

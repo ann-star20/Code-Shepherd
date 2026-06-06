@@ -64,6 +64,9 @@ export interface DocListItem {
   file_type: string | null;
   status: string;
   created_at: string | null;
+  neo4j_synced?: boolean | null;
+  category?: string | null;
+  doc_complexity?: string | null;
 }
 
 export interface DocListResponse {

@@ -13,7 +13,7 @@ const MOCK_STORED_DOCS = [
     title: "테스트 문서",
     file_type: "pdf",
     status: "stored",
-    created_at: "2026-06-01T00:00:00Z",
+    created_at: "2026-06-02T00:00:00Z",
     neo4j_synced: true,
     category: "온보딩",
     doc_complexity: "HIGH",
@@ -23,7 +23,7 @@ const MOCK_STORED_DOCS = [
     title: "두 번째 문서",
     file_type: "docx",
     status: "stored",
-    created_at: "2026-06-02T00:00:00Z",
+    created_at: "2026-06-01T00:00:00Z",
     neo4j_synced: false,
     category: "기술 문서",
     doc_complexity: "LOW",
@@ -76,7 +76,7 @@ describe("StoredDocsList — 메타데이터 컬럼", () => {
     expect(screen.getByText("HIGH")).toBeInTheDocument();
   });
 
-  it("Neo4j 동기화 여부가 표시된다 (true → ✓, false → -)", async () => {
+  it("Neo4j 동기화 여부가 표시된다 (true → checkmark, false → dash)", async () => {
     await renderStoredTab();
     const cells = screen.getAllByTestId("neo4j-sync-cell");
     expect(cells[0]).toHaveTextContent("✓");

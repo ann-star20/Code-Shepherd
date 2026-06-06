@@ -74,7 +74,7 @@ function StoredDocsList() {
           <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13 }}>
             <thead>
               <tr style={{ background: "#f8fafc" }}>
-                {["제목", "형식", "상태", "생성일"].map((h) => (
+                {["제목", "형식", "카테고리", "복잡도", "Neo4j", "상태", "생성일"].map((h) => (
                   <th key={h} style={{ padding: "10px 12px", textAlign: "left", borderBottom: "1px solid #e2e8f0", fontWeight: 600, color: "#475569" }}>{h}</th>
                 ))}
               </tr>
@@ -82,10 +82,21 @@ function StoredDocsList() {
             <tbody>
               {docs.map((doc) => (
                 <tr key={doc.doc_id} style={{ borderBottom: "1px solid #f1f5f9" }}>
-                  <td style={{ padding: "10px 12px", color: "#1e293b", maxWidth: 320, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                  <td style={{ padding: "10px 12px", color: "#1e293b", maxWidth: 240, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
                     {doc.title ?? doc.doc_id}
                   </td>
                   <td style={{ padding: "10px 12px", color: "#64748b" }}>{doc.file_type ?? "-"}</td>
+                  <td style={{ padding: "10px 12px", color: "#475569", fontSize: 13 }}>{doc.category ?? "-"}</td>
+                  <td style={{ padding: "10px 12px" }}>
+                    {doc.doc_complexity ? (
+                      <span style={{ fontSize: 11, fontWeight: 600, color: "#fff", background: doc.doc_complexity === "HIGH" ? "#f59e0b" : "#22c55e", padding: "2px 8px", borderRadius: 12 }}>
+                        {doc.doc_complexity}
+                      </span>
+                    ) : "-"}
+                  </td>
+                  <td data-testid="neo4j-sync-cell" style={{ padding: "10px 12px", color: doc.neo4j_synced ? "#22c55e" : "#94a3b8", fontWeight: 700, fontSize: 14 }}>
+                    {doc.neo4j_synced == null ? "-" : doc.neo4j_synced ? "✓" : "-"}
+                  </td>
                   <td style={{ padding: "10px 12px" }}>
                     <span style={{ fontSize: 11, fontWeight: 600, color: "#fff", background: STATUS_COLOR[doc.status] ?? "#94a3b8", padding: "2px 8px", borderRadius: 12 }}>
                       {STATUS_LABEL[doc.status] ?? doc.status}
