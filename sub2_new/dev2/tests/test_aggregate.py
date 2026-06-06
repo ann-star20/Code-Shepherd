@@ -51,6 +51,20 @@ def _base_state(**overrides) -> AggregateState:
     return state
 
 
+def _mock_repo(*, fetch_return=None, fetch_side_effect=None) -> AsyncMock:
+    """가짜 ScanRepository를 만든다 (CLAUDE.md §2 Repository seam 패치용).
+
+    insert_aggregated_result는 AsyncMock 자식으로 자동 생성된다(저장 스킵).
+    fetch_results_by_task는 DB 릴레이 조회 결과/예외를 흉내 낸다.
+    """
+    repo = AsyncMock()
+    if fetch_side_effect is not None:
+        repo.fetch_results_by_task.side_effect = fetch_side_effect
+    else:
+        repo.fetch_results_by_task.return_value = fetch_return or []
+    return repo
+
+
 # ── aggregate_node ────────────────────────────────────────────────────────────
 
 @pytest.mark.asyncio
@@ -59,9 +73,7 @@ async def test_aggregate_node_combines_and_sorts():
 
     state = _base_state(all_results=ALL_RESULTS_CRITICAL)
     # DB 릴레이 조회는 빈 결과 → payload(all_results) 폴백 경로 검증
-    with patch("dev2.nodes.aggregate.insert_aggregated_result", new_callable=AsyncMock), \
-         patch("dev2.nodes.aggregate.fetch_scan_results_by_task",
-               new_callable=AsyncMock, return_value=[]):
+    with patch("dev2.nodes.aggregate.get_scan_repository", return_value=_mock_repo()):
         result = await aggregate_node(state)
 
     assert result["total_summary"]["critical"] == 1
@@ -77,9 +89,7 @@ async def test_aggregate_node_empty_results():
     from dev2.nodes.aggregate import aggregate_node
 
     state = _base_state(task_id="u2", pr_id="2", all_results=[])
-    with patch("dev2.nodes.aggregate.insert_aggregated_result", new_callable=AsyncMock), \
-         patch("dev2.nodes.aggregate.fetch_scan_results_by_task",
-               new_callable=AsyncMock, return_value=[]):
+    with patch("dev2.nodes.aggregate.get_scan_repository", return_value=_mock_repo()):
         result = await aggregate_node(state)
 
     assert result["aggregated_issues"] == []
@@ -95,9 +105,8 @@ async def test_aggregate_node_uses_db_relay():
 
     # payload(all_results)는 비어 있지만 DB 조회가 결과를 반환 → DB 결과로 동작
     state = _base_state(all_results=[])
-    with patch("dev2.nodes.aggregate.insert_aggregated_result", new_callable=AsyncMock), \
-         patch("dev2.nodes.aggregate.fetch_scan_results_by_task",
-               new_callable=AsyncMock, return_value=ALL_RESULTS_CRITICAL):
+    with patch("dev2.nodes.aggregate.get_scan_repository",
+               return_value=_mock_repo(fetch_return=ALL_RESULTS_CRITICAL)):
         result = await aggregate_node(state)
 
     assert result["total_summary"]["critical"] == 1
@@ -117,9 +126,8 @@ async def test_aggregate_node_db_relay_overrides_payload():
          "summary": {"critical": 0, "major": 0, "minor": 1}, "execution_ms": 10},
     ]
     state = _base_state(all_results=payload_only)
-    with patch("dev2.nodes.aggregate.insert_aggregated_result", new_callable=AsyncMock), \
-         patch("dev2.nodes.aggregate.fetch_scan_results_by_task",
-               new_callable=AsyncMock, return_value=ALL_RESULTS_CRITICAL):
+    with patch("dev2.nodes.aggregate.get_scan_repository",
+               return_value=_mock_repo(fetch_return=ALL_RESULTS_CRITICAL)):
         result = await aggregate_node(state)
 
     # payload는 Critical 0인데 DB는 Critical 1 → DB가 우선됐는지 확인
@@ -132,9 +140,8 @@ async def test_aggregate_node_falls_back_to_payload_on_db_error():
     from dev2.nodes.aggregate import aggregate_node
 
     state = _base_state(all_results=ALL_RESULTS_CRITICAL)
-    with patch("dev2.nodes.aggregate.insert_aggregated_result", new_callable=AsyncMock), \
-         patch("dev2.nodes.aggregate.fetch_scan_results_by_task",
-               new_callable=AsyncMock, side_effect=Exception("DB 연결 실패")):
+    with patch("dev2.nodes.aggregate.get_scan_repository",
+               return_value=_mock_repo(fetch_side_effect=Exception("DB 연결 실패"))):
         result = await aggregate_node(state)
 
     # 예외 → payload 폴백 → 정상 취합
@@ -209,9 +216,7 @@ async def test_aggregate_graph_critical_triggers_slack():
     initial = _base_state(all_results=ALL_RESULTS_CRITICAL)
 
     with patch.dict("os.environ", {"USE_MOCK_LLM": "true"}), \
-         patch("dev2.nodes.aggregate.insert_aggregated_result", new_callable=AsyncMock), \
-         patch("dev2.nodes.aggregate.fetch_scan_results_by_task",
-               new_callable=AsyncMock, return_value=[]), \
+         patch("dev2.nodes.aggregate.get_scan_repository", return_value=_mock_repo()), \
          patch("dev2.nodes.github_comment._post_github_comment",
                new_callable=AsyncMock, return_value="https://github.com/org/repo/pull/42#1"), \
          patch("dev2.nodes.slack_notify._send_slack_alert", new_callable=AsyncMock) as mock_slack:
@@ -240,9 +245,7 @@ async def test_aggregate_graph_no_critical_skips_slack():
                           all_results=no_critical)
 
     with patch.dict("os.environ", {"USE_MOCK_LLM": "true"}), \
-         patch("dev2.nodes.aggregate.insert_aggregated_result", new_callable=AsyncMock), \
-         patch("dev2.nodes.aggregate.fetch_scan_results_by_task",
-               new_callable=AsyncMock, return_value=[]), \
+         patch("dev2.nodes.aggregate.get_scan_repository", return_value=_mock_repo()), \
          patch("dev2.nodes.github_comment._post_github_comment",
                new_callable=AsyncMock, return_value=None), \
          patch("dev2.nodes.slack_notify._send_slack_alert", new_callable=AsyncMock) as mock_slack:

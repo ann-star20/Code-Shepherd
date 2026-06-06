@@ -18,7 +18,7 @@ DATABASE_URL = os.getenv(
     "postgresql+asyncpg://user:password@localhost:5432/dev2_db"
 )
 
-print("DATABASE_URL =", DATABASE_URL)
+# [CLAUDE.md §6] 자격증명이 포함된 DATABASE_URL을 stdout에 출력하지 않는다.
 # [CLAUDE.md §10-3] Lazy 초기화 패턴
 # asyncpg 미설치 환경(CI/테스트)에서 db.py import 시 에러가 나지 않도록
 # create_async_engine + sessionmaker를 최초 사용 시점까지 지연한다.

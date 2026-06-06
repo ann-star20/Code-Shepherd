@@ -220,14 +220,16 @@ async def _persist(
         developer_id: 개발자 ID (Dev2State.developer_id)
         trace_id:     CLAUDE.md §3 형식 ("pr_{12hex}")
     """
-    # lazy import: asyncpg 미설치 환경에서 store.py 자체 import는 허용
-    from dev2.db import insert_scan_execution, insert_scan_issues, insert_scan_summary  # noqa: PLC0415
+    # CLAUDE.md §2: 노드는 Repository 인터페이스에만 의존 (SQL 직접 노출 금지)
+    # lazy: 구현체가 dev2.db(asyncpg)를 메서드 내부에서 import하므로 여기선 안전
+    from dev2.repositories import get_scan_repository  # noqa: PLC0415
+    repo = get_scan_repository()
 
     agent = output["agent"]
     execution_ms = output["execution_ms"]
 
     # ① scan_executions → scan_id
-    scan_id = await insert_scan_execution(
+    scan_id = await repo.insert_execution(
         task_id=task_id,
         pr_id=pr_id,
         execution_ms=execution_ms,
@@ -236,10 +238,10 @@ async def _persist(
     logger.debug("_persist: scan_id=%d (agent=%s, trace_id=%s)", scan_id, agent, trace_id)
 
     # ② scan_issues (이슈별 행 INSERT)
-    await insert_scan_issues(scan_id, output["issues"], agent)
+    await repo.insert_issues(scan_id, output["issues"], agent)
 
     # ③ scan_summaries UPSERT
-    await insert_scan_summary(scan_id, agent, output["summary"])
+    await repo.insert_summary(scan_id, agent, output["summary"])
 
     logger.info(
         "_persist: PostgreSQL 적재 완료 (agent=%s, scan_id=%d, issues=%d)",

@@ -17,7 +17,7 @@ CLAUDE.md 준수:
 import logging
 import os
 
-from dev2.db import fetch_scan_results_by_task, insert_aggregated_result
+from dev2.repositories import get_scan_repository
 from dev2.schema import AggregateState
 
 logger = logging.getLogger(__name__)
@@ -38,8 +38,9 @@ async def _load_results(state: AggregateState) -> list[dict]:
     DB 릴레이가 기본 경로다. payload 폴백은 하위호환(테스트/직접 호출/DB 미연결)용.
     """
     task_id = state["task_id"]
+    repo = get_scan_repository()
     try:
-        db_results = await fetch_scan_results_by_task(task_id)
+        db_results = await repo.fetch_results_by_task(task_id)
     except Exception as exc:
         logger.warning(
             "_load_results: DB 조회 실패 (task_id=%s) — payload 폴백 | %s", task_id, exc,
@@ -137,7 +138,7 @@ async def aggregate_node(state: AggregateState) -> dict:
     )
 
     try:
-        await insert_aggregated_result(
+        await get_scan_repository().insert_aggregated_result(
             task_id=state["task_id"],
             pr_id=state["pr_id"],
             developer_id=state["developer_id"],
