@@ -33,6 +33,7 @@ async def lifespan(_app: FastAPI):
     hitl_routes._storage = storage
 
     chat_routes._db_session_factory = session_factory
+    chat_routes._storage = storage
 
     yield
 

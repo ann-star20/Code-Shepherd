@@ -13,6 +13,7 @@ POST /chat : question 임베딩 → Intent 분류 → 멀티 스토리지 쿼리
 
 from __future__ import annotations
 
+import base64
 import json
 import logging
 import os
@@ -20,6 +21,7 @@ from dataclasses import dataclass, field
 
 import httpx
 from fastapi import APIRouter
+from langchain_google_genai import ChatGoogleGenerativeAI
 from pydantic import BaseModel, field_validator
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
@@ -35,12 +37,20 @@ router = APIRouter(prefix="/chat", tags=["Chat"])
 
 # lifespan에서 주입
 _db_session_factory: async_sessionmaker[AsyncSession] | None = None
+_storage = None
 
 
 def _get_session_factory() -> async_sessionmaker[AsyncSession]:
     if _db_session_factory is None:
         raise RuntimeError("DB session factory가 초기화되지 않았습니다. lifespan을 확인하세요.")
     return _db_session_factory
+
+
+def _get_storage():
+    if _storage is None:
+        from app.storage import get_storage
+        return get_storage()
+    return _storage
 
 
 # ---------------------------------------------------------------------------
@@ -406,14 +416,56 @@ async def _query_neo4j(question: str) -> list[dict]:
     ]
 
 
-async def _generate_answer(question: str, context: str) -> str:
+# ---------------------------------------------------------------------------
+# C-1: GCS 이미지 로더
+# ---------------------------------------------------------------------------
+
+async def _load_page_image(path: str | None) -> bytes | None:
+    """GCS에서 page_image_path로 이미지 바이트 로드. 실패 시 None."""
+    if not path:
+        return None
+    try:
+        storage = _get_storage()
+        return await storage.load(path)
+    except Exception:
+        logger.warning(f"페이지 이미지 로드 실패: {path}")
+        return None
+
+
+# ---------------------------------------------------------------------------
+# C-2: 청크에서 이미지 수집 (중복 제거)
+# ---------------------------------------------------------------------------
+
+async def _collect_page_images(chunks: list[dict]) -> list[bytes]:
+    """청크 목록에서 page_image_path를 수집해 중복 제거 후 이미지 로드."""
+    seen: set[str] = set()
+    images: list[bytes] = []
+    for chunk in chunks:
+        path = (chunk.get("metadata") or {}).get("page_image_path")
+        if not path or path in seen:
+            continue
+        seen.add(path)
+        img = await _load_page_image(path)
+        if img is not None:
+            images.append(img)
+    return images
+
+
+# ---------------------------------------------------------------------------
+# C-3: Gemini 멀티모달 답변 생성
+# ---------------------------------------------------------------------------
+
+async def _generate_answer(
+    question: str,
+    context: str,
+    page_images: list[bytes] = [],
+) -> str:
     """Gemini 2.5 Flash로 RAG 답변을 생성한다. USE_MOCK_LLM=true이면 Mock 반환."""
     if _USE_MOCK_LLM:
         if context.strip():
             return f"[Mock 답변] 질문 '{question}'에 대한 컨텍스트를 찾았습니다."
         return f"[Mock 답변] 질문 '{question}'에 대한 관련 정보를 찾지 못했습니다."
 
-    from langchain_google_genai import ChatGoogleGenerativeAI
     from langchain_core.messages import HumanMessage, SystemMessage
 
     llm = ChatGoogleGenerativeAI(
@@ -426,12 +478,25 @@ async def _generate_answer(question: str, context: str) -> str:
         "아래 제공된 컨텍스트를 바탕으로 질문에 한국어로 정확하게 답변하세요. "
         "컨텍스트에 없는 내용은 모른다고 말하세요."
     )
-    user_content = (
+    text_part = (
         f"[컨텍스트]\n{context}\n\n[질문]\n{question}"
         if context.strip()
         else question
     )
-    messages = [SystemMessage(content=system_prompt), HumanMessage(content=user_content)]
+
+    if page_images:
+        # 멀티모달: 텍스트 + 이미지 파트를 리스트로 구성
+        content_parts: list = [{"type": "text", "text": text_part}]
+        for img_bytes in page_images:
+            b64 = base64.b64encode(img_bytes).decode("utf-8")
+            content_parts.append({
+                "type": "image_url",
+                "image_url": {"url": f"data:image/png;base64,{b64}"},
+            })
+        messages = [SystemMessage(content=system_prompt), HumanMessage(content=content_parts)]
+    else:
+        messages = [SystemMessage(content=system_prompt), HumanMessage(content=text_part)]
+
     response = await llm.ainvoke(messages)
     return response.content
 
@@ -473,7 +538,8 @@ async def chat(request: ChatRequest) -> ChatResponse:
         f"[{c.get('doc_title') or '출처 미상'}]\n{c.get('content', '')}"
         for c in raw_chunks
     )
-    answer = await _generate_answer(request.question, context)
+    page_images = await _collect_page_images(raw_chunks)
+    answer = await _generate_answer(request.question, context, page_images=page_images)
 
     sources = [
         ChatSource(
