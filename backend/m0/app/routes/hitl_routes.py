@@ -710,7 +710,7 @@ async def _enqueue_hitl_reprocess(
             await session.execute(
                 text("""
                     INSERT INTO hitl_queue (doc_id, stage, reason, issues, status)
-                    VALUES (:doc_id, :stage, :reason, :issues::jsonb, 'pending')
+                    VALUES (:doc_id, :stage, :reason, CAST(:issues AS jsonb), 'pending')
                 """),
                 {
                     "doc_id": doc_id,

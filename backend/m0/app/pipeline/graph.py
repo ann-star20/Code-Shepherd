@@ -182,7 +182,7 @@ async def _insert_hitl_queue(
                     INSERT INTO hitl_queue
                         (doc_id, stage, reason, quality_score, issues, status)
                     VALUES
-                        (:doc_id, :stage, :reason, :quality_score, :issues::jsonb, 'pending')
+                        (:doc_id, :stage, :reason, :quality_score, CAST(:issues AS jsonb), 'pending')
                 """),
                 {
                     "doc_id": str(doc_id),

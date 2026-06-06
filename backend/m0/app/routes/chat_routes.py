@@ -217,10 +217,10 @@ async def _query_pgvector(
                 SELECT
                     chunk_id::text,
                     content,
-                    1 - (embedding <=> :embedding::vector) AS score,
+                    1 - (embedding <=> CAST(:embedding AS vector)) AS score,
                     metadata->>'doc_title' AS doc_title
                 FROM chunk_embeddings
-                ORDER BY embedding <=> :embedding::vector
+                ORDER BY embedding <=> CAST(:embedding AS vector)
                 LIMIT :top_k
             """),
             {"embedding": embedding_str, "top_k": top_k},

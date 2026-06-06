@@ -460,7 +460,7 @@ async def search_kms(
                 SELECT
                     ce.chunk_id::text,
                     ce.content,
-                    1 - (ce.embedding <=> :embedding::vector) AS score,
+                    1 - (ce.embedding <=> CAST(:embedding AS vector)) AS score,
                     ce.metadata,
                     d.title AS doc_title
                 FROM chunk_embeddings ce
@@ -468,7 +468,7 @@ async def search_kms(
                 LEFT JOIN documents d ON c.doc_id = d.doc_id
                 WHERE d.upload_status IN ('stored', 'stored_partial')
                 AND (:category IS NULL OR ce.metadata->>'category' = :category)
-                ORDER BY ce.embedding <=> :embedding::vector
+                ORDER BY ce.embedding <=> CAST(:embedding AS vector)
                 LIMIT :limit
             """),
             {"embedding": embedding_str, "limit": limit, "category": category},

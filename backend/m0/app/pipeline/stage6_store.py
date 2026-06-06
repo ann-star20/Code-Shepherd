@@ -274,7 +274,7 @@ async def _insert_embedding_rows(
     await session.execute(
         text("""
             INSERT INTO chunk_embeddings (chunk_id, embedding, model_name, content, metadata)
-            VALUES (:chunk_id, :embedding::vector, :model_name, :content, :metadata::jsonb)
+            VALUES (:chunk_id, CAST(:embedding AS vector), :model_name, :content, CAST(:metadata AS jsonb))
             ON CONFLICT (chunk_id) DO UPDATE SET
                 embedding = EXCLUDED.embedding,
                 content   = EXCLUDED.content
