@@ -232,7 +232,7 @@ def _seed_concepts(session, concepts: list):
             session.run(_REF_TO_CWE, cat_name=perf_cat, cwe_id=c["cwe_id"])
 
         # 5. SecurityMechanism + MITIGATED_BY
-        for mech in c.get("security_mechanisms", []):
+        for mech in c.get("security_mechanism", []):
             session.run(_MERGE_SEC_MECH, name=mech)
             session.run(_MITIGATED_BY, cname=name, mname=mech)
 

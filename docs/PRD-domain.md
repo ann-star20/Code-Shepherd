@@ -189,14 +189,14 @@ CREATE INDEX document_doc_id FOR (d:Document) ON (d.doc_id)
 
 | 컨셉 요소 | 설명 | 추출 예시 |
 |-----------|------|-----------|
-| **보안 메커니즘** (Security Mechanism) | 취약점을 방어하는 기술적 수단 | CSRF Token, Content Security Policy, Parameterized Query |
-| **취약점 원인** (Vulnerability Root Cause) | 취약점이 발생하는 근본 원인 | 사용자 입력 미검증, 세션 고정, 안전하지 않은 역직렬화 |
-| **설정 속성** (Configuration Property) | 프레임워크 설정 키/값 및 옵션 | `SESSION_COOKIE_SECURE=True`, `X-Frame-Options: DENY` |
-| **영향 받는 컴포넌트** (Affected Component) | 취약점의 영향 범위 | 인증 모듈, 세션 관리, ORM 레이어, API 엔드포인트 |
-| **성능 최적화 기법** (Optimization Mechanism) | 성능 병목을 해결하고 처리량을 올리는 기술적 수단 | `select_related` (eager loading), `query_caching`, `connection_pooling`, `asynchronous_task` |
-| **성능 안티패턴/원인** (Performance Antipattern / Root Cause) | 성능 저하 및 자원 고갈을 유발하는 설계/개발 결함 | `n1_query`, `full_table_scan` (인덱스 누락), `memory_leak`, `thread_pool_exhaustion` |
-| **성능 튜닝 속성** (Tuning / Config Property) | 프레임워크 및 인프라의 성능 제어 키/값 맵 | `conn_max_age=60`, `hikari.maximum-pool-size=10`, `gc_type=g1gc` |
-| **영향 받는 리소스/컴포넌트** (Affected Resource / Component) | 성능 결함으로 인해 병목이 터지는 물리/논리 영역 | `database_layer`, `orm_core_layer`, `heap_memory`, `connection_pool` |
+| **보안 메커니즘** (security_mechanism) | 취약점을 방어하는 기술적 수단 | CSRF Token, Content Security Policy, Parameterized Query |
+| **취약점 원인** (vulnerability_root_cause) | 취약점이 발생하는 근본 원인 | 사용자 입력 미검증, 세션 고정, 안전하지 않은 역직렬화 |
+| **설정 속성** (configuration_property) | 프레임워크 설정 키/값 및 옵션 | `SESSION_COOKIE_SECURE=True`, `X-Frame-Options: DENY` |
+| **영향 받는 컴포넌트** (Aaffected_components) | 취약점의 영향 범위 | 인증 모듈, 세션 관리, ORM 레이어, API 엔드포인트 |
+| **성능 최적화 기법** (optimization_mechanism) | 성능 병목을 해결하고 처리량을 올리는 기술적 수단 | `select_related` (eager loading), `query_caching`, `connection_pooling`, `asynchronous_task` |
+| **성능 안티패턴/원인** (performance_antipattern_root_causes) | 성능 저하 및 자원 고갈을 유발하는 설계/개발 결함 | `n1_query`, `full_table_scan` (인덱스 누락), `memory_leak`, `thread_pool_exhaustion` |
+| **성능 튜닝 속성** (tuning_properties) | 프레임워크 및 인프라의 성능 제어 키/값 맵 | `conn_max_age=60`, `hikari.maximum-pool-size=10`, `gc_type=g1gc` |
+| **영향 받는 리소스/컴포넌트** (affected_components) | 성능 결함으로 인해 병목이 터지는 물리/논리 영역 | `database_layer`, `orm_core_layer`, `heap_memory`, `connection_pool` |
 
 
 **프롬프트 출력 스키마 (JSON)**:
@@ -207,7 +207,7 @@ CREATE INDEX document_doc_id FOR (d:Document) ON (d.doc_id)
   "cwe_id": "CWE-79",
   "owasp_category": "A03:2021",
   "severity": "high",
-  "security_mechanisms": ["Output Encoding", "Content Security Policy"],
+  "security_mechanism": ["Output Encoding", "Content Security Policy"],
   "affected_components": ["템플릿 렌더링 레이어", "API 응답 직렬화"],
   "config_properties": [{"key": "SECURE_BROWSER_XSS_FILTER", "value": "True"}],
   "root_cause": "사용자 입력값이 HTML 컨텍스트에서 이스케이프 처리 없이 출력됨",
@@ -297,7 +297,7 @@ if labels:
   "concept_type": "vulnerability_root_cause",
   "cwe_id": "CWE-401",
   "severity": "high",
-  "security_mechanisms": ["명시적 리소스 해제", "컨텍스트 매니저"],
+  "security_mechanism": ["명시적 리소스 해제", "컨텍스트 매니저"],
   "affected_components": ["힙 메모리", "GC 레이어"],
   "config_properties": [],
   "root_cause": "객체 참조 순환 또는 명시적 해제 누락",

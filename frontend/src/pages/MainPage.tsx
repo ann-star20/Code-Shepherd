@@ -14,7 +14,7 @@ const INITIAL_CONCEPTS = [
     description_ko: "SQL 인젝션. 사용자 입력이 SQL 쿼리에 비위생화된 채 삽입되어 임의 쿼리 실행 또는 데이터 탈취가 가능함.",
     aliases: ["SQL Injection", "SQL 인젝션"],
     affected_components: ["database_access_layer", "orm_core_layer"],
-    security_mechanisms: ["parameterized_query", "orm_use_rules", "input_validation"],
+    security_mechanism: ["parameterized_query", "orm_use_rules", "input_validation"],
     domains: ["security"], state: "COMMITTED",
   },
   {
@@ -23,7 +23,7 @@ const INITIAL_CONCEPTS = [
     description_ko: "크로스 사이트 스크립팅. 사용자 입력값이 HTML 컨텍스트에서 이스케이프 처리 없이 출력되어 공격자가 악성 스크립트를 삽입함.",
     aliases: ["Cross-Site Scripting", "크로스 사이트 스크립팅"],
     affected_components: ["template_rendering_layer", "api_response_serialization"],
-    security_mechanisms: ["output_encoding", "content_security_policy", "httponly_cookie"],
+    security_mechanism: ["output_encoding", "content_security_policy", "httponly_cookie"],
     domains: ["security"], state: "COMMITTED",
   },
   {
@@ -32,7 +32,7 @@ const INITIAL_CONCEPTS = [
     description_ko: "크로스 사이트 요청 위조. 인증된 사용자의 브라우저를 통해 공격자가 원하는 요청을 의도치 않게 전송하게 만드는 취약점.",
     aliases: ["Cross-Site Request Forgery", "크로스 사이트 요청 위조"],
     affected_components: ["authentication_filter", "session_management_layer", "api_endpoint"],
-    security_mechanisms: ["csrf_token_protection", "samesite_cookie_attribute", "double_submit_cookie"],
+    security_mechanism: ["csrf_token_protection", "samesite_cookie_attribute", "double_submit_cookie"],
     domains: ["security"], state: "COMMITTED",
   },
   {
@@ -41,7 +41,7 @@ const INITIAL_CONCEPTS = [
     description_ko: "ORM 관계 조회 시 루프마다 추가 쿼리가 N번 실행되어 DB에 과부하를 유발하는 안티패턴. select_related/prefetch_related로 해결.",
     aliases: ["N+1 Problem", "N+1 Query", "N+1 쿼리 문제"],
     affected_components: ["orm_layer", "database_layer"],
-    security_mechanisms: ["select_related", "prefetch_related", "eager_loading"],
+    security_mechanism: ["select_related", "prefetch_related", "eager_loading"],
     domains: ["performance"], state: "COMMITTED",
   },
   {
@@ -50,7 +50,7 @@ const INITIAL_CONCEPTS = [
     description_ko: "취약한 접근 제어. 최소 권한 원칙 미준수, IDOR 등으로 인증된 사용자가 허용되지 않은 리소스에 접근.",
     aliases: ["Broken Access Control", "IDOR", "취약한 접근 제어"],
     affected_components: ["authentication_filter", "api_endpoint", "database_access_layer"],
-    security_mechanisms: ["rbac_rules", "abac_rules", "middleware_authorization"],
+    security_mechanism: ["rbac_rules", "abac_rules", "middleware_authorization"],
     domains: ["security"], state: "COMMITTED",
   },
   {
@@ -59,7 +59,7 @@ const INITIAL_CONCEPTS = [
     description_ko: "인덱스 미설정으로 인한 Full Table Scan 발생. 데이터 증가에 비례하여 응답 지연이 급격히 악화됨.",
     aliases: ["Missing Database Index", "인덱스 누락", "Full Table Scan"],
     affected_components: ["database_layer", "query_execution_plan"],
-    security_mechanisms: ["composite_index", "explain_analyze", "query_optimizer"],
+    security_mechanism: ["composite_index", "explain_analyze", "query_optimizer"],
     domains: ["performance"], state: "COMMITTED",
   },
 ];
@@ -71,7 +71,7 @@ const DRAFT_CONCEPT = {
   description_ko: "커넥션 반환 실패 또는 풀 설정 미흡으로 DB 커넥션 풀이 고갈되어 새로운 요청이 대기 또는 실패. 보안·성능 양 도메인에 걸치는 자원 고갈 취약점.",
   aliases: ["Connection Pool Exhaustion", "커넥션 풀 고갈", "DB Connection Leak"],
   affected_components: ["connection_pool", "database_layer", "middleware"],
-  security_mechanisms: ["context_manager_pattern", "pool_monitoring", "connection_timeout"],
+  security_mechanism: ["context_manager_pattern", "pool_monitoring", "connection_timeout"],
   domains: ["security", "performance"], state: "DRAFT",
 };
 
@@ -90,7 +90,7 @@ type ApiConcept = {
   id: string; state: string; concept_name: string; domains: string[];
   concept_type?: string; cwe_id?: string; owasp_id?: string; severity?: string;
   description_ko?: string; aliases?: string[]; affected_components?: string[];
-  security_mechanisms?: string[];
+  security_mechanism?: string[];
 };
 
 function mapApiConcept(item: ApiConcept) {
@@ -99,7 +99,7 @@ function mapApiConcept(item: ApiConcept) {
     cwe_id: item.cwe_id ?? "", owasp_id: item.owasp_id ?? "",
     severity: item.severity ?? "medium", description_ko: item.description_ko ?? "",
     aliases: item.aliases ?? [], affected_components: item.affected_components ?? [],
-    security_mechanisms: item.security_mechanisms ?? [],
+    security_mechanism: item.security_mechanism ?? [],
     domains: item.domains, state: item.state,
   };
 }
@@ -767,7 +767,7 @@ export function MainPage() {
                       <div>
                         <span className="text-stone-400 font-bold block mb-1">대응 메커니즘</span>
                         <div className="flex flex-wrap gap-1">
-                          {selectedConcept.security_mechanisms.map((m) => (
+                          {selectedConcept.security_mechanism.map((m) => (
                             <span key={m} className="px-2 py-0.5 bg-stone-100 text-stone-800 rounded text-[10px] font-semibold">✓ {m}</span>
                           ))}
                         </div>

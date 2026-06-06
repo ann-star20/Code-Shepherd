@@ -138,7 +138,7 @@ def _build_prompt(
         "        → 영문 표준 식별자 사용 (XSS, SQLi, CsrfViewMiddleware 등)\n\n"
         '  "aliases"  →  Link Resolver가 aliases 교집합으로 (c1)-[:SAME_AS]-(c2) 생성\n'
         "      → 공식 명칭·약어·별칭 모두 포함 (SAME_AS 탐색 정확도 결정)\n\n"
-        '  "security_mechanisms"  →  MERGE (m:SecurityMechanism {name: each})\n'
+        '  "security_mechanism"  →  MERGE (m:SecurityMechanism {name: each})\n'
         "      (c)-[:MITIGATED_BY]->(m)\n"
         '      → 재사용 가능한 표준 명칭 (예: "CSRFToken", "SameSiteCookie", "RateLimit")\n\n'
         '  "affected_components"  →  MERGE (x:Component {name: each})\n'
@@ -164,7 +164,7 @@ def _build_prompt(
         '  "concept_type": "vulnerability_root_cause"|"security_mechanism"|"attack_vector"|"compliance_control"\n'
         '  "cwe_id": str,  "owasp_id": str\n'
         '  "aliases": list[str]\n'
-        '  "security_mechanisms": list[str]\n'
+        '  "security_mechanism": list[str]\n'
         '  "affected_components": list[str]\n'
         '  "config_properties": list[{"key": str, "value": str}]\n'
         '  "root_cause": str\n'

@@ -42,7 +42,7 @@ langsmith_datasets/
   "severity": "high",
   "description_ko": "크로스 사이트 스크립팅...",  # 반드시 한국어
   "aliases": ["Cross-Site Scripting"],
-  "security_mechanisms": ["OutputEncoding", "CSP"],
+  "security_mechanism": ["OutputEncoding", "CSP"],
   "affected_components": ["템플릿 렌더링"],
   "config_properties": [],
   "root_cause": "사용자 입력 이스케이프 미처리"

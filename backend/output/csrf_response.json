@@ -15,7 +15,7 @@
       "Sea Surf",
       "Cross-Site Request Forgery"
     ],
-    "security_mechanisms": [
+    "security_mechanism": [
       "CSRFToken",
       "SameSiteCookie",
       "OriginCheck"
@@ -49,7 +49,7 @@
       "django.middleware.csrf.CsrfViewMiddleware",
       "CSRF Middleware"
     ],
-    "security_mechanisms": [
+    "security_mechanism": [
       "CSRFTokenValidation",
       "OriginCheck",
       "RefererCheck"
@@ -100,7 +100,7 @@
       "{% csrf_token %}",
       "csrf_token template tag"
     ],
-    "security_mechanisms": [
+    "security_mechanism": [
       "CSRFTokenEmbed"
     ],
     "affected_components": [
@@ -131,7 +131,7 @@
       "@csrf_exempt",
       "csrf_exempt decorator"
     ],
-    "security_mechanisms": [],
+    "security_mechanism": [],
     "affected_components": [
       "Django 뷰",
       "REST API 엔드포인트"
@@ -161,7 +161,7 @@
       "AJAX CSRF",
       "fetch CSRF"
     ],
-    "security_mechanisms": [
+    "security_mechanism": [
       "CSRFTokenHeader",
       "CookieRead"
     ],
@@ -195,7 +195,7 @@
       "SameSite=Lax",
       "SameSite=Strict"
     ],
-    "security_mechanisms": [
+    "security_mechanism": [
       "BrowserCSRFDefense"
     ],
     "affected_components": [

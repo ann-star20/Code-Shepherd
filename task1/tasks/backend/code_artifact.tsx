@@ -28,7 +28,7 @@ const INITIAL_CONCEPTS = [
     description_ko: "사용자 입력값이 SQL 쿼리 문자열에 직접 연결되어 비위생화된 채 실행되는 취약점. 매개변수화 쿼리(Parameterized Query) 인터페이스를 강제하여 예방합니다.",
     aliases: ["SQL Injection", "SQL 인젝션"],
     affected_components: ["database_access_layer", "orm_core_layer"],
-    security_mechanisms: ["parameterized_query", "orm_use_rules"],
+    security_mechanism: ["parameterized_query", "orm_use_rules"],
     domains: ["security"],
     state: "COMMITTED"
   },
@@ -41,7 +41,7 @@ const INITIAL_CONCEPTS = [
     description_ko: "사용자 입력값이 적절한 이스케이프 없이 웹브라우저 렌더링 컨텍스트에 포함되어 악성 스크립트가 실행되는 취약점. CSP 및 출력 인코딩 필터로 대응합니다.",
     aliases: ["Cross-Site Scripting", "크로스 사이트 스크립팅"],
     affected_components: ["template_rendering_layer", "api_response_serialization"],
-    security_mechanisms: ["output_encoding", "content_security_policy"],
+    security_mechanism: ["output_encoding", "content_security_policy"],
     domains: ["security"],
     state: "COMMITTED"
   },
@@ -54,7 +54,7 @@ const INITIAL_CONCEPTS = [
     description_ko: "인증된 사용자의 브라우저 쿠키 메커니즘을 신뢰하는 점을 악용하여, 공격자가 변조된 요청을 피해자의 세션 권한으로 강제 전송하는 취약점.",
     aliases: ["Cross-Site Request Forgery", "사이트 간 요청 위조"],
     affected_components: ["authentication_filter", "session_management_layer"],
-    security_mechanisms: ["csrf_token_protection", "samesite_cookie_attribute"],
+    security_mechanism: ["csrf_token_protection", "samesite_cookie_attribute"],
     domains: ["security"],
     state: "COMMITTED"
   },
@@ -67,7 +67,7 @@ const INITIAL_CONCEPTS = [
     description_ko: "ORM 지연 로딩(Lazy Loading)으로 인해 하위 엔티티 조회 루프마다 관계 쿼리가 N번 추가 기동되는 성능 병목 현상. join 및 즉시 로딩 기법으로 해결합니다.",
     aliases: ["N+1 Problem", "N+1 쿼리"],
     affected_components: ["orm_layer", "database_layer"],
-    security_mechanisms: ["select_related", "prefetch_related"],
+    security_mechanism: ["select_related", "prefetch_related"],
     domains: ["performance"],
     state: "COMMITTED"
   }
@@ -84,7 +84,7 @@ const DRAFT_CONCEPTS_MOCK = [
     description_ko: "객체 참조 소멸 후에도 힙 메모리가 반환되지 않아 GC의 오버헤드를 유발하고 점진적 리소스 다운을 초래하는 교차 영역 결함. 보안(CWE-401 자원 미해제)이자 성능 병목입니다.",
     aliases: ["Memory Leak", "메모리 누수"],
     affected_components: ["heap_memory", "garbage_collector"],
-    security_mechanisms: ["explicit_resource_release", "context_manager"],
+    security_mechanism: ["explicit_resource_release", "context_manager"],
     domains: ["security", "performance"], // 다중 및 교차 영역 배열 선언
     state: "DRAFT"
   }
@@ -815,7 +815,7 @@ export default function App() {
                     <div className="border-t border-stone-100 pt-3">
                       <span className="text-xs text-stone-400 font-bold block mb-1.5">대응 보안 메커니즘 / 권장 기술</span>
                       <div className="flex flex-wrap gap-1.5">
-                        {selectedConcept.security_mechanisms.map((m, i) => (
+                        {selectedConcept.security_mechanism.map((m, i) => (
                           <span key={i} className="px-2.5 py-1 bg-stone-100 text-stone-800 rounded-lg text-xs font-semibold">
                             ✓ {m}
                           </span>

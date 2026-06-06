@@ -55,7 +55,7 @@ async def write_concept_node(
         await session.run(_ADD_LABELS, name=concept.concept_name, labels=labels)
 
         # 3. MITIGATED_BY → SecurityMechanism
-        for mech in concept.security_mechanisms:
+        for mech in concept.security_mechanism:
             await session.run(
                 "MATCH (c:Concept {name:$cn}) "
                 "MERGE (m:SecurityMechanism {name:$mn}) "

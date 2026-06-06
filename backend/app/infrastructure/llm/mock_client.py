@@ -17,7 +17,7 @@ _MOCK_CONCEPTS: list[dict] = [
         "severity": "high",
         "description_ko": "크로스 사이트 요청 위조 — 인증된 사용자의 브라우저를 통해 악의적 요청을 서버에 전송하는 공격",
         "aliases": ["CSRF", "XSRF", "Sea Surf", "Cross-Site Request Forgery"],
-        "security_mechanisms": ["CSRFToken", "SameSiteCookie", "OriginCheck"],
+        "security_mechanism": ["CSRFToken", "SameSiteCookie", "OriginCheck"],
         "affected_components": ["폼 제출 처리", "상태 변경 API", "세션 관리"],
         "root_cause": "서버가 요청 출처를 검증하지 않고 브라우저 쿠키 기반 인증만 의존",
         "code_examples": [
@@ -42,7 +42,7 @@ _MOCK_CONCEPTS: list[dict] = [
         "severity": "high",
         "description_ko": "Django의 CSRF 보호 미들웨어 — POST/PUT/DELETE 요청마다 토큰 검증 수행",
         "aliases": ["django.middleware.csrf.CsrfViewMiddleware", "CSRF Middleware"],
-        "security_mechanisms": ["CSRFTokenValidation", "OriginCheck", "RefererCheck"],
+        "security_mechanism": ["CSRFTokenValidation", "OriginCheck", "RefererCheck"],
         "affected_components": ["MIDDLEWARE 설정", "HTTP 요청 처리 파이프라인"],
         "config_properties": [
             {"key": "CSRF_COOKIE_SECURE", "value": "True"},
@@ -72,7 +72,7 @@ _MOCK_CONCEPTS: list[dict] = [
         "severity": "medium",
         "description_ko": "Django 템플릿 태그 — POST 폼에 CSRF 토큰 hidden input 자동 삽입",
         "aliases": ["csrf_token", "{% csrf_token %}", "csrf_token template tag"],
-        "security_mechanisms": ["CSRFTokenEmbed"],
+        "security_mechanism": ["CSRFTokenEmbed"],
         "affected_components": ["Django 템플릿 엔진", "HTML 폼"],
         "code_examples": [
             {
@@ -96,7 +96,7 @@ _MOCK_CONCEPTS: list[dict] = [
         "severity": "high",
         "description_ko": "@csrf_exempt — 특정 뷰의 CSRF 검증 비활성화. 대체 인증 없이 사용 시 취약점 노출",
         "aliases": ["@csrf_exempt", "csrf_exempt decorator"],
-        "security_mechanisms": [],
+        "security_mechanism": [],
         "affected_components": ["Django 뷰", "REST API 엔드포인트"],
         "root_cause": "CSRF 검증 우회 — 토큰 기반 API 인증 없이 적용 시 취약",
         "code_examples": [
@@ -120,7 +120,7 @@ _MOCK_CONCEPTS: list[dict] = [
         "severity": "medium",
         "description_ko": "AJAX 요청 시 X-CSRFToken HTTP 헤더로 토큰 전달 — JS에서 쿠키 읽어 헤더 주입",
         "aliases": ["X-CSRFToken", "AJAX CSRF", "fetch CSRF"],
-        "security_mechanisms": ["CSRFTokenHeader", "CookieRead"],
+        "security_mechanism": ["CSRFTokenHeader", "CookieRead"],
         "affected_components": ["JavaScript fetch API", "axios", "XMLHttpRequest"],
         "code_examples": [
             {
@@ -149,7 +149,7 @@ _MOCK_CONCEPTS: list[dict] = [
         "severity": "medium",
         "description_ko": "SameSite 쿠키 속성 — 크로스 사이트 요청 시 쿠키 전송 제한으로 CSRF 방어",
         "aliases": ["SameSite", "SameSite=Lax", "SameSite=Strict"],
-        "security_mechanisms": ["BrowserCSRFDefense"],
+        "security_mechanism": ["BrowserCSRFDefense"],
         "affected_components": ["HTTP 쿠키", "세션 쿠키", "CSRF 토큰 쿠키"],
         "config_properties": [
             {"key": "CSRF_COOKIE_SAMESITE", "value": "'Lax'"},

@@ -50,7 +50,7 @@ class ConceptExtractionSchema(BaseModel):
     cwe_id: str | None = None
     owasp_id: str | None = None
     aliases: list[str] = []
-    security_mechanisms: list[str] = []
+    security_mechanism: list[str] = []
     affected_components: list[str] = []
     config_properties: list[dict] = []
     root_cause: str | None = None

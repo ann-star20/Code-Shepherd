@@ -1,0 +1,110 @@
+{
+  "concepts": [
+    {
+      "name": "N1QueryProblem",
+      "concept_type": "performance_antipattern",
+      "cwe_id": "CWE-1072",
+      "severity": "high",
+      "description_ko": "ORM 관계 조회 시 루프마다 추가 쿼리가 N번 실행되어 DB에 과부하를 유발하는 안티패턴. select_related/prefetch_related로 해결.",
+      "aliases": ["N+1 Query", "N+1 Problem", "N+1 쿼리 문제", "Lazy Loading Overhead"],
+      "security_mechanisms": ["select_related", "prefetch_related", "eager_loading", "batch_fetch"],
+      "affected_components": ["orm_core_layer", "database_layer", "query_execution_plan"],
+      "root_cause": "ORM 지연 로딩(Lazy Loading)으로 관계 엔티티를 루프 내 개별 쿼리로 조회함",
+      "config_properties": [],
+      "domains": ["performance"]
+    },
+    {
+      "name": "MissingDatabaseIndex",
+      "concept_type": "performance_antipattern",
+      "cwe_id": "CWE-1052",
+      "severity": "high",
+      "description_ko": "인덱스 미설정으로 Full Table Scan 발생. 데이터 증가에 비례하여 쿼리 응답 지연이 급격히 악화됨.",
+      "aliases": ["Missing Index", "Full Table Scan", "인덱스 누락"],
+      "security_mechanisms": ["database_index", "composite_index", "covering_index", "explain_analyze"],
+      "affected_components": ["database_layer", "query_execution_plan", "orm_core_layer"],
+      "root_cause": "WHERE 절·JOIN 조건·ORDER BY 컬럼에 인덱스가 미생성되어 전체 테이블 스캔 실행",
+      "config_properties": [],
+      "domains": ["performance"]
+    },
+    {
+      "name": "ConnectionPoolExhaustion",
+      "concept_type": "performance_antipattern",
+      "cwe_id": "CWE-400",
+      "severity": "critical",
+      "description_ko": "DB 커넥션 풀이 고갈되어 신규 요청이 대기 또는 실패하는 자원 고갈 패턴. 보안·성능 양 도메인에 걸침.",
+      "aliases": ["Connection Pool Exhaustion", "커넥션 풀 고갈", "DB Connection Leak"],
+      "security_mechanisms": ["connection_pooling", "pgbouncer", "connection_timeout_tuning", "context_manager_enforcement"],
+      "affected_components": ["connection_pool", "database_layer", "middleware", "thread_pool"],
+      "root_cause": "커넥션 미반환(컨텍스트 매니저 미사용) 또는 max_size 설정 과소",
+      "config_properties": [
+        { "key": "CONN_MAX_AGE", "value": "60" },
+        { "key": "DB_POOL_MAX_SIZE", "value": "10" },
+        { "key": "DB_POOL_TIMEOUT", "value": "30" }
+      ],
+      "domains": ["security", "performance"]
+    },
+    {
+      "name": "MemoryLeak",
+      "concept_type": "performance_antipattern",
+      "cwe_id": "CWE-401",
+      "severity": "high",
+      "description_ko": "객체 참조가 해제되지 않아 GC 부하 및 힙 메모리가 점진적으로 소진되는 패턴.",
+      "aliases": ["Memory Leak", "메모리 누수", "Heap Exhaustion"],
+      "security_mechanisms": ["gc_tuning", "heap_profiling", "object_pooling", "weak_reference"],
+      "affected_components": ["heap_memory", "gc", "cache_layer", "python_runtime"],
+      "root_cause": "전역 컬렉션 무한 축적 또는 순환 참조로 인한 GC 회수 불가",
+      "config_properties": [
+        { "key": "GC_MAX_HEAP_SIZE", "value": "512m" },
+        { "key": "GC_TYPE", "value": "g1gc" }
+      ],
+      "domains": ["security", "performance"]
+    },
+    {
+      "name": "SelectRelatedOptimization",
+      "concept_type": "optimization_mechanism",
+      "cwe_id": "CWE-1072",
+      "severity": "medium",
+      "description_ko": "Django ORM의 select_related/prefetch_related를 사용하여 N+1 쿼리를 SQL JOIN 또는 배치 쿼리로 치환하는 최적화 기법.",
+      "aliases": ["select_related", "prefetch_related", "Eager Loading", "ORM Join Optimization"],
+      "security_mechanisms": ["eager_loading", "sql_join_optimization", "batch_prefetch"],
+      "affected_components": ["orm_core_layer", "database_layer"],
+      "root_cause": "",
+      "config_properties": [],
+      "domains": ["performance"]
+    },
+    {
+      "name": "QueryResultCaching",
+      "concept_type": "optimization_mechanism",
+      "cwe_id": "",
+      "severity": "medium",
+      "description_ko": "반복 조회 쿼리 결과를 Redis/Memcached에 캐싱하여 DB 부하를 줄이고 응답 속도를 향상시키는 기법.",
+      "aliases": ["Query Caching", "Response Cache", "쿼리 결과 캐싱"],
+      "security_mechanisms": ["redis_cache", "memcached", "cache_invalidation", "ttl_based_expiry"],
+      "affected_components": ["cache_layer", "orm_core_layer", "api_response_layer"],
+      "root_cause": "",
+      "config_properties": [
+        { "key": "CACHE_TTL", "value": "300" },
+        { "key": "CACHE_BACKEND", "value": "django.core.cache.backends.redis.RedisCache" },
+        { "key": "CACHE_MAX_ENTRIES", "value": "1000" }
+      ],
+      "domains": ["performance"]
+    },
+    {
+      "name": "AsyncTaskOffloading",
+      "concept_type": "optimization_mechanism",
+      "cwe_id": "",
+      "severity": "medium",
+      "description_ko": "Celery 비동기 태스크로 무거운 작업을 백그라운드에서 처리하여 API 응답 지연을 방지하는 최적화 패턴.",
+      "aliases": ["Async Task", "Background Processing", "Celery Task Offloading"],
+      "security_mechanisms": ["celery_task", "background_processing", "task_queue", "rate_limiting"],
+      "affected_components": ["task_queue", "celery_worker", "api_response_layer", "redis_broker"],
+      "root_cause": "",
+      "config_properties": [
+        { "key": "CELERY_WORKER_CONCURRENCY", "value": "4" },
+        { "key": "CELERY_TASK_SOFT_TIME_LIMIT", "value": "60" },
+        { "key": "CELERY_TASK_TIME_LIMIT", "value": "120" }
+      ],
+      "domains": ["performance"]
+    }
+  ]
+}

@@ -81,11 +81,11 @@ async def test_gw_cross_domain_labels(async_neo4j_driver):
         await _cleanup(async_neo4j_driver, name)
 
 
-# T_gw_04: security_mechanisms → MITIGATED_BY → SecurityMechanism
+# T_gw_04: security_mechanism → MITIGATED_BY → SecurityMechanism
 @pytest.mark.anyio
 async def test_gw_mitigated_by(async_neo4j_driver):
     name = _uid("CSRF")
-    concept = _concept(name, ["security"], security_mechanisms=["CSRFToken", "SameSiteCookie"])
+    concept = _concept(name, ["security"], security_mechanism=["CSRFToken", "SameSiteCookie"])
     try:
         await write_concept_node(concept, async_neo4j_driver)
         async with async_neo4j_driver.session() as s:

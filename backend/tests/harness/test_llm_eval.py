@@ -76,7 +76,7 @@ def test_extractor_schema_optional_fields_default():
         description_ko="SQL 인젝션",
     )
     assert schema.aliases == []
-    assert schema.security_mechanisms == []
+    assert schema.security_mechanism == []
     assert schema.affected_components == []
     assert schema.config_properties == []
     assert schema.cwe_id is None

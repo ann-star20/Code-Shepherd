@@ -28,7 +28,7 @@ async def _insert_approved(conn, session_id: str, doc_id: str, name: str) -> Non
         "severity": "high",
         "description_ko": "테스트",
         "aliases": [],
-        "security_mechanisms": [],
+        "security_mechanism": [],
         "affected_components": [],
         "config_properties": [],
     })

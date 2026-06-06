@@ -197,7 +197,7 @@ class ILLMClient(ABC):
         Returns:
             PRD-domain §3.3.3 ConceptExtractionSchema 목록
             (concept_name, concept_domain, cwe_id, severity,
-             description_ko, aliases, security_mechanisms,
+             description_ko, aliases, security_mechanism,
              affected_components, config_properties, root_cause)
         """
 
@@ -258,7 +258,7 @@ _MOCK_CONCEPTS: list[dict] = [
         "severity":              "high",
         "description_ko":        "크로스 사이트 스크립팅 — 사용자 입력이 HTML 컨텍스트에서 이스케이프 없이 출력됨",
         "aliases":               ["Cross-Site Scripting", "크로스 사이트 스크립팅"],
-        "security_mechanisms":   ["OutputEncoding", "ContentSecurityPolicy"],
+        "security_mechanism":   ["OutputEncoding", "ContentSecurityPolicy"],
         "affected_components":   ["템플릿 렌더링 레이어", "API 응답 직렬화"],
         "config_properties":     [{"key": "SECURE_BROWSER_XSS_FILTER", "value": "True"}],
         "root_cause":            "사용자 입력값 HTML 이스케이프 미처리",
@@ -271,7 +271,7 @@ _MOCK_CONCEPTS: list[dict] = [
         "severity":              "high",
         "description_ko":        "ORM 관계 조회 시 N번 추가 쿼리 발생으로 DB 과부하",
         "aliases":               ["N+1 Query", "N+1 쿼리"],
-        "security_mechanisms":   ["select_related", "prefetch_related"],
+        "security_mechanism":   ["select_related", "prefetch_related"],
         "affected_components":   ["ORM 레이어", "DB 커넥션 풀"],
         "config_properties":     [],
         "root_cause":            "ORM Lazy Loading 기본값 미조정",
@@ -284,7 +284,7 @@ _MOCK_CONCEPTS: list[dict] = [
         "severity":              "high",
         "description_ko":        "객체 참조 미해제로 인한 GC 부하 및 힙 메모리 소진. 보안(자원 고갈) 및 성능 교차 영역",
         "aliases":               ["Memory Leak", "메모리 누수"],
-        "security_mechanisms":   ["명시적 리소스 해제", "컨텍스트 매니저 사용"],
+        "security_mechanism":   ["명시적 리소스 해제", "컨텍스트 매니저 사용"],
         "affected_components":   ["힙 메모리", "GC"],
         "config_properties":     [],
         "root_cause":            "객체 참조 순환 또는 명시적 해제 누락",
@@ -298,7 +298,7 @@ _MOCK_CONCEPTS: list[dict] = [
         "severity":              "high",
         "description_ko":        "크로스 사이트 요청 위조 방어 — CSRF 토큰 기반 상태 변경 요청 검증",
         "aliases":               ["CSRF Token", "CSRF 방어"],
-        "security_mechanisms":   ["SameSiteCookie", "CSRFToken"],
+        "security_mechanism":   ["SameSiteCookie", "CSRFToken"],
         "affected_components":   ["세션 관리", "인증 모듈"],
         "config_properties":     [{"key": "CSRF_COOKIE_SECURE", "value": "True"}],
         "root_cause":            "요청 출처 검증 미적용",
