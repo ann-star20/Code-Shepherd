@@ -1,0 +1,1334 @@
+# Request Prompt — https://docs.djangoproject.com/en/6.0/ref/csrf/
+# framework=Django  lang=KO
+# chunks=1
+
+# [구조] Gemini 단일 user turn — system message/user message 분리 없음
+# 구성: 역할·지시 + 스키마 명세 + --- 문서 청크 ---
+
+============================================================
+=== CHUNK 0  (len=14,447자) ===
+============================================================
+
+당신은 공식 문서 분석가이자 Neo4j 지식 그래프 아키텍트입니다.
+아래 문서 청크(Django, KO)를 분석하여 핵심 개념을 Neo4j 그래프로 적재할 수 있는 JSON 배열로만 응답하라.
+
+## Neo4j 그래프 매핑 — 필드별 노드·엣지 생성 규칙
+
+각 JSON 항목은 Concept 노드 1개로 MERGE된다. concept_name이 MERGE 키이다.
+
+  "concept_name"  →  MERGE (c:Concept {name: concept_name})
+      + APOC addLabels: domains 배열의 각 값 capitalize → 물리 다중 라벨 누적
+        예) domains=["security","performance"] → :Concept:Security:Performance
+      ★ 동일 개념이 여러 문서에 등장해도 같은 이름이면 단일 노드로 병합
+        → 영문 표준 식별자 사용 (XSS, SQLi, CsrfViewMiddleware 등)
+
+  "aliases"  →  Link Resolver가 aliases 교집합으로 (c1)-[:SAME_AS]-(c2) 생성
+      → 공식 명칭·약어·별칭 모두 포함 (SAME_AS 탐색 정확도 결정)
+
+  "security_mechanisms"  →  MERGE (m:SecurityMechanism {name: each})
+      (c)-[:MITIGATED_BY]->(m)
+      → 재사용 가능한 표준 명칭 (예: "CSRFToken", "SameSiteCookie", "RateLimit")
+
+  "affected_components"  →  MERGE (x:Component {name: each})
+      (c)-[:AFFECTS]->(x)
+      → 구체적 경로·컴포넌트명 (예: "django.middleware.csrf", "HTML 폼", "세션 쿠키")
+
+  "root_cause"  →  MERGE (r:RootCause {name: root_cause})
+      (c)-[:CAUSED_BY]->(r)
+      → 단일 문자열로 작성 (list 반환 금지)
+
+  "config_properties"  →  MERGE (p:ConfigProperty {key}) SET p.value
+      (c)-[:CONFIGURED_BY]->(p)
+      → 반드시 {"key": str, "value": str} 형식 준수
+
+  "code_examples"  →  MERGE (e:CodeExample {concept_name, lang, framework})
+      (c)-[:HAS_EXAMPLE]->(e)
+      → {"lang": str, "framework": str, "code": str} 형식
+
+## 스키마
+
+필수:
+  "concept_name": str  — 영문 표준 식별자 (MERGE 키, 문서 내 실제 개념만)
+  "domains": list[str]  — 허용값: "security", "performance"
+    교차 도메인 허용. "both" 사용 금지. 미등록 도메인은 그대로 포함.
+  "severity": "critical"|"high"|"medium"|"low"
+  "description_ko": str  — 한국어 설명 (1~3문장)
+
+선택:
+  "concept_type": "vulnerability_root_cause"|"security_mechanism"|"attack_vector"|"compliance_control"
+  "cwe_id": str,  "owasp_id": str
+  "aliases": list[str]
+  "security_mechanisms": list[str]
+  "affected_components": list[str]
+  "config_properties": list[{"key": str, "value": str}]
+  "root_cause": str
+  "code_examples": list[{"lang": str, "framework": str, "code": str}]
+
+출력: JSON 배열만 반환 (```json``` 마크다운 허용, 설명 텍스트 금지)
+
+---
+Cross Site Request Forgery protection | Django documentation | Django
+
+
+
+
+
+
+
+
+
+
+Skip to main content
+
+
+
+
+
+
+Django
+
+
+The web framework for perfectionists with deadlines.
+
+
+
+
+
+
+Menu
+
+
+
+
+
+
+
+
+
+
+
+
+Search
+
+
+
+
+
+
+
+
+
+
+Submit
+
+
+
+
+
+
+
+
+
+
+Toggle theme (current theme: auto)
+
+
+Toggle theme (current theme: light)
+
+
+Toggle theme (current theme: dark)
+
+
+Toggle Light / Dark / Auto color theme
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+Documentation
+
+
+
+
+
+
+
+
+
+
+Django Developer Survey
+
+    The Django Software Foundation is once again partnering with JetBrains to run the 2026 Django Developer Survey 📊 Help us better understand how Django is being used around the world and guide future technical and community decisions. 
+Read more on the Django blog
+.
+
+
+Take the survey ✨
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+Getting Help
+
+
+
+
+
+
+
+
+
+
+
+
+Language: 
+en
+
+
+
+
+
+
+zh-hans
+
+
+
+
+
+
+sv
+
+
+
+
+
+
+pt-br
+
+
+
+
+
+
+pl
+
+
+
+
+
+
+ko
+
+
+
+
+
+
+ja
+
+
+
+
+
+
+it
+
+
+
+
+
+
+id
+
+
+
+
+
+
+fr
+
+
+
+
+
+
+es
+
+
+
+
+
+
+el
+
+
+
+
+
+
+
+
+
+
+Documentation version:
+          
+6.0
+
+
+
+
+
+
+
+
+dev
+
+
+
+
+
+
+6.1
+
+
+
+
+
+
+5.2
+
+
+
+
+
+
+5.1
+
+
+
+
+
+
+5.0
+
+
+
+
+
+
+4.2
+
+
+
+
+
+
+4.1
+
+
+
+
+
+
+4.0
+
+
+
+
+
+
+3.2
+
+
+
+
+
+
+3.1
+
+
+
+
+
+
+3.0
+
+
+
+
+
+
+2.2
+
+
+
+
+
+
+2.1
+
+
+
+
+
+
+2.0
+
+
+
+
+
+
+1.11
+
+
+
+
+
+
+1.10
+
+
+
+
+
+
+1.8
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+Cross Site Request Forgery protection
+¶
+
+
+The CSRF middleware and template tag provides easy-to-use protection against
+
+Cross Site Request Forgeries
+. This type of attack occurs when a malicious
+website contains a link, a form button or some JavaScript that is intended to
+perform some action on your website, using the credentials of a logged-in user
+who visits the malicious site in their browser. A related type of attack,
+‘login CSRF’, where an attacking site tricks a user’s browser into logging into
+a site with someone else’s credentials, is also covered.
+
+
+The first defense against CSRF attacks is to ensure that GET requests (and
+other ‘safe’ methods, as defined by 
+RFC 9110 Section 9.2.1
+) are side effect
+free. Requests via ‘unsafe’ methods, such as POST, PUT, and DELETE, can then be
+protected by the steps outlined in 
+How to use Django’s CSRF protection
+.
+
+
+
+
+How it works
+¶
+
+
+The CSRF protection is based on the following things:
+
+
+
+
+A CSRF cookie that is a random secret value, which other sites will not have
+access to.
+
+
+CsrfViewMiddleware
+ sends this cookie with the response whenever
+
+django.middleware.csrf.get_token()
+ is called. It can also send it in
+other cases. For security reasons, the value of the secret is changed each
+time a user logs in.
+
+
+
+
+A hidden form field with the name ‘csrfmiddlewaretoken’, present in all
+outgoing POST forms.
+
+
+In order to protect against 
+BREACH
+ attacks, the value of this field is
+not simply the secret. It is scrambled differently with each response using
+a mask. The mask is generated randomly on every call to 
+get_token()
+, so
+the form field value is different each time.
+
+
+This part is done by the 
+csrf_token
+ template tag.
+
+
+
+
+For all incoming requests that are not using HTTP GET, HEAD, OPTIONS or
+TRACE, a CSRF cookie must be present, and the ‘csrfmiddlewaretoken’ field
+must be present and correct. If it isn’t, the user will get a 403 error.
+
+
+When validating the ‘csrfmiddlewaretoken’ field value, only the secret,
+not the full token, is compared with the secret in the cookie value.
+This allows the use of ever-changing tokens. While each request may use its
+own token, the secret remains common to all.
+
+
+This check is done by 
+CsrfViewMiddleware
+.
+
+
+
+
+CsrfViewMiddleware
+ verifies the 
+Origin header
+, if provided by the
+browser, against the current host and the 
+CSRF_TRUSTED_ORIGINS
+
+setting. This provides protection against cross-subdomain attacks.
+
+
+In addition, for HTTPS requests, if the 
+Origin
+ header isn’t provided,
+
+CsrfViewMiddleware
+ performs strict referer checking. This means that
+even if a subdomain can set or modify cookies on your domain, it can’t force
+a user to post to your application since that request won’t come from your
+own exact domain.
+
+
+This also addresses a man-in-the-middle attack that’s possible under HTTPS
+when using a session independent secret, due to the fact that HTTP
+
+Set-Cookie
+ headers are (unfortunately) accepted by clients even when
+they are talking to a site under HTTPS. (Referer checking is not done for
+HTTP requests because the presence of the 
+Referer
+ header isn’t reliable
+enough under HTTP.)
+
+
+If the 
+CSRF_COOKIE_DOMAIN
+ setting is set, the referer is compared
+against it. You can allow cross-subdomain requests by including a leading
+dot. For example, 
+CSRF_COOKIE_DOMAIN
+ 
+=
+ 
+'.example.com'
+ will allow POST
+requests from 
+www.example.com
+ and 
+api.example.com
+. If the setting is
+not set, then the referer must match the HTTP 
+Host
+ header.
+
+
+Expanding the accepted referers beyond the current host or cookie domain can
+be done with the 
+CSRF_TRUSTED_ORIGINS
+ setting.
+
+
+
+
+
+
+This ensures that only forms that have originated from trusted domains can be
+used to POST data back.
+
+
+It deliberately ignores GET requests (and other requests that are defined as
+‘safe’ by 
+RFC 9110 Section 9.2.1
+). These requests ought never to have any
+potentially dangerous side effects, and so a CSRF attack with a GET request
+ought to be harmless. 
+RFC 9110 Section 9.2.1
+ defines POST, PUT, and DELETE
+as ‘unsafe’, and all other methods are also assumed to be unsafe, for maximum
+protection.
+
+
+The CSRF protection cannot protect against man-in-the-middle attacks, so use
+
+HTTPS
+ with
+
+HTTP Strict Transport Security
+. It also assumes 
+validation of
+the HOST header
+ and that there aren’t any
+
+cross-site scripting vulnerabilities
+ on your site
+(because XSS vulnerabilities already let an attacker do anything a CSRF
+vulnerability allows and much worse).
+
+
+
+
+Removing the 
+Referer
+ header
+
+
+To avoid disclosing the referrer URL to third-party sites, you might want
+to 
+disable the referer
+ on your site’s 
+<a>
+ tags. For example, you
+might use the 
+<meta
+ 
+name="referrer"
+ 
+content="no-referrer">
+ tag or
+include the 
+Referrer-Policy:
+ 
+no-referrer
+ header. Due to the CSRF
+protection’s strict referer checking on HTTPS requests, those techniques
+cause a CSRF failure on requests with ‘unsafe’ methods. Instead, use
+alternatives like 
+<a
+ 
+rel="noreferrer"
+ 
+...>"
+ for links to third-party
+sites.
+
+
+
+
+
+
+
+
+Limitations
+¶
+
+
+Subdomains within a site will be able to set cookies on the client for the
+whole domain. By setting the cookie and using a corresponding token, subdomains
+will be able to circumvent the CSRF protection. The only way to avoid this is
+to ensure that subdomains are controlled by trusted users (or, are at least
+unable to set cookies). Note that even without CSRF, there are other
+vulnerabilities, such as session fixation, that make giving subdomains to
+untrusted parties a bad idea, and these vulnerabilities cannot easily be fixed
+with current browsers.
+
+
+
+
+
+
+Utilities
+¶
+
+
+The examples below assume you are using function-based views. If you
+are working with class-based views, you can refer to 
+Decorating
+class-based views
+.
+
+
+
+
+
+
+csrf_exempt
+(
+view
+)
+[source]
+¶
+
+
+This decorator marks a view as being exempt from the protection ensured by
+the middleware. Example:
+
+
+from
+ 
+django.http
+ 
+import
+ 
+HttpResponse
+
+
+from
+ 
+django.views.decorators.csrf
+ 
+import
+ 
+csrf_exempt
+
+
+
+
+@csrf_exempt
+
+
+def
+ 
+my_view
+(
+request
+):
+
+    
+return
+ 
+HttpResponse
+(
+"Hello world"
+)
+
+
+
+
+
+
+
+
+
+
+
+
+csrf_protect
+(
+view
+)
+¶
+
+
+Decorator that provides the protection of
+
+CsrfViewMiddleware
+ to a view.
+
+
+Usage:
+
+
+from
+ 
+django.shortcuts
+ 
+import
+ 
+render
+
+
+from
+ 
+django.views.decorators.csrf
+ 
+import
+ 
+csrf_protect
+
+
+
+
+@csrf_protect
+
+
+def
+ 
+my_view
+(
+request
+):
+
+    
+c
+ 
+=
+ 
+{}
+
+    
+# ...
+
+    
+return
+ 
+render
+(
+request
+,
+ 
+"a_template.html"
+,
+ 
+c
+)
+
+
+
+
+
+
+
+
+
+
+
+
+requires_csrf_token
+(
+view
+)
+¶
+
+
+Normally the 
+csrf_token
+ template tag will not work if
+
+CsrfViewMiddleware.process_view
+ or an equivalent like 
+csrf_protect
+
+has not run. The view decorator 
+requires_csrf_token
+ can be used to
+ensure the template tag does work. This decorator works similarly to
+
+csrf_protect
+, but never rejects an incoming request.
+
+
+Example:
+
+
+from
+ 
+django.shortcuts
+ 
+import
+ 
+render
+
+
+from
+ 
+django.views.decorators.csrf
+ 
+import
+ 
+requires_csrf_token
+
+
+
+
+@requires_csrf_token
+
+
+def
+ 
+my_view
+(
+request
+):
+
+    
+c
+ 
+=
+ 
+{}
+
+    
+# ...
+
+    
+return
+ 
+render
+(
+request
+,
+ 
+"a_template.html"
+,
+ 
+c
+)
+
+
+
+
+
+
+
+
+
+
+
+
+ensure_csrf_cookie
+(
+view
+)
+¶
+
+
+This decorator forces a view to send the CSRF cookie.
+
+
+
+
+
+
+
+
+Settings
+¶
+
+
+A number of settings can be used to control Django’s CSRF behavior:
+
+
+
+
+CSRF_COOKIE_AGE
+
+
+CSRF_COOKIE_DOMAIN
+
+
+CSRF_COOKIE_HTTPONLY
+
+
+CSRF_COOKIE_NAME
+
+
+CSRF_COOKIE_PATH
+
+
+CSRF_COOKIE_SAMESITE
+
+
+CSRF_COOKIE_SECURE
+
+
+CSRF_FAILURE_VIEW
+
+
+CSRF_HEADER_NAME
+
+
+CSRF_TRUSTED_ORIGINS
+
+
+CSRF_USE_SESSIONS
+
+
+
+
+
+
+
+
+Frequently Asked Questions
+¶
+
+
+
+
+Is posting an arbitrary CSRF token pair (cookie and POST data) a vulnerability?
+¶
+
+
+No, this is by design. Without a man-in-the-middle attack, there is no way for
+an attacker to send a CSRF token cookie to a victim’s browser, so a successful
+attack would need to obtain the victim’s browser’s cookie via XSS or similar,
+in which case an attacker usually doesn’t need CSRF attacks.
+
+
+Some security audit tools flag this as a problem but as mentioned before, an
+attacker cannot steal a user’s browser’s CSRF cookie. “Stealing” or modifying
+
+your own
+ token using Firebug, Chrome dev tools, etc. isn’t a vulnerability.
+
+
+
+
+
+
+Is it a problem that Django’s CSRF protection isn’t linked to a session by default?
+¶
+
+
+No, this is by design. Not linking CSRF protection to a session allows using
+the protection on sites such as a 
+pastebin
+ that allow submissions from
+anonymous users which don’t have a session.
+
+
+If you wish to store the CSRF token in the user’s session, use the
+
+CSRF_USE_SESSIONS
+ setting.
+
+
+
+
+
+
+Why might a user encounter a CSRF validation failure after logging in?
+¶
+
+
+For security reasons, CSRF tokens are rotated each time a user logs in. Any
+page with a form generated before a login will have an old, invalid CSRF token
+and need to be reloaded. This might happen if a user uses the back button after
+a login or if they log in a different browser tab.
+
+
+
+
+
+
+
+
+
+
+
+
+ Back to Top
+
+
+
+
+
+
+Additional Information
+
+
+
+
+Support Django!
+
+
+
+
+
+
+
+
+
+
+
+
+
+          Saqibur Rahman donated to the Django Software Foundation to support Django development. Donate today!
+        
+
+
+
+
+
+
+
+
+Contents
+
+
+
+
+Cross Site Request Forgery protection
+
+
+How it works
+
+
+Limitations
+
+
+Utilities
+
+
+Settings
+
+
+Frequently Asked Questions
+
+
+Is posting an arbitrary CSRF token pair (cookie and POST data) a vulnerability?
+
+
+Is it a problem that Django’s CSRF protection isn’t linked to a session by default?
+
+
+Why might a user encounter a CSRF validation failure after logging in?
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+Getting help
+
+
+
+
+FAQ
+
+
+Try the FAQ — it's got answers to many common questions.
+
+
+Index
+, 
+Module Index
+, or 
+Table of Contents
+
+
+Handy when looking for specific information.
+
+
+Django Discord Server
+
+
+Join the Django Discord Community.
+
+
+Official Django Forum
+
+
+Join the community on the Django Forum.
+
+
+Ticket tracker
+
+
+Report bugs with Django or Django documentation in our ticket tracker.
+
+
+
+
+
+
+
+
+Download:
+
+
+
+          Offline (Django 6.0):
+          
+HTML
+ |
+          
+PDF
+ |
+          
+ePub
+
+
+
+
+
+            Provided by 
+Read the Docs
+.
+          
+
+
+
+
+
+
+
+
+Diamond and Platinum Members
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+Sentry
+
+
+
+              Monitor your Django Code
+Resolve performance bottlenecks and errors using monitoring, replays, logs and Seer an AI agent for debugging.
+            
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+JetBrains
+
+
+
+              JetBrains delivers intelligent software solutions that make developers more productive by simplifying their challenging tasks, automating the routine, and helping them adopt the best development practices. PyCharm is the Python IDE for Professional Developers by JetBrains providing a complete set of tools for productive Python, Web and scientific development.
+            
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+Kraken Tech
+
+
+
+              Kraken is the most-loved operating system for energy. Powered by our Utility-Grade AI™ and deep industry know-how, we help utilities transform their technology and operations so they can lead the energy transition. Delivering better outcomes from generation through distribution to supply, Kraken powers 70+ million accounts worldwide, and is on a mission to make a big, green dent in the universe.
+---
+

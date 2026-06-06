@@ -12,13 +12,13 @@ def test_extractor_schema_validation_security():
         domains=["security"],
         concept_type="vulnerability_root_cause",
         cwe_id="CWE-79",
-        severity="HIGH",
+        severity="high",
         description_ko="크로스 사이트 스크립팅 취약점",
         aliases=["Cross-Site Scripting"],
     )
     assert "security" in schema.domains
     assert "both" not in schema.domains
-    assert schema.severity == "HIGH"
+    assert schema.severity == "high"
 
 
 def test_extractor_schema_validation_performance():
@@ -30,7 +30,7 @@ def test_extractor_schema_validation_performance():
         description_ko="ORM N+1 쿼리 성능 문제",
     )
     assert schema.domains == ["performance"]
-    assert schema.severity == "HIGH"
+    assert schema.severity == "high"
 
 
 def test_extractor_schema_validation_cross_domain():
@@ -38,7 +38,7 @@ def test_extractor_schema_validation_cross_domain():
     schema = ConceptExtractionSchema(
         concept_name="MemoryLeak",
         domains=["security", "performance"],
-        severity="HIGH",
+        severity="high",
         description_ko="메모리 누수",
     )
     assert "both" not in schema.domains
@@ -51,7 +51,7 @@ def test_extractor_schema_empty_domains_raises():
         ConceptExtractionSchema(
             concept_name="XSS",
             domains=[],
-            severity="HIGH",
+            severity="high",
             description_ko="테스트",
         )
 
@@ -72,7 +72,7 @@ def test_extractor_schema_optional_fields_default():
     schema = ConceptExtractionSchema(
         concept_name="SQLi",
         domains=["security"],
-        severity="CRITICAL",
+        severity=critical,
         description_ko="SQL 인젝션",
     )
     assert schema.aliases == []

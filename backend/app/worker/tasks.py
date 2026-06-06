@@ -89,7 +89,7 @@ async def _do_crawl(url: str) -> tuple:
     from app.infrastructure.crawler import http_crawler
     async with aiohttp.ClientSession() as session:
         result = await http_crawler.fetch(url, session)
-    return result, http_crawler.chunk(result.content)
+    return result, http_crawler.smart_chunk(result)
 
 
 # ── 2단계: Extractor ──────────────────────────────────────────────────────────
@@ -118,14 +118,20 @@ async def _do_extract(session_id: str, doc_id: str, chunks: list[str]) -> None:
     from app.usecases.write_staging_draft import write_staging_draft
 
     app_mode = os.getenv("APP_MODE", "development")
-    client = create_llm_client(app_mode, api_key=os.getenv("GEMINI_API_KEY", ""))
+    client = create_llm_client(
+        app_mode,
+        api_key=os.getenv("GEMINI_API_KEY", ""),
+        model=os.getenv("GEMINI_MODEL", "gemini-2.5-flash"),
+    )
 
     pool = await asyncpg.create_pool(_pg_async_dsn(), min_size=1, max_size=2, ssl=False)
     try:
         async with pool.acquire() as db_conn:
             registered = await get_registered_domains(db_conn)
             all_concepts = []
-            for chunk in chunks:
+            for i, chunk in enumerate(chunks):
+                if i > 0:
+                    await asyncio.sleep(4)  # 무료 티어 20 req/min → 청크 간 4초 간격
                 concepts = await client.extract_concepts(chunk, doc_id, {})
                 all_concepts.extend(concepts)
             await write_staging_draft(session_id, doc_id, all_concepts, db_conn, registered)
@@ -141,12 +147,8 @@ def write_graph_task(self, session_id: str, doc_id: str):
     conn = _pg_conn()
     try:
         _log(conn, doc_id, session_id, "Writer", "INFO", "그래프 적재 시작")
-        if os.getenv("APP_MODE", "development") == "mock":
-            asyncio.run(_do_mock_commit(session_id))
-            _log(conn, doc_id, session_id, "Writer", "INFO", "그래프 적재 완료 (mock)")
-        else:
-            asyncio.run(_do_write_graph(session_id))
-            _log(conn, doc_id, session_id, "Writer", "INFO", "그래프 적재 완료")
+        asyncio.run(_do_write_graph(session_id))
+        _log(conn, doc_id, session_id, "Writer", "INFO", "그래프 적재 완료")
         resolve_links_task.delay(session_id=session_id, doc_id=doc_id)
     except Exception as exc:
         _log(conn, doc_id, session_id, "Writer", "ERROR", str(exc))
@@ -154,20 +156,6 @@ def write_graph_task(self, session_id: str, doc_id: str):
         raise self.retry(exc=exc, countdown=60)
     finally:
         conn.close()
-
-
-async def _do_mock_commit(session_id: str) -> None:
-    """mock 모드: Neo4j 없이 APPROVED → COMMITTED 직접 전이."""
-    pool = await asyncpg.create_pool(_pg_async_dsn(), min_size=1, max_size=2, ssl=False)
-    try:
-        async with pool.acquire() as db_conn:
-            await db_conn.execute(
-                "UPDATE staging_concepts SET state='COMMITTED', committed_at=now() "
-                "WHERE session_id=$1::uuid AND state='APPROVED'",
-                session_id,
-            )
-    finally:
-        await pool.close()
 
 
 async def _do_write_graph(session_id: str) -> None:
@@ -188,7 +176,9 @@ async def _do_write_graph(session_id: str) -> None:
                 session_id,
             )
             for row in rows:
-                concept = ConceptExtractionSchema(**row["concept_json"])
+                raw = row["concept_json"]
+                data = json.loads(raw) if isinstance(raw, str) else dict(raw)
+                concept = ConceptExtractionSchema(**data)
                 await write_concept_node(concept, driver)
                 await db_conn.execute(
                     "UPDATE staging_concepts SET state='COMMITTED', committed_at=now() "
@@ -208,10 +198,6 @@ def resolve_links_task(self, session_id: str, doc_id: str):
     conn = _pg_conn()
     try:
         _log(conn, doc_id, session_id, "Resolver", "INFO", "링크 리졸버 시작")
-        if os.getenv("APP_MODE", "development") == "mock":
-            _set_state(conn, doc_id, "COMMITTED")
-            _log(conn, doc_id, session_id, "Resolver", "INFO", "파이프라인 완료 (mock)")
-            return
         same_as_total, _ = asyncio.run(_do_resolve_links(session_id))
         _set_state(conn, doc_id, "COMMITTED")
         _log(conn, doc_id, session_id, "Resolver", "INFO",

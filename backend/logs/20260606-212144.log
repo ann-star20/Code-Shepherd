@@ -1,0 +1,51 @@
+
+🚀  Pipeline E2E Test
+    target : https://docs.djangoproject.com/en/6.0/topics/security/
+    backend: http://localhost:8000
+    log    : C:\Users\snnys\ai-workspace\Code-Shepherd\backend\logs\20260606-212144.log
+
+───────────────────────────────────────────────────────
+  STEP 1 — URL 등록
+───────────────────────────────────────────────────────
+
+✔  기존 문서 재사용 (state=FAILED)
+   doc_id: EXT_https---docs-djangoproject-com-en-6-0-topics-security_32450f22
+   state: FAILED
+   url: https://docs.djangoproject.com/en/6.0/topics/security/
+   ℹ  이전 실행이 실패한 문서입니다. 트리거 API가 재실행합니다.
+
+───────────────────────────────────────────────────────
+  STEP 2 — Pre-scan (메타 추론)
+───────────────────────────────────────────────────────
+
+✔  Pre-scan 결과
+   framework: Django
+   version: 6.0
+   lang: EN
+   confidence: 0.9
+   status: auto
+
+───────────────────────────────────────────────────────
+  STEP 3 — 파이프라인 트리거
+───────────────────────────────────────────────────────
+
+✔  트리거 완료
+   session_id: 2a6230a3-65fd-4d0a-be17-cb2352cd8a5c
+   message: 파이프라인이 시작되었습니다.
+
+───────────────────────────────────────────────────────
+  STEP 4 — 파이프라인 로그 폴링
+───────────────────────────────────────────────────────
+   [Input     ] INFO   파이프라인 트리거됨
+   ── doc_state: CRAWLING
+   [Crawler   ] INFO   크롤링 시작: https://docs.djangoproject.com/en/6.0/topics/security/
+   [Crawler   ] INFO   크롤링 완료 — 1 청크
+   [Extractor ] INFO   LLM 추출 시작 — 1 청크
+   [Extractor ] INFO   추출 완료 — staging 적재 완료
+   ── doc_state: EXTRACTED
+   ── HITL 게이트 감지 — 자동 승인 + 커밋 트리거
+   [Writer    ] INFO   그래프 적재 시작
+   [Writer    ] ERROR  app.domain.models.ConceptExtractionSchema() argument after ** must be a mapping, not str
+   ── doc_state: FAILED
+
+❌  파이프라인 종료 상태: FAILED

@@ -138,7 +138,7 @@ class ConceptExtractionSchema(BaseModel):
     concept_type: str
     cwe_id: str | None = None
     owasp_category: str | None = None
-    severity: Literal["CRITICAL","HIGH","MEDIUM","LOW"] | None = None
+    severity: Literal["critical","high","medium","low"] | None = None
     security_mechanisms: list[str] = []
     affected_components: list[str] = []
     config_properties: list[dict] = []

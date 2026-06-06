@@ -52,21 +52,21 @@ def test_factory_default_returns_mock():
 
 
 def test_parse_json_safely_valid_list():
-    raw = '[{"concept_name": "XSS", "severity": "HIGH"}]'
+    raw = '[{"concept_name": "XSS", "severity": "high"}]'
     result = _parse_json_safely(raw)
     assert isinstance(result, list)
     assert result[0]["concept_name"] == "XSS"
 
 
 def test_parse_json_safely_single_object_to_list():
-    raw = '{"concept_name": "SQLi", "severity": "CRITICAL"}'
+    raw = '{"concept_name": "SQLi", "severity": critical}'
     result = _parse_json_safely(raw)
     assert isinstance(result, list)
     assert len(result) == 1
 
 
 def test_parse_json_safely_markdown_wrapped():
-    raw = '```json\n[{"concept_name": "CSRF", "severity": "HIGH"}]\n```'
+    raw = '```json\n[{"concept_name": "CSRF", "severity": "high"}]\n```'
     result = _parse_json_safely(raw)
     assert result[0]["concept_name"] == "CSRF"
 

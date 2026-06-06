@@ -110,7 +110,7 @@ def test_T02_staging_concept_json_stored(pg_cursor):
     concept = {
         "concept_name": "XSS",
         "concept_domain": "security",
-        "severity": "HIGH",
+        "severity": "high",
         "cwe_id": "CWE-79",
     }
 
@@ -238,7 +238,7 @@ def test_T05_concept_snapshots_jsonb(pg_cursor):
     _apply_schema(pg_cursor)
     doc_id = _insert_doc(pg_cursor, f"EXT_snap_{uuid.uuid4().hex[:8]}")
 
-    raw = {"concept_name": "MemoryLeak", "concept_domain": "both", "severity": "HIGH"}
+    raw = {"concept_name": "MemoryLeak", "concept_domain": "both", "severity": "high"}
     pg_cursor.execute(
         "INSERT INTO concept_snapshots (doc_id, session_id, raw_output_json) VALUES (%s,%s,%s) RETURNING id",
         (doc_id, str(uuid.uuid4()), json.dumps(raw)),

@@ -192,7 +192,7 @@ def test_extractor_array_schema_validation():
         "domains": ["security", "performance"], # 배열 형태 검증
         "concept_type": "vulnerability_root_cause",
         "cwe_id": "CWE-401",
-        "severity": "HIGH",
+        "severity": "high",
         "description_ko": "메모리 누수 결함",
         "aliases": ["Memory Leak", "메모리 누수"],
     }

@@ -10,7 +10,7 @@ source_of_truth:
 ```typescript
 export type ConceptDomain = "security" | "performance" | "both"
 export type NodeStatus = "DRAFT" | "APPROVED" | "COMMITTED" | "REJECTED"
-export type Severity = "CRITICAL" | "HIGH" | "MEDIUM" | "LOW"
+export type Severity = "critical" | "high" | "medium" | "low"
 
 export interface ConceptNode {
   id: string

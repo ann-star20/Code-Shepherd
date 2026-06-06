@@ -11,10 +11,10 @@ interface ConceptInspectorProps {
 }
 
 const SEVERITY_CLASS: Record<Severity, string> = {
-  CRITICAL: "text-red-600 font-semibold",
-  HIGH: "text-orange-500 font-semibold",
-  MEDIUM: "text-yellow-500",
-  LOW: "text-green-600",
+  critical: "text-red-600 font-semibold",
+  high: "text-orange-500 font-semibold",
+  medium: "text-yellow-500",
+  low: "text-green-600",
 };
 
 export function ConceptInspector({

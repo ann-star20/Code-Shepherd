@@ -1,1 +1,9 @@
 mkdir -p backend && touch backend/A0_domain_model.md backend/A1_llm_mock_client.md backend/A2_db_schema_seed.md backend/A3_pipeline_core.md backend/A4_approval_gate.md backend/A5_ci_cd_pipeline.md
+
+
+1. 컨테이너 재기동 (neo4j 포함)
+docker compose -f docker-compose.yml -f docker-compose.mock.yml up postgres redis neo4j backend celery_worker
+
+2. E2E 테스트 실행
+python backend/scripts/test_pipeline_flow.py --url "https://docs.djangoproject.com/en/6.0/ref/csrf/"
+

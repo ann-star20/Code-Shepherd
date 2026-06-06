@@ -32,7 +32,7 @@ def _make_concept_json(name: str) -> str:
     return json.dumps({
         "concept_name": name,
         "domains": ["security"],
-        "severity": "HIGH",
+        "severity": "high",
         "description_ko": "테스트",
         "aliases": [],
     })

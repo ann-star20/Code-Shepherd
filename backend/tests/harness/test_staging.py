@@ -29,7 +29,7 @@ async def _setup_session(conn, session_id: str, n_concepts: int = 3) -> str:
         cj = json.dumps({
             "concept_name": name,
             "domains": ["security"],
-            "severity": "HIGH",
+            "severity": "high",
             "description_ko": "테스트 개념",
             "aliases": [],
         })

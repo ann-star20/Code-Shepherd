@@ -38,7 +38,7 @@ async def commit_staging(
             concept = ConceptExtractionSchema(**data)
 
             # concepts.severity CHECK: lowercase (critical/high/medium/low)
-            sev = (concept.severity if concept.severity != "INFO" else "LOW").lower()
+            sev = "low" if concept.severity == "info" else concept.severity
 
             await conn.execute(
                 """INSERT INTO concepts

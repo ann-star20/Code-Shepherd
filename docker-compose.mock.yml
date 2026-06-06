@@ -1,28 +1,50 @@
-# Neo4j 없이 기동하는 오버라이드 (mock/production 공용)
+# 로컬 개발 오버라이드 — mock LLM + 실제 Neo4j/PostgreSQL
 #
-# mock 모드 (기본값): LLM 호출 없음, MockClient 사용
-#   docker compose -f docker-compose.yml -f docker-compose.mock.yml up postgres redis backend celery_worker
+# mock 모드 (기본값): MockClient 사용, Neo4j는 실제 연결
+#   docker compose -f docker-compose.yml -f docker-compose.mock.yml up postgres redis neo4j backend celery_worker
 #
 # production 모드: 실제 Gemini 호출
-#   APP_MODE=production GEMINI_API_KEY=AIza... docker compose -f docker-compose.yml -f docker-compose.mock.yml up postgres redis backend celery_worker
+#   APP_MODE=production GEMINI_API_KEY=AIza... docker compose -f docker-compose.yml -f docker-compose.mock.yml up postgres redis neo4j backend celery_worker
 
 services:
   backend:
+    volumes:
+      - ./backend:/app   # 로컬 코드 실시간 반영 (uvicorn --reload 적용)
     environment:
       APP_MODE: ${APP_MODE:-mock}
       GEMINI_API_KEY: ${GEMINI_API_KEY:-}
+      GEMINI_MODEL: ${GEMINI_MODEL:-gemini-2.5-flash}
+      LANGCHAIN_TRACING_V2: ${LANGCHAIN_TRACING_V2:-false}
+      LANGCHAIN_API_KEY: ${LANGCHAIN_API_KEY:-}
+      LANGCHAIN_PROJECT: ${LANGCHAIN_PROJECT:-code-shepherd}
+      NEO4J_URI: bolt://neo4j:7687
+      NEO4J_USER: neo4j
+      NEO4J_PASSWORD: pass1234!
     depends_on:
       postgres:
         condition: service_healthy
       redis:
+        condition: service_healthy
+      neo4j:
         condition: service_healthy
 
   celery_worker:
+    volumes:
+      - ./backend:/app   # 로컬 코드 실시간 반영
     environment:
       APP_MODE: ${APP_MODE:-mock}
       GEMINI_API_KEY: ${GEMINI_API_KEY:-}
+      GEMINI_MODEL: ${GEMINI_MODEL:-gemini-2.5-flash}
+      LANGCHAIN_TRACING_V2: ${LANGCHAIN_TRACING_V2:-false}
+      LANGCHAIN_API_KEY: ${LANGCHAIN_API_KEY:-}
+      LANGCHAIN_PROJECT: ${LANGCHAIN_PROJECT:-code-shepherd}
+      NEO4J_URI: bolt://neo4j:7687
+      NEO4J_USER: neo4j
+      NEO4J_PASSWORD: pass1234!
     depends_on:
       postgres:
         condition: service_healthy
       redis:
+        condition: service_healthy
+      neo4j:
         condition: service_healthy

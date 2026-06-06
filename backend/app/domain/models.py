@@ -54,6 +54,23 @@ class ConceptExtractionSchema(BaseModel):
     affected_components: list[str] = []
     config_properties: list[dict] = []
     root_cause: str | None = None
+    code_examples: list[dict] = []   # [{lang, framework, code}, ...]
+
+    @field_validator("config_properties", mode="before")
+    @classmethod
+    def normalize_config_properties(cls, v: object) -> list[dict]:
+        """Gemini가 list[str] 반환 시 {"key": value} dict로 변환."""
+        if not isinstance(v, list):
+            return []
+        return [{"key": item} if isinstance(item, str) else item for item in v]
+
+    @field_validator("root_cause", mode="before")
+    @classmethod
+    def normalize_root_cause(cls, v: object) -> str | None:
+        """Gemini가 list[str] 반환 시 쉼표 구분 문자열로 합침."""
+        if isinstance(v, list):
+            return ", ".join(str(i) for i in v if i)
+        return v
 
     @field_validator("domains")
     @classmethod
@@ -67,10 +84,11 @@ class ConceptExtractionSchema(BaseModel):
     @field_validator("severity")
     @classmethod
     def severity_must_be_valid(cls, v: str) -> str:
-        allowed = {"CRITICAL", "HIGH", "MEDIUM", "LOW", "INFO"}
-        if v.upper() not in allowed:
+        allowed = {"critical", "high", "medium", "low", "info"}
+        v_clean = v.strip().lower()
+        if v_clean not in allowed:
             raise ValueError(f"severity must be one of {allowed}, got '{v}'")
-        return v.upper()
+        return v_clean
 
 
 # ── 마스터 키 생성 ──────────────────────────────────────────────────────────

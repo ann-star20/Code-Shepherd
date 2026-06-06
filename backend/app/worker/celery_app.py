@@ -1,7 +1,10 @@
 """Celery 앱 설정."""
 
+import logging
 import os
 from celery import Celery
+
+logging.basicConfig(level=logging.INFO, format="%(name)s | %(levelname)s | %(message)s")
 
 broker = os.getenv("CELERY_BROKER_URL", "redis://localhost:6379/0")
 backend = os.getenv("CELERY_RESULT_BACKEND", "redis://localhost:6379/1")

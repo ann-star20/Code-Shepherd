@@ -1,0 +1,2 @@
+# Mock 모드 — LLM 원문 응답 없음
+# mock_client.py의 _MOCK_CONCEPTS 고정값이 반환됩니다.

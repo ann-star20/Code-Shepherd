@@ -44,7 +44,7 @@ CREATE TABLE IF NOT EXISTS concepts (
   concept_type   TEXT,                         -- 4종 컨셉 타입
   cwe_id         TEXT,
   owasp_id       TEXT,
-  severity       TEXT,                         -- CRITICAL / HIGH / MEDIUM / LOW
+  severity       TEXT,                         -- critical / high / medium / low
   description_ko TEXT,
   aliases        TEXT[] DEFAULT '{}',
   created_at     TIMESTAMPTZ DEFAULT now(),
@@ -94,6 +94,7 @@ CREATE TABLE IF NOT EXISTS concept_snapshots (
 | `RootCause` | `name` | `description_ko` | 공통 |
 | `Component` | `name` | `description_ko` | 공통 |
 | `ConfigProperty` | `key` | `value`, `framework` | 공통 |
+| `CodeExample` | `concept_name` + `lang` + `framework` | `code` | 공통 |
 | `Framework` | `name` + `version` | `lang` | 공통 |
 | `Document` | `doc_id` | `source_prefix`, `original_url`, `content_hash`, `framework`, `version` | 공통 |
 
@@ -109,6 +110,7 @@ CREATE TABLE IF NOT EXISTS concept_snapshots (
 | `CAUSED_BY` | Concept → RootCause | 취약점·결함 근본 원인 |
 | `AFFECTS` | Concept → Component | 영향 받는 소프트웨어 컴포넌트 |
 | `CONFIGURED_BY` | Concept → ConfigProperty | 관련 프레임워크 설정 속성 |
+| `HAS_EXAMPLE` | Concept → CodeExample | 언어·프레임워크별 코드 예시 |
 | `IMPLEMENTS` | Framework → Concept | 프레임워크가 해당 개념 구현·대응 |
 | `RELATED_TO` | Concept ↔ Concept | 의미적 연관 개념 |
 | `SAME_AS` | Concept ↔ Concept | 동의어·이명 관계 (Link Resolver 생성) |

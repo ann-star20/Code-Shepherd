@@ -30,7 +30,7 @@ def test_T03_cross_domain_list_no_both():
     schema = ConceptExtractionSchema(
         concept_name="MemoryLeak",
         domains=["security", "performance"],
-        severity="HIGH",
+        severity="high",
         description_ko="메모리 누수",
     )
     assert "both" not in schema.domains
@@ -45,7 +45,7 @@ def test_T04_empty_domains_raises():
         ConceptExtractionSchema(
             concept_name="X", 
             domains=[], 
-            severity="HIGH", 
+            severity="high", 
             description_ko="x"
         )
 
@@ -55,7 +55,7 @@ def test_T05_domains_normalized_lowercase():
     schema = ConceptExtractionSchema(
         concept_name="X",
         domains=["Security", "  PERFORMANCE  "],
-        severity="LOW",
+        severity="low",
         description_ko="x",
     )
     # 모델의 field_validator 로직이 정상 작동하는지 검증

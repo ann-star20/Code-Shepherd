@@ -9,8 +9,8 @@ import sys
 from types import ModuleType
 from unittest.mock import MagicMock
 
-BEFORE = {"concept_name": "XSS", "severity": "HIGH", "description_ko": "원본"}
-AFTER  = {"concept_name": "XSS", "severity": "CRITICAL", "description_ko": "수정본"}
+BEFORE = {"concept_name": "XSS", "severity": "high", "description_ko": "원본"}
+AFTER  = {"concept_name": "XSS", "severity": "critical", "description_ko": "수정본"}
 
 
 def _inject_mock_langsmith(client_instance: MagicMock) -> None:

@@ -17,7 +17,7 @@ def _concept(name: str, domains: list[str], **kw) -> ConceptExtractionSchema:
     return ConceptExtractionSchema(
         concept_name=name,
         domains=domains,
-        severity="HIGH",
+        severity="high",
         description_ko="테스트 개념",
         **kw,
     )

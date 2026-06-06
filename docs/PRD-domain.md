@@ -193,6 +193,11 @@ CREATE INDEX document_doc_id FOR (d:Document) ON (d.doc_id)
 | **취약점 원인** (Vulnerability Root Cause) | 취약점이 발생하는 근본 원인 | 사용자 입력 미검증, 세션 고정, 안전하지 않은 역직렬화 |
 | **설정 속성** (Configuration Property) | 프레임워크 설정 키/값 및 옵션 | `SESSION_COOKIE_SECURE=True`, `X-Frame-Options: DENY` |
 | **영향 받는 컴포넌트** (Affected Component) | 취약점의 영향 범위 | 인증 모듈, 세션 관리, ORM 레이어, API 엔드포인트 |
+| **성능 최적화 기법** (Optimization Mechanism) | 성능 병목을 해결하고 처리량을 올리는 기술적 수단 | `select_related` (eager loading), `query_caching`, `connection_pooling`, `asynchronous_task` |
+| **성능 안티패턴/원인** (Performance Antipattern / Root Cause) | 성능 저하 및 자원 고갈을 유발하는 설계/개발 결함 | `n1_query`, `full_table_scan` (인덱스 누락), `memory_leak`, `thread_pool_exhaustion` |
+| **성능 튜닝 속성** (Tuning / Config Property) | 프레임워크 및 인프라의 성능 제어 키/값 맵 | `conn_max_age=60`, `hikari.maximum-pool-size=10`, `gc_type=g1gc` |
+| **영향 받는 리소스/컴포넌트** (Affected Resource / Component) | 성능 결함으로 인해 병목이 터지는 물리/논리 영역 | `database_layer`, `orm_core_layer`, `heap_memory`, `connection_pool` |
+
 
 **프롬프트 출력 스키마 (JSON)**:
 ```json
@@ -201,7 +206,7 @@ CREATE INDEX document_doc_id FOR (d:Document) ON (d.doc_id)
   "concept_type": "vulnerability_root_cause",
   "cwe_id": "CWE-79",
   "owasp_category": "A03:2021",
-  "severity": "HIGH",
+  "severity": "high",
   "security_mechanisms": ["Output Encoding", "Content Security Policy"],
   "affected_components": ["템플릿 렌더링 레이어", "API 응답 직렬화"],
   "config_properties": [{"key": "SECURE_BROWSER_XSS_FILTER", "value": "True"}],
@@ -291,7 +296,7 @@ if labels:
   "domains": ["security", "performance"], 
   "concept_type": "vulnerability_root_cause",
   "cwe_id": "CWE-401",
-  "severity": "HIGH",
+  "severity": "high",
   "security_mechanisms": ["명시적 리소스 해제", "컨텍스트 매니저"],
   "affected_components": ["힙 메모리", "GC 레이어"],
   "config_properties": [],
@@ -437,11 +442,11 @@ DOMAIN_LABEL_MAP = {
 
 | name (영문 표준) | owasp_id | cwe_id | severity |
 |-----------------|----------|--------|----------|
-| XSS | A03:2021 | CWE-79 | HIGH |
-| SQLi | A03:2021 | CWE-89 | CRITICAL |
-| CSRF | A01:2021 | CWE-352 | HIGH |
-| BrokenAccessControl | A01:2021 | CWE-284 | CRITICAL |
-| InsecureDeserialization | A08:2021 | CWE-502 | HIGH |
+| XSS | A03:2021 | CWE-79 | high |
+| SQLi | A03:2021 | CWE-89 | critical |
+| CSRF | A01:2021 | CWE-352 | high |
+| BrokenAccessControl | A01:2021 | CWE-284 | critical |
+| InsecureDeserialization | A08:2021 | CWE-502 | high |
 
 #### 3.6.2. 성능 도메인 시드 (performance Domain)
 
@@ -509,7 +514,7 @@ scripts/
 - **Human-in-the-Loop UI**: 메타데이터 추론 결과 확인 및 수동 입력 폼 (추론 신뢰도 배지, 누락 필드 경고).
 - **실시간 런타임 로그**: WebSocket / SSE 기반 백그라운드 로그 콘솔 출력.
 - **대화형 토폴로지 뷰**: 노드 타입별 색상 범례, 클릭 시 인스펙터 연동, 온톨로지 계층 필터링.
-- **컨셉 인스펙터 패널**: 등급(CRITICAL, HIGH), 프레임워크, 컨셉 타입(보안 메커니즘/취약점 원인/설정 속성/영향 컴포넌트)별 필터링 및 상세 대응 방안 조회.
+- **컨셉 인스펙터 패널**: 등급(critical, high), 프레임워크, 컨셉 타입(보안 메커니즘/취약점 원인/설정 속성/영향 컴포넌트)별 필터링 및 상세 대응 방안 조회.
 - **가상 노드 미리보기 및 최종 승인 UI**: → 3.9절 참조.
 
 ---
@@ -727,7 +732,7 @@ CREATE TABLE IF NOT EXISTS concepts (
   concept_type   TEXT,                         -- 4종 컨셉 타입
   cwe_id         TEXT,
   owasp_id       TEXT,
-  severity       TEXT,                         -- CRITICAL / HIGH / MEDIUM / LOW
+  severity       TEXT,                         -- critical / high / medium / low
   description_ko TEXT,
   aliases        TEXT[] DEFAULT '{}',
   created_at     TIMESTAMPTZ DEFAULT now(),

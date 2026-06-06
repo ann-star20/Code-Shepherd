@@ -61,7 +61,7 @@ class _ErrorSession:
 _XSS = dict(
     concept_name="XSS",
     domains=["security"],
-    severity="HIGH",
+    severity="high",
     description_ko="크로스 사이트 스크립팅",
 )
 

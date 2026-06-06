@@ -76,7 +76,7 @@ describe("ConceptInspector", () => {
   });
 
   it("T_F11_severity_critical: CRITICAL severity renders with red class", () => {
-    const node = makeNode({ severity: "CRITICAL" });
+    const node = makeNode({ severity: "critical" });
     render(
       <ConceptInspector
         node={node}
@@ -86,7 +86,7 @@ describe("ConceptInspector", () => {
         onClose={vi.fn()}
       />
     );
-    const el = screen.getByText("CRITICAL");
+    const el = screen.getByText("critical");
     expect(el.className).toMatch(/red/);
   });
 

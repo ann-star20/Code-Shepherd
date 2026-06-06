@@ -21,7 +21,7 @@ interface ConceptInspectorProps {
 // node.status="COMMITTED" → 승인/거부 버튼 숨김 (읽기 전용)
 // node.status="DRAFT" → 개별 승인·거부 버튼 노출
 // 필드 표시: name, domain Badge, cwe_id, severity, description_ko, aliases, tags
-// severity에 따른 색상: CRITICAL=빨강, HIGH=주황, MEDIUM=노랑, LOW=초록
+// severity에 따른 색상: critical=빨강, high=주황, medium=노랑, low=초록
 ```
 
 ### TDD (AAA)
@@ -34,7 +34,7 @@ interface ConceptInspectorProps {
 | T_F11_committed_readonly | `node.status="COMMITTED"` | `render(...)` | 승인·거부 버튼 없음 |
 | T_F11_draft_buttons | `node.status="DRAFT"` | `render(...)` | "승인", "거부" 버튼 모두 노출 |
 | T_F11_approve_click | mock `onApprove` | `userEvent.click(승인 버튼)` | `onApprove(node.id)` 1회 호출 |
-| T_F11_severity_critical | `node.severity="CRITICAL"` | `render(...)` | 빨강 계열 클래스 또는 텍스트 |
+| T_F11_severity_critical | `node.severity="critical"` | `render(...)` | 빨강 계열 클래스 또는 텍스트 |
 | T_F11_aliases | `node.aliases=["Cross-Site Scripting","XSS"]` | `render(...)` | 두 alias 모두 노출 |
 | T_F11_domain_badge | `node.domain="both"` | `render(...)` | Badge 컴포넌트 domain="both" props |
 

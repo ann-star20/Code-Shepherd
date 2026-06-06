@@ -19,7 +19,8 @@ RETURN other.name AS other_name
 """
 
 _MERGE_SAME_AS = """
-MATCH (a:Concept {name: $a_name}), (b:Concept {name: $b_name})
+MATCH (a:Concept {name: $a_name})
+MATCH (b:Concept {name: $b_name})
 MERGE (a)-[:SAME_AS]-(b)
 """
 

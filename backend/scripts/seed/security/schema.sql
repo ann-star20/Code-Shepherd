@@ -49,7 +49,7 @@ CREATE TABLE IF NOT EXISTS concepts (
   concept_type   TEXT,                         -- 4종 컨셉 타입
   cwe_id         TEXT,
   owasp_id       TEXT,
-  severity       TEXT,                         -- CRITICAL / HIGH / MEDIUM / LOW
+  severity       TEXT,                         -- critical / high / medium / low
   description_ko TEXT,
   aliases        TEXT[] DEFAULT '{}',
   created_at     TIMESTAMPTZ DEFAULT now(),

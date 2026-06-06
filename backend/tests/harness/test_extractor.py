@@ -12,7 +12,7 @@ _VALID_XSS = {
     "domains": ["security"],
     "concept_type": "vulnerability_root_cause",
     "cwe_id": "CWE-79",
-    "severity": "HIGH",
+    "severity": "high",
     "description_ko": "크로스 사이트 스크립팅",
     "aliases": ["Cross-Site Scripting"],
 }
@@ -21,7 +21,7 @@ _VALID_BOTH = {
     "concept_name": "MemoryLeak",
     "domains": ["security", "performance"],
     "concept_type": "vulnerability_root_cause",
-    "severity": "HIGH",
+    "severity": "high",
     "description_ko": "메모리 누수",
 }
 

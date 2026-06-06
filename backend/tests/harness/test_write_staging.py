@@ -23,7 +23,7 @@ from app.usecases.write_staging_draft import write_staging_draft
 def _concept(name: str, domains: list[str]) -> ConceptExtractionSchema:
     return ConceptExtractionSchema(
         concept_name=name, domains=domains,
-        severity="HIGH", description_ko="설명",
+        severity="high", description_ko="설명",
     )
 
 

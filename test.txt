@@ -1,0 +1,48 @@
+
+docker compose -f docker-compose.yml -f docker-compose.mock.yml up --build postgres redis backend celery_worker
+
+docker compose -f docker-compose.yml -f docker-compose.mock.yml up --build frontend
+
+# DB 리셋 (원하는 경우)
+docker compose exec postgres psql -U postgres -c "UPDATE documents SET state='PENDING' WHERE doc_id='EXT_https---docs-djangoproject-com-en-6-0-topics-security_32450f22'"
+
+Redis broker는 컨테이너가 꺼져도 태스크를 보관 (task_acks_late=True)
+이전 production 실행에서 실패한 extract_task가 Redis에 retry 예약된 채로 남아 있다가, worker 재시작하자마자 수거해서 즉시 실행
+.env는 이미 mock으로 바꿨으니, 아래 두 명령만 실행하면 됩니다:
+
+# 1. stale 태스크 제거
+docker exec code-shepherd-redis-1 redis-cli FLUSHDB
+
+# 2. 재시작
+docker compose -f docker-compose.yml -f docker-compose.mock.yml down
+docker compose -f docker-compose.yml -f docker-compose.mock.yml up postgres redis neo4j backend celery_worker
+
+
+mock_client.py 수정:
+
+extract_concepts()에서 _build_prompt()를 실제로 호출해 프롬프트 구조를 검증
+[PROMPT/mock] 로그 출력 — GeminiClient와 동일한 형식으로 mock/production 비교 가능
+반환값·시그니처는 동일하게 유지
+
+scripts/run_extractor.py 신규:
+
+플래그	동작
+--url URL	분석할 문서 URL (필수)
+--mode mock	크롤 + 프롬프트 빌드 + 고정 mock 응답 (기본)
+--mode production --api-key AIza...	실제 Gemini 호출
+--dump-prompt	구성된 LLM 프롬프트 전체 출력 후 종료
+--save-mock	추출 결과를 scripts/seed/generated/mock_<slug>.json으로 저장
+
+사용 예시:
+```
+# Django CSRF 문서로 실제 프롬프트 확인
+python backend/scripts/run_extractor.py --url "https://docs.djangoproject.com/en/6.0/ref/csrf/" --dump-prompt
+
+# production 모드로 추출 → mock 데이터셋 갱신
+python backend/scripts/run_extractor.py --url "https://docs.djangoproject.com/en/6.0/ref/csrf/" --mode production --api-key $env:GEMINI_API_KEY --save-mock
+```
+
+https://docs.djangoproject.com/en/6.0/ref/csrf/
+
+python backend/scripts/test_pipeline_flow.py
+

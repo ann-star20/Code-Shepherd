@@ -91,3 +91,21 @@ async def write_concept_node(
                 pk=prop.get("key", ""),
                 pv=prop.get("value", ""),
             )
+
+        # 7. HAS_EXAMPLE → CodeExample
+        for ex in concept.code_examples:
+            lang = ex.get("lang", "")
+            framework = ex.get("framework", "")
+            code = ex.get("code", "")
+            if not code:
+                continue
+            await session.run(
+                "MATCH (c:Concept {name:$cn}) "
+                "MERGE (e:CodeExample {concept_name:$cn, lang:$lang, framework:$fw}) "
+                "SET e.code = $code "
+                "MERGE (c)-[:HAS_EXAMPLE]->(e)",
+                cn=concept.concept_name,
+                lang=lang,
+                fw=framework,
+                code=code,
+            )

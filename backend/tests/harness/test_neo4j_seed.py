@@ -106,7 +106,7 @@ def test_T07_owasp_category_merge(neo4j_driver):
                 session.run(
                     _MERGE_OWASP,
                     owasp_id=owasp_id, name="Injection-test",
-                    severity="CRITICAL", description_ko="인젝션 테스트",
+                    severity=critical, description_ko="인젝션 테스트",
                 )
             count = session.run(
                 "MATCH (o:OWASPCategory {owasp_id:$id}) RETURN count(o) AS n",
@@ -147,7 +147,7 @@ def test_T08_security_concept_apoc_label(neo4j_driver):
     with neo4j_driver.session() as session:
         try:
             _merge_concept_with_labels(
-                session, name, "CWE-79", "HIGH",
+                session, name, "CWE-79", "high",
                 "APOC 라벨 테스트 보안 컨셉",
                 ["Cross-Site Scripting"], "security",
             )
@@ -178,7 +178,7 @@ def test_T09_performance_concept_apoc_label(neo4j_driver):
     with neo4j_driver.session() as session:
         try:
             _merge_concept_with_labels(
-                session, name, "CWE-1072", "HIGH",
+                session, name, "CWE-1072", "high",
                 "APOC 라벨 테스트 성능 컨셉",
                 ["N+1 Problem"], "performance",
             )
@@ -208,7 +208,7 @@ def test_T10_both_domain_concept_dual_labels(neo4j_driver):
     with neo4j_driver.session() as session:
         try:
             _merge_concept_with_labels(
-                session, name, "CWE-401", "HIGH",
+                session, name, "CWE-401", "high",
                 "교차 도메인 APOC 라벨 테스트",
                 ["Memory Leak", "메모리 누수"], "both",
             )
@@ -248,7 +248,7 @@ def test_T11_concept_merge_idempotent_with_apoc(neo4j_driver):
         try:
             for _ in range(3):
                 _merge_concept_with_labels(
-                    session, name, "CWE-352", "HIGH",
+                    session, name, "CWE-352", "high",
                     "CSRF 멱등성 테스트",
                     ["CSRF", "Cross-Site Request Forgery"], "security",
                 )

@@ -25,7 +25,7 @@ async def _insert_approved(conn, session_id: str, doc_id: str, name: str) -> Non
     cj = json.dumps({
         "concept_name": name,
         "domains": ["security"],
-        "severity": "HIGH",
+        "severity": "high",
         "description_ko": "테스트",
         "aliases": [],
         "security_mechanisms": [],

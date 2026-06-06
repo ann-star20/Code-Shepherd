@@ -345,7 +345,7 @@ export default function App() {
             </button>
           </div>
 
-          {/* 2. PIPELINE FLOW STEPS */}
+          {/* 2. PIPELINE Flow STEPS */}
           <div className="bg-white rounded-2xl border border-stone-200/70 p-6 shadow-sm shadow-stone-100">
             <h3 className="font-serif text-base font-bold text-stone-900 mb-4">
               에이전트 파이프라인 흐름 상태

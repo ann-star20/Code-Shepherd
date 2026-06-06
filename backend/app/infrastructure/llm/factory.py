@@ -16,6 +16,7 @@ def create_llm_client(app_mode: str = "development", **kwargs) -> ILLMClient:
 
         return GeminiClient(
             api_key=kwargs["api_key"],
+            model=kwargs.get("model", "gemini-2.5-flash"),
             langsmith_project=kwargs.get("langsmith_project", ""),
         )
     from app.infrastructure.llm.mock_client import MockClient

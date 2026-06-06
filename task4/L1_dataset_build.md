@@ -39,7 +39,7 @@ langsmith_datasets/
   "concept_domain": "security",        # 필수: security|performance|both
   "concept_type": "vulnerability_root_cause",
   "cwe_id": "CWE-79",
-  "severity": "HIGH",
+  "severity": "high",
   "description_ko": "크로스 사이트 스크립팅...",  # 반드시 한국어
   "aliases": ["Cross-Site Scripting"],
   "security_mechanisms": ["OutputEncoding", "CSP"],
