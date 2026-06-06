@@ -1,0 +1,197 @@
+_run_python: semgrep 실패 \u2014 [WinError 2] 지정된 파일을 찾을 수 없습니다
+notify_dev4: DEV4_WEBHOOK_URL 미설정 \u2014 escalation 스킵 (개발 환경 정상)
+_run_python: semgrep 실패 \u2014 [WinError 2] 지정된 파일을 찾을 수 없습니다
+notify_dev4: DEV4_WEBHOOK_URL 미설정 \u2014 escalation 스킵 (개발 환경 정상)
+_run_python: semgrep 실패 \u2014 [WinError 2] 지정된 파일을 찾을 수 없습니다
+notify_dev4: DEV4_WEBHOOK_URL 미설정 \u2014 escalation 스킵 (개발 환경 정상)
+_run_python: semgrep 실패 \u2014 [WinError 2] 지정된 파일을 찾을 수 없습니다
+notify_dev4: DEV4_WEBHOOK_URL 미설정 \u2014 escalation 스킵 (개발 환경 정상)
+_run_python: semgrep 실패 \u2014 [WinError 2] 지정된 파일을 찾을 수 없습니다
+notify_dev4: DEV4_WEBHOOK_URL 미설정 \u2014 escalation 스킵 (개발 환경 정상)
+_run_python: semgrep 실패 \u2014 [WinError 2] 지정된 파일을 찾을 수 없습니다
+notify_dev4: DEV4_WEBHOOK_URL 미설정 \u2014 escalation 스킵 (개발 환경 정상)
+_run_python: semgrep 실패 \u2014 [WinError 2] 지정된 파일을 찾을 수 없습니다
+notify_dev4: DEV4_WEBHOOK_URL 미설정 \u2014 escalation 스킵 (개발 환경 정상)
+_run_python: semgrep 실패 \u2014 [WinError 2] 지정된 파일을 찾을 수 없습니다
+notify_dev4: DEV4_WEBHOOK_URL 미설정 \u2014 escalation 스킵 (개발 환경 정상)
+_run_python: semgrep 실패 \u2014 [WinError 2] 지정된 파일을 찾을 수 없습니다
+notify_dev4: DEV4_WEBHOOK_URL 미설정 \u2014 escalation 스킵 (개발 환경 정상)
+_run_python: semgrep 실패 \u2014 [WinError 2] 지정된 파일을 찾을 수 없습니다
+notify_dev4: DEV4_WEBHOOK_URL 미설정 \u2014 escalation 스킵 (개발 환경 정상)
+_run_python: semgrep 실패 \u2014 [WinError 2] 지정된 파일을 찾을 수 없습니다
+_run_python: semgrep 실패 \u2014 [WinError 2] 지정된 파일을 찾을 수 없습니다
+aggregate_node: M4_WEBHOOK_URL 미설정 \u2014 M4 push 스킵 (개발 환경 정상)
+_post_github_comment: GITHUB_TOKEN 또는 GITHUB_REPO 미설정 \u2014 스킵 (개발 환경 정상)
+_send_slack_alert: SLACK_WEBHOOK_URL 미설정 \u2014 Slack 알림 스킵 (개발 환경 정상)
+DATABASE_URL = postgresql+asyncpg://postgres:tasklink1!@34.22.101.111:5432/tasklink
+총 12개 케이스 발견
+============================================================
+
+[P1] auth_missing_case (pr_id=m2_custom_auth_missing_001)
+  탐지 7개 | 기대 1개 중 1개 매칭
+    Minor     SA-C0114      line=   1  Missing module docstring
+    Minor     SA-C0115      line=   1  Missing class docstring
+    Minor     SA-C0116      line=   5  Missing function or method docstring
+    Major     SA-W0613      line=   5  Unused argument 'session_token'
+    Minor     SA-C0116      line=   9  Missing function or method docstring
+    Major     SA-W0612      line=  10  Unused variable 'current_user_id'
+    Critical  SEC-AUTH001   line=  10  Missing authorization check in 'delete_user_account': '
+
+[P1] command_injection_case (pr_id=m2_custom_command_injection_001)
+  탐지 3개 | 기대 1개 중 1개 매칭
+    Minor     SA-C0114      line=   1  Missing module docstring
+    Minor     SA-C0116      line=   4  Missing function or method docstring
+    Critical  SEC-B605      line=   5  Starting a process with a shell, possible injection det
+
+[P1] hardcoded_secret_case (pr_id=m2_custom_hardcoded_secret_001)
+  탐지 6개 | 기대 1개 중 1개 매칭
+    Minor     SA-C0114      line=   1  Missing module docstring
+    Minor     SA-C0116      line=   5  Missing function or method docstring
+    Minor     SA-C0116      line=   9  Missing function or method docstring
+    Minor     SEC-B105      line=   2  Possible hardcoded password: 'my-hardcoded-jwt-secret-k
+    Critical  SEC-B105      line=   1  Hardcoded credentials in URL (user:password@host)
+    Critical  SEC-B105      line=   2  Hardcoded secret key or token
+
+[P1] insecure_password_hash_case (pr_id=m2_custom_insecure_password_hash_001)
+  탐지 3개 | 기대 1개 중 1개 매칭
+    Minor     SA-C0114      line=   1  Missing module docstring
+    Minor     SA-C0116      line=   4  Missing function or method docstring
+    Critical  SEC-B324      line=   5  Use of weak MD5 hash for security. Consider usedforsecu
+
+[P1] mixed_case_01 (pr_id=m2_custom_mixed_001)
+  탐지 9개 | 기대 3개 중 3개 매칭
+    Minor     SA-C0114      line=   1  Missing module docstring
+    Minor     SA-C0115      line=   8  Missing class docstring
+    Minor     SA-C0116      line=   9  Missing function or method docstring
+    Minor     SA-R0903      line=   8  Too few public methods (1/2)
+    Minor     SA-C0116      line=  16  Missing function or method docstring
+    Critical  SEC-B324      line=  17  Use of weak MD5 hash for security. Consider usedforsecu
+    Major     SEC-B608      line=  18  Possible SQL injection vector through string-based quer
+    Critical  SEC-B105      line=   4  Hardcoded credentials in URL (user:password@host)
+    Critical  SEC-B105      line=   5  Hardcoded secret key or token
+
+[P1] mixed_case_02 (pr_id=m2_custom_mixed_002)
+  탐지 11개 | 기대 3개 중 3개 매칭
+    Minor     SA-C0114      line=   1  Missing module docstring
+    Minor     SA-C0115      line=   7  Missing class docstring
+    Minor     SA-C0116      line=  11  Missing function or method docstring
+    Major     SA-W0613      line=  11  Unused argument 'session_token'
+    Minor     SA-C0116      line=  15  Missing function or method docstring
+    Minor     SA-C0116      line=  19  Missing function or method docstring
+    Minor     SA-C0116      line=  22  Missing function or method docstring
+    Major     SA-W0612      line=  23  Unused variable 'current_user_id'
+    Critical  SEC-B605      line=  20  Starting a process with a shell, possible injection det
+    Major     SEC-PT001     line=  16  Potential path traversal: unsanitized variable 'filenam
+    Critical  SEC-AUTH001   line=  23  Missing authorization check in 'delete_user_account': '
+
+[P1] mixed_case_03 (pr_id=m2_custom_mixed_003)
+  탐지 17개 | 기대 4개 중 4개 매칭
+    Minor     SA-C0114      line=   1  Missing module docstring
+    Minor     SA-C0115      line=   7  Missing class docstring
+    Minor     SA-C0116      line=   8  Missing function or method docstring
+    Minor     SA-R0903      line=   7  Too few public methods (1/2)
+    Minor     SA-C0115      line=  15  Missing class docstring
+    Minor     SA-C0116      line=  19  Missing function or method docstring
+    Major     SA-W0613      line=  19  Unused argument 'session_token'
+    Minor     SA-C0116      line=  23  Missing function or method docstring
+    Minor     SA-C0116      line=  27  Missing function or method docstring
+    Major     SA-W0613      line=  27  Unused argument 'user_id'
+    Minor     SA-C0116      line=  30  Missing function or method docstring
+    Major     SA-W0612      line=  31  Unused variable 'current_user_id'
+    Minor     SEC-B105      line=   4  Possible hardcoded password: 'my-hardcoded-jwt-secret-k
+    Major     SEC-B608      line=  24  Possible SQL injection vector through string-based quer
+    Critical  SEC-B324      line=  28  Use of weak MD5 hash for security. Consider usedforsecu
+    Critical  SEC-B105      line=   4  Hardcoded secret key or token
+    Critical  SEC-AUTH001   line=  31  Missing authorization check in 'delete_user_account': '
+
+[P1] mixed_case_04 (pr_id=m2_custom_mixed_004)
+  탐지 8개 | 기대 3개 중 3개 매칭
+    Minor     SA-C0114      line=   1  Missing module docstring
+    Minor     SA-C0116      line=   8  Missing function or method docstring
+    Minor     SA-C0116      line=  13  Missing function or method docstring
+    Minor     SEC-B105      line=   5  Possible hardcoded password: 'wJalrXUtnFEMI/K7MDENG/bPx
+    Critical  SEC-B605      line=  14  Starting a process with a shell, possible injection det
+    Critical  SEC-B105      line=   5  Hardcoded secret key or token
+    Major     SEC-PT001     line=   5  Potential path traversal: unsanitized variable 'bPxRfiC
+    Major     SEC-PT001     line=   9  Potential path traversal: unsanitized variable 'filenam
+
+[P1] mixed_case_05 (pr_id=m2_custom_mixed_005)
+  탐지 9개 | 기대 3개 중 3개 매칭
+    Minor     SA-C0114      line=   1  Missing module docstring
+    Minor     SA-C0115      line=   5  Missing class docstring
+    Minor     SA-C0116      line=   6  Missing function or method docstring
+    Minor     SA-R0903      line=   5  Too few public methods (1/2)
+    Minor     SA-C0116      line=  13  Missing function or method docstring
+    Minor     SA-C0116      line=  19  Missing function or method docstring
+    Critical  SEC-B324      line=  14  Use of weak MD5 hash for security. Consider usedforsecu
+    Major     SEC-B608      line=  15  Possible SQL injection vector through string-based quer
+    Critical  SEC-B605      line=  20  Starting a process with a shell, possible injection det
+
+[P1] mixed_case_06 (pr_id=m2_custom_mixed_006)
+  탐지 19개 | 기대 5개 중 5개 매칭
+    Minor     SA-C0114      line=   1  Missing module docstring
+    Minor     SA-C0115      line=   8  Missing class docstring
+    Minor     SA-C0116      line=   9  Missing function or method docstring
+    Minor     SA-R0903      line=   8  Too few public methods (1/2)
+    Minor     SA-C0115      line=  16  Missing class docstring
+    Minor     SA-C0116      line=  20  Missing function or method docstring
+    Major     SA-W0613      line=  20  Unused argument 'session_token'
+    Minor     SA-C0116      line=  24  Missing function or method docstring
+    Minor     SA-C0116      line=  28  Missing function or method docstring
+    Minor     SA-C0116      line=  32  Missing function or method docstring
+    Major     SA-W0613      line=  32  Unused argument 'user_id'
+    Minor     SA-C0116      line=  35  Missing function or method docstring
+    Major     SA-W0612      line=  36  Unused variable 'current_user_id'
+    Minor     SEC-B105      line=   5  Possible hardcoded password: 'admin-static-token-do-not
+    Major     SEC-B608      line=  25  Possible SQL injection vector through string-based quer
+    Critical  SEC-B324      line=  33  Use of weak MD5 hash for security. Consider usedforsecu
+    Critical  SEC-B105      line=   5  Hardcoded secret key or token
+    Major     SEC-PT001     line=  29  Potential path traversal: unsanitized variable 'filenam
+    Critical  SEC-AUTH001   line=  36  Missing authorization check in 'delete_user_account': '
+
+[P1] path_traversal_case (pr_id=m2_custom_path_traversal_001)
+  탐지 3개 | 기대 1개 중 1개 매칭
+    Minor     SA-C0114      line=   1  Missing module docstring
+    Minor     SA-C0116      line=   6  Missing function or method docstring
+    Major     SEC-PT001     line=   7  Potential path traversal: unsanitized variable 'filenam
+
+[P1] sqli_case (pr_id=m2_custom_sqli_001)
+  탐지 6개 | 기대 1개 중 1개 매칭
+    Minor     SA-C0114      line=   1  Missing module docstring
+    Minor     SA-C0115      line=   1  Missing class docstring
+    Minor     SA-C0116      line=   2  Missing function or method docstring
+    Minor     SA-R0903      line=   1  Too few public methods (1/2)
+    Minor     SA-C0116      line=   9  Missing function or method docstring
+    Major     SEC-B608      line=  10  Possible SQL injection vector through string-based quer
+
+============================================================
+[요약] 파이프라인 1 결과
+  케이스                                    탐지/기대  상태
+------------------------------------------------------------
+  auth_missing_case                   1/  1     OK
+  command_injection_case              1/  1     OK
+  hardcoded_secret_case               1/  1     OK
+  insecure_password_hash_case         1/  1     OK
+  mixed_case_01                       3/  3     OK
+  mixed_case_02                       3/  3     OK
+  mixed_case_03                       4/  4     OK
+  mixed_case_04                       3/  3     OK
+  mixed_case_05                       3/  3     OK
+  mixed_case_06                       5/  5     OK
+  path_traversal_case                 1/  1     OK
+  sqli_case                           1/  1     OK
+------------------------------------------------------------
+  전체 탐지율: 27/27
+
+============================================================
+[P2] 파이프라인 2 테스트 (케이스: auth_missing_case)
+  aggregate:      이슈 7개 취합
+  total_summary:  {'critical': 1, 'major': 2, 'minor': 4}
+  comment_body:   ## 자동 코드 리뷰 결과
+
+**Critical**: 1건 | **Major**: 2건 | **Minor**: 4건
+
+| 파일 | 라인 | Severity | 이슈 |
+|---|---|---|---|
+| C:/Use...
+  github_comment_url: None
