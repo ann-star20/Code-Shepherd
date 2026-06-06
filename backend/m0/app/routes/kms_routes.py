@@ -830,10 +830,11 @@ async def list_doc_page_images(doc_id: str) -> list[dict]:
     async with session_factory() as session:
         result = await session.execute(
             text("""
-                SELECT DISTINCT metadata->>'page_image_path' AS path
-                FROM chunk_embeddings
-                WHERE doc_id = :doc_id
-                  AND metadata->>'page_image_path' IS NOT NULL
+                SELECT DISTINCT ce.metadata->>'page_image_path' AS path
+                FROM chunk_embeddings ce
+                JOIN chunks c ON c.chunk_id = ce.chunk_id
+                WHERE c.doc_id = :doc_id::uuid
+                  AND ce.metadata->>'page_image_path' IS NOT NULL
                 ORDER BY path
             """),
             {"doc_id": str(UUID(doc_id))},
@@ -858,10 +859,11 @@ async def get_doc_page_image(doc_id: str, page_num: int):
     async with session_factory() as session:
         result = await session.execute(
             text("""
-                SELECT DISTINCT metadata->>'page_image_path' AS path
-                FROM chunk_embeddings
-                WHERE doc_id = :doc_id
-                  AND metadata->>'page_image_path' IS NOT NULL
+                SELECT DISTINCT ce.metadata->>'page_image_path' AS path
+                FROM chunk_embeddings ce
+                JOIN chunks c ON c.chunk_id = ce.chunk_id
+                WHERE c.doc_id = :doc_id::uuid
+                  AND ce.metadata->>'page_image_path' IS NOT NULL
                 ORDER BY path
             """),
             {"doc_id": str(UUID(doc_id))},
