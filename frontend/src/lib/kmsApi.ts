@@ -1,5 +1,5 @@
 import axios, { type InternalAxiosRequestConfig } from "axios";
-import type { DocDetailsResponse, SearchResponse, StatusResponse, UploadResponse } from "../types/kms";
+import type { DocDetailsResponse, DocListResponse, SearchResponse, StatusResponse, UploadResponse } from "../types/kms";
 
 // m0 전용 클라이언트 — baseURL 없음, /kms/* 요청이 vite proxy → m0:8002로 라우팅됨
 const m0Client = axios.create({ baseURL: "" });
@@ -43,6 +43,21 @@ export async function getDocDetails(docId: string): Promise<DocDetailsResponse> 
     return data;
   } catch (e) {
     throw extractDetail(e, "상세 조회 실패");
+  }
+}
+
+export async function listDocuments(
+  status?: string,
+  limit = 20,
+  offset = 0,
+): Promise<DocListResponse> {
+  try {
+    const { data } = await m0Client.get<DocListResponse>("/kms/docs", {
+      params: { ...(status ? { status } : {}), limit, offset },
+    });
+    return data;
+  } catch (e) {
+    throw extractDetail(e, "문서 목록 조회 실패");
   }
 }
 

@@ -513,25 +513,38 @@ async def list_documents(
 
     session_factory = _get_session_factory()
     async with session_factory() as session:
-        count_result = await session.execute(
-            text("""
-                SELECT COUNT(*) AS count FROM documents
-                WHERE (:status IS NULL OR upload_status = :status)
-            """),
-            {"status": status},
-        )
+        if status is not None:
+            count_result = await session.execute(
+                text("SELECT COUNT(*) AS count FROM documents WHERE upload_status = :status"),
+                {"status": status},
+            )
+        else:
+            count_result = await session.execute(
+                text("SELECT COUNT(*) AS count FROM documents"),
+            )
         count_row = count_result.mappings().fetchone()
 
-        list_result = await session.execute(
-            text("""
-                SELECT doc_id::text, title, file_type, upload_status, created_at
-                FROM documents
-                WHERE (:status IS NULL OR upload_status = :status)
-                ORDER BY created_at DESC NULLS LAST
-                LIMIT :limit OFFSET :offset
-            """),
-            {"status": status, "limit": limit, "offset": offset},
-        )
+        if status is not None:
+            list_result = await session.execute(
+                text("""
+                    SELECT doc_id::text, title, file_type, upload_status, created_at
+                    FROM documents
+                    WHERE upload_status = :status
+                    ORDER BY created_at DESC NULLS LAST
+                    LIMIT :limit OFFSET :offset
+                """),
+                {"status": status, "limit": limit, "offset": offset},
+            )
+        else:
+            list_result = await session.execute(
+                text("""
+                    SELECT doc_id::text, title, file_type, upload_status, created_at
+                    FROM documents
+                    ORDER BY created_at DESC NULLS LAST
+                    LIMIT :limit OFFSET :offset
+                """),
+                {"limit": limit, "offset": offset},
+            )
         rows = list_result.mappings().fetchall()
 
     total = count_row["count"] if count_row else 0

@@ -58,6 +58,21 @@ export interface DocDetailsResponse {
   chunks: ChunkItem[];
 }
 
+export interface DocListItem {
+  doc_id: string;
+  title: string | null;
+  file_type: string | null;
+  status: string;
+  created_at: string | null;
+}
+
+export interface DocListResponse {
+  docs: DocListItem[];
+  total: number;
+  limit: number;
+  offset: number;
+}
+
 // HITL
 
 export interface HitlQueueItem {
