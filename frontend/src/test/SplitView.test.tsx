@@ -75,3 +75,29 @@ describe("getPageImages API", () => {
     expect(typeof module.getPageImages).toBe("function");
   });
 });
+
+describe("SplitView — rawText 폴백 (TXT/MD 원본 표시)", () => {
+  const RAW_TEXT = "이것은 원본 텍스트 내용입니다.\n두 번째 줄입니다.";
+
+  it("pageImages가 없고 rawText가 있을 때 raw-text-panel이 렌더링된다", () => {
+    render(<SplitView markdown={MOCK_MARKDOWN} pageImages={[]} rawText={RAW_TEXT} />);
+    expect(screen.getByTestId("raw-text-panel")).toBeInTheDocument();
+  });
+
+  it("rawText 내용이 raw-text-panel에 표시된다", () => {
+    render(<SplitView markdown={MOCK_MARKDOWN} pageImages={[]} rawText={RAW_TEXT} />);
+    expect(screen.getByTestId("raw-text-panel")).toHaveTextContent("이것은 원본 텍스트 내용입니다.");
+  });
+
+  it("pageImages가 있으면 rawText 대신 이미지가 표시된다", () => {
+    render(<SplitView markdown={MOCK_MARKDOWN} pageImages={MOCK_PAGE_IMAGES} rawText={RAW_TEXT} />);
+    expect(screen.queryByTestId("raw-text-panel")).not.toBeInTheDocument();
+    expect(screen.getByTestId("pdf-page-image")).toBeInTheDocument();
+  });
+
+  it("pageImages도 rawText도 없으면 안내 메시지가 표시된다", () => {
+    render(<SplitView markdown={MOCK_MARKDOWN} pageImages={[]} />);
+    expect(screen.getByTestId("pdf-panel")).toHaveTextContent(/페이지 이미지가 없습니다/);
+    expect(screen.queryByTestId("raw-text-panel")).not.toBeInTheDocument();
+  });
+});
