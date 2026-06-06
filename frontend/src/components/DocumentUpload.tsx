@@ -201,7 +201,7 @@ export function DocumentUpload({ isVisible = true }: { isVisible?: boolean }) {
       {showDetails && docDetails && (
         <div style={{ padding: "0 0 40px" }}>
           {docDetails.chunks.length > 0
-            ? <DocumentAnalyzer chunks={docDetails.chunks} />
+            ? <DocumentAnalyzer chunks={docDetails.chunks} docId={uploadResult?.doc_id} />
             : <div style={styles.emptyChunks}>청크 데이터가 없습니다.</div>
           }
         </div>

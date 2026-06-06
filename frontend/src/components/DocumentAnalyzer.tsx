@@ -1,7 +1,10 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import type { ChunkItem } from "../types/kms";
+import { SplitView } from "./SplitView";
+import { getDocPageImages } from "../lib/kmsApi";
+import type { PageImage } from "../lib/kmsApi";
 
 type TabKey   = "all" | "parent" | "child";
 type ViewMode = "rendered" | "raw";
@@ -9,6 +12,7 @@ type TopView  = "chunks" | "preview";
 
 interface DocumentAnalyzerProps {
   chunks: ChunkItem[];
+  docId?: string;
 }
 
 function analyzeMarkdown(text: string) {
@@ -20,12 +24,20 @@ function analyzeMarkdown(text: string) {
   return { tables, headers, codeBlocks, lists, images };
 }
 
-export function DocumentAnalyzer({ chunks }: DocumentAnalyzerProps) {
-  const [topView,     setTopView]     = useState<TopView>("chunks");
-  const [activeTab,   setActiveTab]   = useState<TabKey>("all");
-  const [selectedId,  setSelectedId]  = useState<string>(chunks[0]?.chunk_id ?? "");
-  const [viewMode,    setViewMode]    = useState<ViewMode>("rendered");
-  const [previewMode, setPreviewMode] = useState<ViewMode>("rendered");
+export function DocumentAnalyzer({ chunks, docId }: DocumentAnalyzerProps) {
+  const [topView,      setTopView]      = useState<TopView>("chunks");
+  const [activeTab,    setActiveTab]    = useState<TabKey>("all");
+  const [selectedId,   setSelectedId]   = useState<string>(chunks[0]?.chunk_id ?? "");
+  const [viewMode,     setViewMode]     = useState<ViewMode>("rendered");
+  const [pageImages,   setPageImages]   = useState<PageImage[]>([]);
+  const [imagesLoaded, setImagesLoaded] = useState(false);
+
+  useEffect(() => {
+    if (topView !== "preview" || imagesLoaded || !docId) return;
+    getDocPageImages(docId)
+      .then((imgs) => { setPageImages(imgs); setImagesLoaded(true); })
+      .catch(() => { setImagesLoaded(true); });
+  }, [topView, imagesLoaded, docId]);
 
   const parentChunks = chunks.filter(c => c.chunk_type === "parent");
   const childChunks  = chunks.filter(c => c.chunk_type === "child");
@@ -35,8 +47,6 @@ export function DocumentAnalyzer({ chunks }: DocumentAnalyzerProps) {
     .sort((a, b) => (a.page_number ?? 999) - (b.page_number ?? 999))
     .map(c => c.content)
     .join("\n\n---\n\n");
-
-  const stats = analyzeMarkdown(fullMarkdown);
 
   const filtered =
     activeTab === "all"    ? chunks :
@@ -154,60 +164,12 @@ export function DocumentAnalyzer({ chunks }: DocumentAnalyzerProps) {
       )}
 
       {topView === "preview" && (
-        <div style={styles.previewWrapper}>
-          <div style={styles.previewSidebar}>
-            <p style={styles.sidebarTitle}>구조 분석</p>
-            {[
-              { icon: "📊", label: "감지된 표",    val: stats.tables,     color: stats.tables > 0 ? "#16a34a" : "#dc2626",  mark: stats.tables > 0 ? "✅" : "⚠️" },
-              { icon: "📑", label: "헤더 / 제목",  val: stats.headers,    color: stats.headers > 0 ? "#2563eb" : "#94a3b8", mark: stats.headers > 0 ? "✅" : "—" },
-              { icon: "💻", label: "코드 블록",    val: stats.codeBlocks, color: "#64748b", mark: "" },
-              { icon: "📝", label: "리스트 항목",  val: stats.lists,      color: "#64748b", mark: "" },
-              { icon: "🖼️", label: "이미지 참조",  val: stats.images,     color: "#64748b", mark: "" },
-            ].map(({ icon, label, val, color, mark }) => (
-              <div key={label} style={styles.statCard}>
-                <span style={styles.statIcon}>{icon}</span>
-                <div style={styles.statInfo}>
-                  <span style={styles.statLabel}>{label}</span>
-                  <span style={{ ...styles.statValue, color }}>{val}개 {mark}</span>
-                </div>
-              </div>
-            ))}
-            <div style={styles.sidebarDivider} />
-            <div style={styles.statCard}>
-              <span style={styles.statIcon}>🗂️</span>
-              <div style={styles.statInfo}><span style={styles.statLabel}>Parent 청크</span><span style={{ ...styles.statValue, color: "#6366f1" }}>{parentChunks.length}개</span></div>
-            </div>
-            <div style={styles.statCard}>
-              <span style={styles.statIcon}>✂️</span>
-              <div style={styles.statInfo}><span style={styles.statLabel}>Child 청크</span><span style={{ ...styles.statValue, color: "#0ea5e9" }}>{childChunks.length}개</span></div>
-            </div>
-          </div>
-
-          <div style={styles.previewMain}>
-            <div style={styles.previewHeader}>
-              <span style={styles.previewHeaderTitle}>전체 문서 미리보기</span>
-              <div style={{ display: "flex", gap: 0 }}>
-                {(["rendered", "raw"] as const).map(m => (
-                  <button key={m} style={{ ...styles.viewBtn, ...(previewMode === m ? styles.viewBtnActive : {}) }} onClick={() => setPreviewMode(m)}>
-                    {m === "rendered" ? "렌더링 뷰" : "Raw 텍스트"}
-                  </button>
-                ))}
-              </div>
-            </div>
-            <div style={styles.previewContent}>
-              {fullMarkdown ? (
-                previewMode === "rendered" ? (
-                  <div style={styles.markdownBody}>
-                    <ReactMarkdown remarkPlugins={[remarkGfm]} components={mdComponents}>{fullMarkdown}</ReactMarkdown>
-                  </div>
-                ) : (
-                  <pre style={{ ...styles.rawContent, margin: 0, borderRadius: 0, background: "transparent" }}>{fullMarkdown}</pre>
-                )
-              ) : (
-                <p style={{ color: "#9ca3af", fontSize: 13, padding: 16 }}>Parent 청크가 없습니다.</p>
-              )}
-            </div>
-          </div>
+        <div style={{ height: 520, overflow: "hidden" }}>
+          {!imagesLoaded ? (
+            <p style={{ color: "#94a3b8", fontSize: 13, textAlign: "center", padding: 40 }}>이미지 로딩 중...</p>
+          ) : (
+            <SplitView markdown={fullMarkdown} pageImages={pageImages} />
+          )}
         </div>
       )}
     </div>

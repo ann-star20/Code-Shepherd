@@ -1,5 +1,6 @@
 import axios, { type InternalAxiosRequestConfig } from "axios";
 import type { DocDetailsResponse, DocListResponse, SearchResponse, StatusResponse, UploadResponse } from "../types/kms";
+import type { PageImage } from "./hitlApi";
 
 // m0 전용 클라이언트 — baseURL 없음, /kms/* 요청이 vite proxy → m0:8002로 라우팅됨
 const m0Client = axios.create({ baseURL: "" });
@@ -71,3 +72,14 @@ export async function searchKms(query: string, limit = 5, category?: string): Pr
     throw extractDetail(e, "검색 실패");
   }
 }
+
+export async function getDocPageImages(docId: string): Promise<PageImage[]> {
+  try {
+    const { data } = await m0Client.get<PageImage[]>(`/kms/docs/${docId}/page-images`);
+    return data;
+  } catch (e) {
+    throw extractDetail(e, "페이지 이미지 조회 실패");
+  }
+}
+
+export type { PageImage };

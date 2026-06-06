@@ -817,3 +817,63 @@ async def _embed_query(query_text: str) -> list[float]:
         )
         response.raise_for_status()
         return response.json()["embedding"]
+
+
+@router.get("/docs/{doc_id}/page-images")
+async def list_doc_page_images(doc_id: str) -> list[dict]:
+    """문서의 파싱 페이지 이미지 목록 반환.
+
+    chunk_embeddings.metadata.page_image_path에서 중복 제거 후 페이지 순서로 반환.
+    각 URL은 /kms/docs/{doc_id}/page/{page_num} 엔드포인트를 가리킨다.
+    """
+    session_factory = _get_session_factory()
+    async with session_factory() as session:
+        result = await session.execute(
+            text("""
+                SELECT DISTINCT metadata->>'page_image_path' AS path
+                FROM chunk_embeddings
+                WHERE doc_id = :doc_id
+                  AND metadata->>'page_image_path' IS NOT NULL
+                ORDER BY path
+            """),
+            {"doc_id": str(UUID(doc_id))},
+        )
+        paths = [r["path"] for r in result.mappings().fetchall() if r["path"]]
+
+    return [
+        {"page": i, "url": f"/kms/docs/{doc_id}/page/{i}"}
+        for i, _ in enumerate(paths, start=1)
+    ]
+
+
+@router.get("/docs/{doc_id}/page/{page_num}")
+async def get_doc_page_image(doc_id: str, page_num: int):
+    """특정 페이지 이미지를 바이트로 반환한다."""
+    from fastapi.responses import Response as FastAPIResponse
+    from app.storage import get_storage as _get_storage_fn
+
+    storage = _storage or _get_storage_fn()
+    session_factory = _get_session_factory()
+
+    async with session_factory() as session:
+        result = await session.execute(
+            text("""
+                SELECT DISTINCT metadata->>'page_image_path' AS path
+                FROM chunk_embeddings
+                WHERE doc_id = :doc_id
+                  AND metadata->>'page_image_path' IS NOT NULL
+                ORDER BY path
+            """),
+            {"doc_id": str(UUID(doc_id))},
+        )
+        paths = [r["path"] for r in result.mappings().fetchall() if r["path"]]
+
+    if page_num < 1 or page_num > len(paths):
+        raise HTTPException(status_code=404, detail=f"페이지 {page_num} 없음 (총 {len(paths)}페이지)")
+
+    try:
+        img_bytes = await storage.load(paths[page_num - 1])
+    except Exception:
+        raise HTTPException(status_code=404, detail="이미지 파일 없음")
+
+    return FastAPIResponse(content=img_bytes, media_type="image/png")
