@@ -4,6 +4,7 @@ from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
 
+from app.api.routes import router as learning_router
 from shared.contracts import (
     M4CurriculumRequest,
     M4CurriculumResponse,
@@ -21,6 +22,7 @@ async def lifespan(_app: FastAPI):
 
 app = FastAPI(title="code-shepherd m4-curriculum-stub", version="0.1.0", lifespan=lifespan)
 app.add_middleware(TraceIDMiddleware)
+app.include_router(learning_router)
 
 
 @app.get("/health")
