@@ -1156,19 +1156,27 @@ async def document_parser_agent(
     storage_path = f"markdown/{doc_id}/raw.md"
     await storage.save(storage_path, markdown.encode("utf-8"))
 
-    # [7] 페이지 이미지 추출 (PDF / DOCX / PPTX — 멀티모달 RAG용)
-    page_images: list[dict] | None = None
+    # [7] 페이지 이미지 추출 후 GCS 즉시 저장 (HITL 단계에서 원본 이미지 조회 가능하도록)
+    page_image_paths: list[str] = []
     if file_type == "pdf":
         try:
             page_images = await asyncio.to_thread(_extract_page_images_pdf, file_path)
+            for item in page_images:
+                path = f"images/{doc_id}/page_{item['page_number']}.png"
+                await storage.save(path, item["image_bytes"])
+                page_image_paths.append(path)
         except Exception as e:
-            logger.warning(f"PDF 페이지 이미지 추출 실패 (무시): {e}", extra={"doc_id": doc_id})
+            logger.warning(f"PDF 페이지 이미지 추출/저장 실패 (무시): {e}", extra={"doc_id": doc_id})
     elif file_type in ("docx", "pptx"):
         try:
             page_images = await asyncio.to_thread(_extract_page_images_docx, file_path)
+            for item in page_images:
+                path = f"images/{doc_id}/page_{item['page_number']}.png"
+                await storage.save(path, item["image_bytes"])
+                page_image_paths.append(path)
         except Exception as e:
             logger.warning(
-                f"{file_type.upper()} 페이지 이미지 추출 실패 (무시, LibreOffice 필요): {e}",
+                f"{file_type.upper()} 페이지 이미지 추출/저장 실패 (무시, LibreOffice 필요): {e}",
                 extra={"doc_id": doc_id},
             )
 
@@ -1176,7 +1184,7 @@ async def document_parser_agent(
         "Stage 1 완료",
         extra={"doc_id": doc_id, "parser": parser_name,
                "quality_score": quality_score, "parsing_time_ms": parsing_time_ms,
-               "page_images_count": len(page_images) if page_images else 0},
+               "page_images_count": len(page_image_paths)},
     )
 
     return {
@@ -1194,7 +1202,8 @@ async def document_parser_agent(
         "fallback_used": False,
         "image_refs": None,
         "image_data": None,
-        "page_images": page_images,
+        "page_images": None,
+        "page_image_paths": page_image_paths,
     }
 
 

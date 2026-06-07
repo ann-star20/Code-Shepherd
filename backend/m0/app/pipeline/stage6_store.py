@@ -451,14 +451,15 @@ async def stage6_store(
             "current_stage": "stage6_store",
         }
 
-    # --- 4. 페이지 이미지 GCS 저장 (실패해도 파이프라인 계속) ---
-    page_image_paths: list[str] = []
-    page_images = state.get("page_images")
-    if page_images:
-        try:
-            page_image_paths = await _save_page_images(doc_id, page_images, storage)
-        except Exception as e:
-            logger.warning(f"페이지 이미지 저장 실패 (무시): {e}", extra={"doc_id": doc_id})
+    # --- 4. 페이지 이미지 GCS 저장 (stage1에서 이미 저장된 경우 재저장 생략) ---
+    page_image_paths: list[str] = state.get("page_image_paths") or []
+    if not page_image_paths:
+        page_images = state.get("page_images")
+        if page_images:
+            try:
+                page_image_paths = await _save_page_images(doc_id, page_images, storage)
+            except Exception as e:
+                logger.warning(f"페이지 이미지 저장 실패 (무시): {e}", extra={"doc_id": doc_id})
 
     # --- 5. Neo4j 저장 (실패해도 파이프라인 계속) ---
     neo4j_ok = await _save_to_neo4j(state)
