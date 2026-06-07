@@ -1,12 +1,67 @@
-import { useCallback, useEffect, useRef, useState } from "react";
-import { getDocDetails, uploadDocument } from "../lib/kmsApi";
+import { useCallback, useEffect, useRef, useState, type ChangeEvent, type DragEvent } from "react";
+import { getDocDetails, listDocuments, uploadDocument } from "../lib/kmsApi";
+import { listHitlQueue } from "../lib/hitlApi";
 import { TERMINAL_STATUSES, useUploadStatus } from "../hooks/useUploadStatus";
 import type { DocDetailsResponse, UploadResponse } from "../types/kms";
 import { PipelineFlow } from "./PipelineFlow";
 import { DocumentAnalyzer } from "./DocumentAnalyzer";
 
+// ── KPI data hook ─────────────────────────────────────────────────────────────
+interface KpiCounts {
+  total: number; processing: number; hitl: number; stored: number; loading: boolean;
+}
+
+function useKpiCounts(refreshKey: number): KpiCounts {
+  const [kpi, setKpi] = useState<KpiCounts>({ total: 0, processing: 0, hitl: 0, stored: 0, loading: true });
+
+  useEffect(() => {
+    let cancelled = false;
+    setKpi((k: KpiCounts) => ({ ...k, loading: true }));
+    void Promise.allSettled([
+      listDocuments(undefined, 1, 0),
+      listDocuments("processing", 1, 0),
+      listHitlQueue("pending", 1, 0),
+      listDocuments("stored", 1, 0),
+      listDocuments("stored_partial", 1, 0),
+    ]).then(([allRes, procRes, hitlRes, storedRes, partialRes]) => {
+      if (cancelled) return;
+      setKpi({
+        total:      allRes.status      === "fulfilled" ? allRes.value.total      : 0,
+        processing: procRes.status     === "fulfilled" ? procRes.value.total     : 0,
+        hitl:       hitlRes.status     === "fulfilled" ? hitlRes.value.total     : 0,
+        stored:     (storedRes.status  === "fulfilled" ? storedRes.value.total   : 0) +
+                    (partialRes.status === "fulfilled" ? partialRes.value.total  : 0),
+        loading: false,
+      });
+    });
+    return () => { cancelled = true; };
+  }, [refreshKey]);
+
+  return kpi;
+}
+
+// ── KPI Card ──────────────────────────────────────────────────────────────────
+function KpiCard({ label, value, color, loading }: { label: string; value: number; color: string; loading: boolean }) {
+  return (
+    <div style={{
+      flex: 1, minWidth: 0, padding: "14px 18px", borderRadius: 10,
+      background: "#fff", border: "1px solid #e2e8f0",
+      boxShadow: "0 1px 4px rgba(0,0,0,0.04)",
+    }}>
+      <div style={{ fontSize: 11, color: "#64748b", fontWeight: 600, letterSpacing: "0.04em", textTransform: "uppercase", marginBottom: 6 }}>
+        {label}
+      </div>
+      <div style={{ fontSize: 26, fontWeight: 700, color: loading ? "#e2e8f0" : color, lineHeight: 1 }}>
+        {loading ? "—" : value}
+      </div>
+    </div>
+  );
+}
+
+// ── Constants ─────────────────────────────────────────────────────────────────
 const ACCEPTED_EXTENSIONS = [".pdf", ".docx", ".pptx", ".txt", ".md"];
 const ACCEPTED_MIME = ACCEPTED_EXTENSIONS.join(",");
+const SESSION_KEY = "kms_upload_result";
 
 const STATUS_LABEL: Record<string, string> = {
   processing:     "처리 중...",
@@ -18,7 +73,6 @@ const STATUS_LABEL: Record<string, string> = {
   rejected:       "거부됨",
   failed:         "처리 실패",
 };
-
 const STATUS_COLOR: Record<string, string> = {
   processing:     "#f59e0b",
   stored:         "#22c55e",
@@ -30,8 +84,19 @@ const STATUS_COLOR: Record<string, string> = {
   failed:         "#ef4444",
 };
 
-const SESSION_KEY = "kms_upload_result";
+// ── InfoRow ───────────────────────────────────────────────────────────────────
+function InfoRow({ label, value, mono }: { label: string; value: string; mono?: boolean }) {
+  return (
+    <div style={{ display: "flex", gap: 8, marginBottom: 6 }}>
+      <span style={{ fontSize: 11, color: "#64748b", minWidth: 68 }}>{label}</span>
+      <span style={{ fontSize: 12, color: "#334155", wordBreak: "break-all", fontFamily: mono ? "monospace" : undefined }}>
+        {value}
+      </span>
+    </div>
+  );
+}
 
+// ── DocumentUpload ────────────────────────────────────────────────────────────
 export function DocumentUpload({ isVisible = true }: { isVisible?: boolean }) {
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [dragOver, setDragOver]         = useState(false);
@@ -40,16 +105,17 @@ export function DocumentUpload({ isVisible = true }: { isVisible?: boolean }) {
   const [uploadResult, setUploadResult] = useState<UploadResponse | null>(() => {
     try {
       const saved = sessionStorage.getItem(SESSION_KEY);
-      return saved ? JSON.parse(saved) : null;
-    } catch {
-      return null;
-    }
+      return saved ? (JSON.parse(saved) as UploadResponse) : null;
+    } catch { return null; }
   });
   const [docDetails, setDocDetails]     = useState<DocDetailsResponse | null>(null);
   const [detailsError, setDetailsError] = useState<string | null>(null);
-  const [showDetails, setShowDetails]   = useState(false);
+  const [showChunks, setShowChunks]     = useState(false);
   const [pollKey, setPollKey]           = useState(0);
+  const [kpiRefreshKey, setKpiRefreshKey] = useState(0);
   const currentStatusRef = useRef<string | undefined>(undefined);
+
+  const kpi = useKpiCounts(kpiRefreshKey);
 
   useEffect(() => {
     if (isVisible && uploadResult?.doc_id) {
@@ -80,26 +146,27 @@ export function DocumentUpload({ isVisible = true }: { isVisible?: boolean }) {
     setDetailsError(null);
     const timer = setTimeout(() => {
       getDocDetails(uploadResult.doc_id)
-        .then((d) => { setDocDetails(d); setShowDetails(true); })
+        .then((d) => { setDocDetails(d); })
         .catch((e) => { setDetailsError(e instanceof Error ? e.message : "상세 조회 실패"); });
     }, 300);
     return () => clearTimeout(timer);
   }, [isTerminal, uploadResult?.doc_id, docDetails]);
 
   const handleFile = useCallback(async (file: File) => {
-    const ext = "." + file.name.split(".").pop()?.toLowerCase();
+    const ext = "." + (file.name.split(".").pop()?.toLowerCase() ?? "");
     if (!ACCEPTED_EXTENSIONS.includes(ext)) {
-      setUploadError(`지원하지 않는 형식입니다. 지원 형식: ${ACCEPTED_EXTENSIONS.join(", ")}`);
+      setUploadError(`지원하지 않는 형식입니다. 지원: ${ACCEPTED_EXTENSIONS.join(", ")}`);
       return;
     }
     setUploadError(null);
     setUploadResult(null);
     setDocDetails(null);
-    setShowDetails(false);
+    setShowChunks(false);
     setUploading(true);
     try {
       const result = await uploadDocument(file);
       setUploadResult(result);
+      setKpiRefreshKey(k => k + 1);
     } catch (e) {
       setUploadError(e instanceof Error ? e.message : "업로드 중 오류 발생");
     } finally {
@@ -109,7 +176,7 @@ export function DocumentUpload({ isVisible = true }: { isVisible?: boolean }) {
 
   const onFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
-    if (file) handleFile(file);
+    if (file) void handleFile(file);
     e.target.value = "";
   };
 
@@ -117,116 +184,197 @@ export function DocumentUpload({ isVisible = true }: { isVisible?: boolean }) {
     e.preventDefault();
     setDragOver(false);
     const file = e.dataTransfer.files[0];
-    if (file) handleFile(file);
+    if (file) void handleFile(file);
   };
 
   const liveTraces =
     docDetails && docDetails.agent_traces.length > 0
       ? docDetails.agent_traces
       : status?.agent_traces ?? [];
-  const isProcessing = uploading || currentStatus === "processing" || currentStatus === "reprocessing" || currentStatus === "approved";
+  const isProcessing = uploading ||
+    currentStatus === "processing" ||
+    currentStatus === "reprocessing" ||
+    currentStatus === "approved";
+
+  const traceId = docDetails?.agent_traces?.[0]?.trace_id;
 
   return (
-    <div style={{ maxWidth: 960, margin: "40px auto" }}>
-      <div style={styles.card}>
-        <h2 style={styles.title}>사내 문서 업로드</h2>
-        <p style={styles.sub}>PDF · DOCX · PPTX · TXT · MD를 KMS 파이프라인으로 처리합니다.</p>
+    <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
 
-        <div
-          style={{ ...styles.dropZone, borderColor: dragOver ? "#6366f1" : "#d1d5db", background: dragOver ? "#eef2ff" : "#f9fafb" }}
-          onDragOver={(e) => { e.preventDefault(); setDragOver(true); }}
-          onDragLeave={() => setDragOver(false)}
-          onDrop={onDrop}
-          onClick={() => fileInputRef.current?.click()}
-          role="button"
-          tabIndex={0}
-          onKeyDown={(e) => e.key === "Enter" && fileInputRef.current?.click()}
-        >
-          <span style={styles.dropIcon}>📄</span>
-          <p style={styles.dropText}>{uploading ? "업로드 중..." : "파일을 드래그하거나 클릭하여 선택"}</p>
-          <p style={styles.dropHint}>{ACCEPTED_EXTENSIONS.join(" · ")}</p>
-          <input ref={fileInputRef} type="file" accept={ACCEPTED_MIME} onChange={onFileChange} style={{ display: "none" }} disabled={uploading} />
-        </div>
+      {/* ── KPI Row ─────────────────────────────────────────────────── */}
+      <div style={{ display: "flex", gap: 12 }}>
+        <KpiCard label="전체 문서" value={kpi.total}      color="#6366f1" loading={kpi.loading} />
+        <KpiCard label="처리 중"   value={kpi.processing} color="#f59e0b" loading={kpi.loading} />
+        <KpiCard label="HITL 대기" value={kpi.hitl}       color="#3b82f6" loading={kpi.loading} />
+        <KpiCard label="적재 완료" value={kpi.stored}     color="#22c55e" loading={kpi.loading} />
+      </div>
 
-        {uploadError && (
-          <div style={{ ...styles.banner, background: "#fef2f2", borderColor: "#fca5a5", color: "#dc2626" }}>
-            ⚠️ {uploadError}
-          </div>
-        )}
+      {/* ── Main two-column area ─────────────────────────────────────── */}
+      <div style={{ display: "flex", gap: 16, alignItems: "flex-start" }}>
 
-        {uploadResult && (
-          <div style={styles.statusBox}>
-            <div style={styles.statusRow}>
-              <span style={styles.label}>문서 ID</span>
-              <code style={styles.code}>{uploadResult.doc_id}</code>
+        {/* Left column: upload + status */}
+        <div style={{ flex: "0 0 400px", display: "flex", flexDirection: "column", gap: 12 }}>
+
+          {/* Upload card */}
+          <div style={{
+            padding: "20px 24px", borderRadius: 12,
+            boxShadow: "0 2px 12px rgba(0,0,0,0.07)",
+            background: "#fff",
+          }}>
+            <h2 style={{ margin: "0 0 2px", fontSize: 16, fontWeight: 700 }}>사내 문서 업로드</h2>
+            <p style={{ margin: "0 0 16px", fontSize: 13, color: "#6b7280" }}>
+              PDF · DOCX · PPTX · TXT · MD를 KMS 파이프라인으로 처리합니다.
+            </p>
+
+            <div
+              style={{
+                border: "2px dashed",
+                borderColor: dragOver ? "#6366f1" : "#d1d5db",
+                background: dragOver ? "#eef2ff" : "#f9fafb",
+                borderRadius: 10, padding: "28px 16px",
+                textAlign: "center", cursor: "pointer",
+                transition: "all 0.2s", userSelect: "none",
+              }}
+              onDragOver={(e) => { e.preventDefault(); setDragOver(true); }}
+              onDragLeave={() => setDragOver(false)}
+              onDrop={onDrop}
+              onClick={() => fileInputRef.current?.click()}
+              role="button"
+              tabIndex={0}
+              onKeyDown={(e) => e.key === "Enter" && fileInputRef.current?.click()}
+            >
+              <span style={{ fontSize: 32 }}>📄</span>
+              <p style={{ margin: "8px 0 4px", fontSize: 14, fontWeight: 500, color: "#374151" }}>
+                {uploading ? "업로드 중..." : "파일을 드래그하거나 클릭하여 선택"}
+              </p>
+              <p style={{ margin: 0, fontSize: 12, color: "#9ca3af" }}>
+                {ACCEPTED_EXTENSIONS.join(" · ")}
+              </p>
+              <input
+                ref={fileInputRef}
+                type="file"
+                accept={ACCEPTED_MIME}
+                onChange={onFileChange}
+                style={{ display: "none" }}
+                disabled={uploading}
+              />
             </div>
-            <div style={styles.statusRow}>
-              <span style={styles.label}>상태</span>
-              <span style={{ ...styles.badge, background: statusColor }}>{statusLabel ?? currentStatus}</span>
-            </div>
-            {currentStatus === "processing" && (
-              <div style={styles.progressBar}><div style={styles.progressFill} /></div>
+
+            {uploadError && (
+              <div style={{ marginTop: 12, padding: "8px 12px", borderRadius: 8, background: "#fef2f2", border: "1px solid #fca5a5", color: "#dc2626", fontSize: 13 }}>
+                ⚠️ {uploadError}
+              </div>
             )}
-            {isTerminal && (
-              <div style={styles.detailBox}>
-                {currentStatus === "stored"         && <p style={{ color: "#166534" }}>✅ DB에 저장 완료.</p>}
-                {currentStatus === "stored_partial" && <p style={{ color: "#3f6212" }}>✅ PostgreSQL/pgVector 저장 완료 (Neo4j 연결 실패 — 관계 그래프 미반영)</p>}
-                {currentStatus === "hitl_pending"   && <p style={{ color: "#1e40af" }}>🔵 문서 품질이 기준 미달입니다. <strong>HITL 검토 큐</strong>에서 승인하면 파이프라인이 자동으로 재개됩니다.</p>}
-                {currentStatus === "approved"       && <p style={{ color: "#6d28d9" }}>✅ 검토 승인됨. 재처리 시작 중...</p>}
-                {currentStatus === "reprocessing"   && <p style={{ color: "#92400e" }}>🔄 재처리 중입니다. 파이프라인이 진행 중이에요.</p>}
-                {currentStatus === "rejected"       && <p style={{ color: "#4b5563" }}>⛔ 거부된 문서입니다. 새 파일을 업로드하세요.</p>}
-                {currentStatus === "failed"         && <p style={{ color: "#991b1b" }}>❌ 처리 실패: {status?.error ?? "알 수 없는 오류"}</p>}
-                {docDetails && (
-                  <button style={{ ...styles.detailToggle, marginTop: 10 }} onClick={() => setShowDetails((v) => !v)}>
-                    {showDetails ? "▲ 청크 분석 닫기" : "▼ 청크 분석 보기"}
-                  </button>
-                )}
-                {detailsError && <p style={{ color: "#92400e", fontSize: 12, marginTop: 6 }}>상세 조회 실패: {detailsError}</p>}
+            {statusError && (
+              <div style={{ marginTop: 12, padding: "8px 12px", borderRadius: 8, background: "#fff7ed", border: "1px solid #fdba74", color: "#9a3412", fontSize: 13 }}>
+                상태 조회 오류: {statusError}
               </div>
             )}
           </div>
-        )}
 
-        {statusError && (
-          <div style={{ ...styles.banner, background: "#fff7ed", borderColor: "#fdba74", color: "#9a3412" }}>
-            상태 조회 오류: {statusError}
+          {/* Status card */}
+          {uploadResult && (
+            <div style={{
+              padding: 16, borderRadius: 12, background: "#fff",
+              border: "1px solid #e2e8f0", boxShadow: "0 1px 4px rgba(0,0,0,0.04)",
+            }}>
+              <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 8 }}>
+                <span style={{ fontSize: 11, color: "#64748b", minWidth: 48 }}>문서 ID</span>
+                <code style={{ fontSize: 11, background: "#f1f5f9", padding: "2px 6px", borderRadius: 4, color: "#475569", wordBreak: "break-all", flex: 1 }}>
+                  {uploadResult.doc_id}
+                </code>
+              </div>
+              <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: currentStatus === "processing" ? 10 : 0 }}>
+                <span style={{ fontSize: 11, color: "#64748b", minWidth: 48 }}>상태</span>
+                <span style={{ fontSize: 12, fontWeight: 600, color: "#fff", background: statusColor, padding: "3px 10px", borderRadius: 20 }}>
+                  {statusLabel ?? currentStatus}
+                </span>
+              </div>
+
+              {currentStatus === "processing" && (
+                <div style={{ height: 4, background: "#e5e7eb", borderRadius: 2, overflow: "hidden", marginTop: 8 }}>
+                  <div style={{ height: "100%", width: "40%", background: "#f59e0b", borderRadius: 2, animation: "slide 1.5s infinite" }} />
+                </div>
+              )}
+
+              {isTerminal && (
+                <div style={{ marginTop: 10, fontSize: 13 }}>
+                  {currentStatus === "stored"         && <p style={{ color: "#166534",  margin: 0 }}>✅ DB에 저장 완료.</p>}
+                  {currentStatus === "stored_partial" && <p style={{ color: "#3f6212",  margin: 0 }}>✅ PostgreSQL/pgVector 완료 (Neo4j 연결 실패)</p>}
+                  {currentStatus === "hitl_pending"   && <p style={{ color: "#1e40af",  margin: 0 }}>🔵 HITL 검토 큐에서 승인 시 파이프라인이 재개됩니다.</p>}
+                  {currentStatus === "approved"       && <p style={{ color: "#6d28d9",  margin: 0 }}>✅ 검토 승인됨. 재처리 시작 중...</p>}
+                  {currentStatus === "reprocessing"   && <p style={{ color: "#92400e",  margin: 0 }}>🔄 재처리 중입니다.</p>}
+                  {currentStatus === "rejected"       && <p style={{ color: "#4b5563",  margin: 0 }}>⛔ 거부됨. 새 파일을 업로드하세요.</p>}
+                  {currentStatus === "failed"         && <p style={{ color: "#991b1b",  margin: 0 }}>❌ 처리 실패: {status?.error ?? "알 수 없는 오류"}</p>}
+                  {detailsError                       && <p style={{ color: "#92400e",  margin: "6px 0 0", fontSize: 12 }}>상세 조회 실패: {detailsError}</p>}
+
+                  {docDetails && docDetails.chunks.length > 0 && (
+                    <button
+                      style={{
+                        marginTop: 8, display: "block", background: "#f1f5f9",
+                        border: "1px solid #e2e8f0", borderRadius: 6,
+                        padding: "6px 14px", fontSize: 12, fontWeight: 600,
+                        color: "#475569", cursor: "pointer", width: "100%", textAlign: "left",
+                      }}
+                      onClick={() => setShowChunks(v => !v)}
+                    >
+                      {showChunks ? "▲ 청크 분석 닫기" : "▼ 청크 분석 보기"}
+                    </button>
+                  )}
+                </div>
+              )}
+            </div>
+          )}
+        </div>
+
+        {/* Right column: doc info + pipeline flow */}
+        <div style={{ flex: 1, minWidth: 0, display: "flex", flexDirection: "column", gap: 12 }}>
+
+          {/* Doc info panel (shows when upload result exists) */}
+          {uploadResult ? (
+            <div style={{
+              padding: "14px 16px", borderRadius: 12, background: "#fff",
+              border: "1px solid #e2e8f0",
+            }}>
+              <div style={{ fontSize: 13, fontWeight: 700, color: "#1e293b", marginBottom: 10 }}>문서 정보</div>
+              <InfoRow label="Doc ID"   value={uploadResult.doc_id}                        mono />
+              {traceId                && <InfoRow label="Trace ID"   value={traceId}        mono />}
+              {docDetails?.file_type  && <InfoRow label="형식"        value={docDetails.file_type.toUpperCase()} />}
+              {docDetails?.created_at && <InfoRow label="생성일"      value={new Date(docDetails.created_at).toLocaleString("ko-KR")} />}
+              {uploadResult.chunk_count !== null && (
+                <InfoRow label="청크 수" value={String(uploadResult.chunk_count)} />
+              )}
+              {uploadResult.quality_score !== null && uploadResult.quality_score !== undefined && (
+                <InfoRow label="품질 점수" value={uploadResult.quality_score.toFixed(3)} />
+              )}
+              {uploadResult.hitl_required && (
+                <div style={{ marginTop: 8, padding: "6px 10px", borderRadius: 6, background: "#eff6ff", border: "1px solid #bfdbfe", fontSize: 12, color: "#1e40af" }}>
+                  HITL 검토 큐로 이동됨 — HITL 검토 탭에서 승인하세요
+                </div>
+              )}
+            </div>
+          ) : (
+            <div style={{
+              padding: "20px 16px", borderRadius: 12, background: "#fff",
+              border: "1px dashed #e2e8f0", textAlign: "center", color: "#94a3b8", fontSize: 13,
+            }}>
+              파일을 업로드하면 문서 정보가 여기 표시됩니다.
+            </div>
+          )}
+
+          {/* Pipeline flow — always visible */}
+          <div style={{ borderRadius: 12, overflow: "hidden" }}>
+            <PipelineFlow traces={liveTraces} isProcessing={isProcessing} />
           </div>
-        )}
+        </div>
       </div>
 
-      <div style={{ padding: "0 0 8px" }}>
-        <PipelineFlow traces={liveTraces} isProcessing={isProcessing} />
-      </div>
-
-      {showDetails && docDetails && (
-        <div style={{ padding: "0 0 40px" }}>
-          {docDetails.chunks.length > 0
-            ? <DocumentAnalyzer chunks={docDetails.chunks} docId={uploadResult?.doc_id} />
-            : <div style={styles.emptyChunks}>청크 데이터가 없습니다.</div>
-          }
+      {/* ── Chunk analysis (expanded) ────────────────────────────────── */}
+      {showChunks && docDetails && docDetails.chunks.length > 0 && (
+        <div style={{ paddingBottom: 40 }}>
+          <DocumentAnalyzer chunks={docDetails.chunks} docId={uploadResult?.doc_id} />
         </div>
       )}
     </div>
   );
 }
-
-const styles: Record<string, React.CSSProperties> = {
-  card:       { padding: 32, borderRadius: 12, boxShadow: "0 2px 16px rgba(0,0,0,0.08)", fontFamily: "system-ui, sans-serif", background: "#fff" },
-  title:      { margin: "0 0 4px", fontSize: 20, fontWeight: 700 },
-  sub:        { margin: "0 0 20px", fontSize: 14, color: "#6b7280" },
-  dropZone:   { border: "2px dashed", borderRadius: 10, padding: "32px 16px", textAlign: "center", cursor: "pointer", transition: "all 0.2s", userSelect: "none" },
-  dropIcon:   { fontSize: 36 },
-  dropText:   { margin: "8px 0 4px", fontSize: 15, fontWeight: 500, color: "#374151" },
-  dropHint:   { margin: 0, fontSize: 12, color: "#9ca3af" },
-  banner:     { marginTop: 16, padding: "10px 14px", borderRadius: 8, border: "1px solid", fontSize: 14 },
-  statusBox:  { marginTop: 20, padding: 16, borderRadius: 8, background: "#f8fafc", border: "1px solid #e2e8f0" },
-  statusRow:  { display: "flex", alignItems: "center", gap: 10, marginBottom: 10 },
-  label:      { fontSize: 12, color: "#64748b", minWidth: 64 },
-  code:       { fontSize: 11, background: "#f1f5f9", padding: "2px 6px", borderRadius: 4, color: "#475569", wordBreak: "break-all" },
-  badge:      { fontSize: 12, fontWeight: 600, color: "#fff", padding: "3px 10px", borderRadius: 20 },
-  progressBar:  { height: 4, background: "#e5e7eb", borderRadius: 2, overflow: "hidden", marginBottom: 10 },
-  progressFill: { height: "100%", width: "40%", background: "#f59e0b", borderRadius: 2, animation: "slide 1.5s infinite" },
-  detailBox:    { marginTop: 8, padding: "10px 12px", background: "#fff", borderRadius: 6, border: "1px solid #e5e7eb", fontSize: 13 },
-  detailToggle: { display: "block", background: "#f1f5f9", border: "1px solid #e2e8f0", borderRadius: 6, padding: "6px 14px", fontSize: 12, fontWeight: 600, color: "#475569", cursor: "pointer", width: "100%", textAlign: "left" },
-  emptyChunks:  { marginTop: 16, padding: 16, background: "#fff", borderRadius: 10, border: "1px solid #e2e8f0", fontSize: 13, color: "#94a3b8", textAlign: "center" },
-};
