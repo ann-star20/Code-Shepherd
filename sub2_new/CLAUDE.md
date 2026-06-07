@@ -301,7 +301,7 @@ results = await run_parallel_agents(
         ("static_analysis", sa_graph.ainvoke, (state,), {}),
         ("security_scan",   ss_graph.ainvoke, (state,), {}),
     ],
-    db_pool=pool,
+    db_session_factory=session_factory,  # 팀 표준: SQLAlchemy async_sessionmaker (구 db_pool 대체)
     pr_trace_id=pr_trace,
     task_id=state["task_id"],  # agent_traces.task_id — PR 작업 단위 연결
 )
