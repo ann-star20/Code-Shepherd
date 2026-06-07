@@ -364,7 +364,7 @@ async def list_page_images(queue_id: str) -> list[dict]:
                 SELECT DISTINCT ce.metadata->>'page_image_path' AS path
                 FROM chunk_embeddings ce
                 JOIN chunks c ON c.chunk_id = ce.chunk_id
-                WHERE c.doc_id = :doc_id::uuid
+                WHERE c.doc_id::text = :doc_id
                   AND ce.metadata->>'page_image_path' IS NOT NULL
                 ORDER BY path
             """),
@@ -404,7 +404,7 @@ async def get_page_image_bytes(queue_id: str, page_num: int) -> Response:
                 SELECT DISTINCT ce.metadata->>'page_image_path' AS path
                 FROM chunk_embeddings ce
                 JOIN chunks c ON c.chunk_id = ce.chunk_id
-                WHERE c.doc_id = :doc_id::uuid
+                WHERE c.doc_id::text = :doc_id
                   AND ce.metadata->>'page_image_path' IS NOT NULL
                 ORDER BY path
             """),

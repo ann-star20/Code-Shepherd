@@ -315,6 +315,7 @@ export function HitlQueue() {
         {/* Right: detail panel */}
         {selected && (
           <ItemDetail
+            key={selected.queue_id}
             item={selected}
             busy={busy}
             onApprove={handleApprove}
