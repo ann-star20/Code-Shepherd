@@ -823,59 +823,45 @@ async def _embed_query(query_text: str) -> list[float]:
 async def list_doc_page_images(doc_id: str) -> list[dict]:
     """문서의 파싱 페이지 이미지 목록 반환.
 
-    chunk_embeddings.metadata.page_image_path에서 중복 제거 후 페이지 순서로 반환.
-    각 URL은 /kms/docs/{doc_id}/page/{page_num} 엔드포인트를 가리킨다.
+    Storage에서 images/{doc_id}/page_N.png 경로를 직접 탐색한다.
+    page_count를 상한으로 사용하고 exists()로 실제 파일 존재 여부를 확인한다.
     """
+    storage = _get_storage()
     session_factory = _get_session_factory()
+
     async with session_factory() as session:
         result = await session.execute(
-            text("""
-                SELECT DISTINCT ce.metadata->>'page_image_path' AS path
-                FROM chunk_embeddings ce
-                JOIN chunks c ON c.chunk_id = ce.chunk_id
-                WHERE c.doc_id = :doc_id::uuid
-                  AND ce.metadata->>'page_image_path' IS NOT NULL
-                ORDER BY path
-            """),
+            text("SELECT page_count FROM documents WHERE doc_id = :doc_id::uuid"),
             {"doc_id": str(UUID(doc_id))},
         )
-        paths = [r["path"] for r in result.mappings().fetchall() if r["path"]]
+        row = result.mappings().fetchone()
 
-    return [
-        {"page": i, "url": f"/kms/docs/{doc_id}/page/{i}"}
-        for i, _ in enumerate(paths, start=1)
-    ]
+    if not row or not row["page_count"]:
+        return []
+
+    page_count: int = row["page_count"]
+    pages = []
+    for page_num in range(1, page_count + 1):
+        path = f"images/{doc_id}/page_{page_num}.png"
+        if await storage.exists(path):
+            pages.append({"page": page_num, "url": f"/kms/docs/{doc_id}/page/{page_num}"})
+
+    return pages
 
 
 @router.get("/docs/{doc_id}/page/{page_num}")
 async def get_doc_page_image(doc_id: str, page_num: int):
     """특정 페이지 이미지를 바이트로 반환한다."""
     from fastapi.responses import Response as FastAPIResponse
-    from app.storage import get_storage as _get_storage_fn
 
-    storage = _storage or _get_storage_fn()
-    session_factory = _get_session_factory()
-
-    async with session_factory() as session:
-        result = await session.execute(
-            text("""
-                SELECT DISTINCT ce.metadata->>'page_image_path' AS path
-                FROM chunk_embeddings ce
-                JOIN chunks c ON c.chunk_id = ce.chunk_id
-                WHERE c.doc_id = :doc_id::uuid
-                  AND ce.metadata->>'page_image_path' IS NOT NULL
-                ORDER BY path
-            """),
-            {"doc_id": str(UUID(doc_id))},
-        )
-        paths = [r["path"] for r in result.mappings().fetchall() if r["path"]]
-
-    if page_num < 1 or page_num > len(paths):
-        raise HTTPException(status_code=404, detail=f"페이지 {page_num} 없음 (총 {len(paths)}페이지)")
+    storage = _get_storage()
+    path = f"images/{doc_id}/page_{page_num}.png"
 
     try:
-        img_bytes = await storage.load(paths[page_num - 1])
-    except Exception:
-        raise HTTPException(status_code=404, detail="이미지 파일 없음")
+        img_bytes = await storage.load(path)
+    except FileNotFoundError:
+        raise HTTPException(status_code=404, detail=f"페이지 {page_num} 이미지 없음")
+    except Exception as e:
+        raise HTTPException(status_code=503, detail=f"Storage 오류: {e}")
 
     return FastAPIResponse(content=img_bytes, media_type="image/png")
