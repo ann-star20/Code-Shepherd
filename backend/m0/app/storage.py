@@ -30,6 +30,14 @@ class Storage(ABC):
     async def exists(self, path: str) -> bool:
         """경로에 파일이 존재하는지 확인."""
 
+    @abstractmethod
+    async def delete(self, path: str) -> None:
+        """파일을 삭제한다. 파일이 없어도 오류를 발생시키지 않는다."""
+
+    @abstractmethod
+    async def list_prefix(self, prefix: str) -> list[str]:
+        """prefix로 시작하는 모든 경로 목록을 반환한다."""
+
 
 class LocalStorage(Storage):
     """로컬 파일시스템 기반 Storage (개발 환경 / GCS 미세팅 시)."""
@@ -62,6 +70,24 @@ class LocalStorage(Storage):
 
     async def exists(self, path: str) -> bool:
         return await aiofiles.os.path.exists(self._resolve_path(path))
+
+    async def delete(self, path: str) -> None:
+        full_path = self._resolve_path(path)
+        try:
+            await aiofiles.os.remove(full_path)
+        except FileNotFoundError:
+            pass
+
+    async def list_prefix(self, prefix: str) -> list[str]:
+        base = self._resolve_path(prefix)
+        parent = base.parent if not str(base).endswith("/") else base
+        if not parent.exists():
+            return []
+        return [
+            str(p.relative_to(self.base_dir))
+            for p in parent.rglob("*")
+            if p.is_file() and str(p.relative_to(self.base_dir)).startswith(prefix)
+        ]
 
 
 class GCSStorage(Storage):
@@ -110,6 +136,19 @@ class GCSStorage(Storage):
     async def exists(self, path: str) -> bool:
         blob = self._bucket.blob(path)
         return await asyncio.to_thread(blob.exists)
+
+    async def delete(self, path: str) -> None:
+        blob = self._bucket.blob(path)
+        try:
+            await asyncio.to_thread(blob.delete)
+        except Exception:
+            pass
+
+    async def list_prefix(self, prefix: str) -> list[str]:
+        blobs = await asyncio.to_thread(
+            lambda: list(self._client.list_blobs(self.bucket_name, prefix=prefix))
+        )
+        return [b.name for b in blobs]
 
 
 def get_storage() -> Storage:

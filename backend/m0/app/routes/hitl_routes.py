@@ -243,7 +243,11 @@ async def reject_hitl(
     body: RejectRequest,
     x_reviewer_role: str | None = Header(default=None),
 ) -> dict:
-    """HITL 항목을 거부한다. 문서 상태가 'rejected'로 변경된다."""
+    """HITL 항목을 거부한다. 문서 상태가 'rejected'로 변경되고 파생 GCS 파일이 삭제된다.
+
+    삭제 대상: images/{doc_id}/, markdown/{doc_id}/
+    보존 대상: originals/{doc_id}.* (재처리 가능성), documents 레코드 (감사 이력)
+    """
     _require_reviewer(x_reviewer_role)
     session_factory = _get_session_factory()
 
@@ -255,6 +259,8 @@ async def reject_hitl(
         row = pending_result.mappings().fetchone()
         if row is None:
             raise HTTPException(status_code=404, detail="대기 중인 HITL 항목 없음")
+
+        doc_id = str(row["doc_id"])
 
         async with session.begin():
             await session.execute(
@@ -272,9 +278,23 @@ async def reject_hitl(
             )
             await session.execute(
                 text("UPDATE documents SET upload_status = 'rejected' WHERE doc_id = :doc_id"),
-                {"doc_id": str(row["doc_id"])},
+                {"doc_id": doc_id},
             )
 
+    # 파생 GCS 파일 삭제 (originals/ 제외)
+    from app.storage import get_storage
+    storage = get_storage()
+    deleted = 0
+    for prefix in (f"images/{doc_id}/", f"markdown/{doc_id}/"):
+        try:
+            paths = await storage.list_prefix(prefix)
+            for path in paths:
+                await storage.delete(path)
+                deleted += 1
+        except Exception as e:
+            logger.warning(f"reject 파일 삭제 실패 (무시): {e}", extra={"doc_id": doc_id})
+
+    logger.info(f"reject 완료 — 파생 파일 {deleted}개 삭제", extra={"doc_id": doc_id})
     return {"status": "rejected", "message": "거부됨. 문서 처리가 중단되었습니다."}
 
 
