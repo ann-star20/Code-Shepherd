@@ -7,3 +7,10 @@ docker compose -f docker-compose.yml -f docker-compose.mock.yml up postgres redi
 2. E2E 테스트 실행
 python backend/scripts/test_pipeline_flow.py --url "https://docs.djangoproject.com/en/6.0/ref/csrf/"
 
+기대 결과 — Neo4j Browser (localhost:7475)에서 확인:
+
+
+MATCH (c:Concept)-[:HAS_EXAMPLE]->(e:CodeExample) RETURN c, e
+MATCH (c:Concept)-[:MITIGATED_BY]->(m:SecurityMechanism) RETURN c, m
+MATCH (c:Concept)-[:CAUSED_BY]->(r:RootCause) RETURN c, r
+MATCH (c:Concept)-[:CONFIGURED_BY]->(p:ConfigProperty) RETURN c, p

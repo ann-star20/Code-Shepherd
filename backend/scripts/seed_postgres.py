@@ -1,99 +1,121 @@
-"""PostgreSQL 스키마 적용 및 초기 Concept 시드 적재 v2.
+"""PostgreSQL 시드 스크립트 — 완전 멱등성 UPSERT 기반 초기화.
 
-PRD-schema.md §15.2 DDL 적용 후,
-security_concepts.json + perf_concepts.json의 Concept 데이터를
-concepts 테이블에 UPSERT (ON CONFLICT DO UPDATE).
+실행:
+    cd backend
+    python scripts/seed_postgres.py
 
-Usage:
-    python backend/scripts/seed_postgres.py
+환경변수 (우선순위: DATABASE_URL > 개별 변수):
+    DATABASE_URL   postgresql://user:pass@host:port/dbname
+    DB_HOST        localhost
+    DB_PORT        5433
+    DB_NAME        postgres
+    DB_USER        postgres
+    DB_PASSWORD    postgres
 """
 
+from __future__ import annotations
+
+import asyncio
 import json
 import os
 import sys
 from pathlib import Path
 
-import psycopg2
+import asyncpg
 
-SEED_DIR = Path(__file__).parent / "seed"
-SEC_DIR  = SEED_DIR / "security"
-PERF_DIR = SEED_DIR / "performance"
+sys.path.insert(0, str(Path(__file__).parent.parent))
 
-SCHEMA_FILE = SEC_DIR / "schema.sql"
+# ── 경로 상수 ─────────────────────────────────────────────────────────────────
 
-_UPSERT_CONCEPT = """
-INSERT INTO concepts (
-    concept_name, domains, concept_type,
-    cwe_id, owasp_id, severity, description_ko, aliases
-) VALUES (
-    %(concept_name)s, %(domains)s, %(concept_type)s,
-    %(cwe_id)s, %(owasp_id)s, %(severity)s, %(description_ko)s, %(aliases)s
-)
-ON CONFLICT (concept_name) DO UPDATE SET
-    domains        = EXCLUDED.domains,
-    concept_type   = EXCLUDED.concept_type,
-    cwe_id         = EXCLUDED.cwe_id,
-    owasp_id       = EXCLUDED.owasp_id,
-    severity       = EXCLUDED.severity,
-    description_ko = EXCLUDED.description_ko,
-    aliases        = EXCLUDED.aliases,
-    updated_at     = now()
-"""
+SCRIPTS_DIR = Path(__file__).parent
+SCHEMA_SQL  = SCRIPTS_DIR / "seed" / "security" / "schema.sql"
+SEC_JSON    = SCRIPTS_DIR / "seed" / "security" / "security_concepts.json"
+PERF_JSON   = SCRIPTS_DIR / "seed" / "performance" / "performance_concepts.json"
 
 
-def _concept_row(c: dict) -> dict:
-    return {
-        "concept_name": c["name"],
-        "domains":      c.get("domains", []),
-        "concept_type": c.get("concept_type", None),
-        "cwe_id":       c.get("cwe_id", None),
-        "owasp_id":     c.get("owasp_id", None),
-        "severity":     c.get("severity", None),
-        "description_ko": c.get("description_ko", None),
-        "aliases":      c.get("aliases", []),
-    }
+def _dsn() -> str:
+    if url := os.getenv("DATABASE_URL"):
+        return url
+    host = os.getenv("DB_HOST", "localhost")
+    port = os.getenv("DB_PORT", "5433")
+    name = os.getenv("DB_NAME", "postgres")
+    user = os.getenv("DB_USER", "postgres")
+    pw   = os.getenv("DB_PASSWORD", "postgres")
+    return f"postgresql://{user}:{pw}@{host}:{port}/{name}"
 
 
-def main():
-    conn = psycopg2.connect(
-        host=os.getenv("DB_HOST", "localhost"),
-        port=int(os.getenv("DB_PORT", "5433")),
-        user=os.getenv("DB_USER", "postgres"),
-        password=os.getenv("DB_PASSWORD", "postgres"),
-        dbname=os.getenv("DB_NAME", "postgres"),
-    )
+async def _apply_schema(conn: asyncpg.Connection) -> None:
+    sql = SCHEMA_SQL.read_text(encoding="utf-8")
+    statements = [s.strip() for s in sql.split(";") if s.strip()]
+    for stmt in statements:
+        lines = [ln for ln in stmt.splitlines() if not ln.strip().startswith("--")]
+        body = "\n".join(lines).strip()
+        if body:
+            await conn.execute(body)
+    print(f"  [schema] {SCHEMA_SQL.name} 적용 완료")
+
+
+async def _upsert_concepts(conn: asyncpg.Connection, concepts: list[dict]) -> int:
+    inserted = 0
+    for c in concepts:
+        severity = c.get("severity")
+        if severity == "info":
+            severity = "low"
+        owasp = c.get("owasp_id") or c.get("owasp_category")
+        await conn.execute(
+            """
+            INSERT INTO concepts
+                (concept_name, domains, concept_type, cwe_id, owasp_id,
+                 severity, description_ko, aliases)
+            VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+            ON CONFLICT (concept_name) DO UPDATE
+            SET
+                domains        = (SELECT array(
+                                    SELECT DISTINCT unnest(concepts.domains || EXCLUDED.domains)
+                                  )),
+                aliases        = (SELECT array(
+                                    SELECT DISTINCT unnest(concepts.aliases || EXCLUDED.aliases)
+                                  )),
+                severity       = EXCLUDED.severity,
+                description_ko = EXCLUDED.description_ko,
+                updated_at     = now()
+            """,
+            c["concept_name"],
+            c.get("domains", ["security"]),
+            c.get("concept_type", "vulnerability_root_cause"),
+            c.get("cwe_id"),
+            owasp,
+            severity,
+            c.get("description_ko", ""),
+            c.get("aliases", []),
+        )
+        inserted += 1
+    return inserted
+
+
+async def main() -> None:
+    dsn = _dsn()
+    print(f"[seed_postgres] 연결: {dsn.split('@')[-1]}")
+
+    conn = await asyncpg.connect(dsn)
     try:
-        with conn.cursor() as cur:
-            # 1. DDL 적용
-            print("[1/2] PostgreSQL DDL v2 applying...")
-            cur.execute(SCHEMA_FILE.read_text(encoding="utf-8"))
+        print("[1/3] 스키마 DDL 적용...")
+        await _apply_schema(conn)
 
-            # 2. Concept 시드 적재
-            sec_concepts  = json.loads((SEC_DIR  / "security_concepts.json").read_text("utf-8"))["concepts"]
-            perf_concepts = json.loads((PERF_DIR / "perf_concepts.json").read_text("utf-8"))["concepts"]
-            all_concepts  = sec_concepts + perf_concepts
+        print("[2/3] 보안 도메인 개념 UPSERT...")
+        sec_data: list[dict] = json.loads(SEC_JSON.read_text(encoding="utf-8"))
+        n_sec = await _upsert_concepts(conn, sec_data)
+        print(f"  → {n_sec}건")
 
-            print(f"[2/2] Seeding {len(all_concepts)} concepts...")
-            for c in all_concepts:
-                cur.execute(_UPSERT_CONCEPT, _concept_row(c))
+        print("[3/3] 성능 도메인 개념 UPSERT...")
+        perf_data: list[dict] = json.loads(PERF_JSON.read_text(encoding="utf-8"))
+        n_perf = await _upsert_concepts(conn, perf_data)
+        print(f"  → {n_perf}건")
 
-        conn.commit()
-
-        with conn.cursor() as cur:
-            cur.execute("SELECT unnest(domains) AS domain, COUNT(*) FROM concepts GROUP BY domain ORDER BY domain")
-            rows = cur.fetchall()
-
-        print("seed OK:")
-        for domain, cnt in rows:
-            print(f"   {domain}: {cnt}건")
-
-    except Exception as e:
-        conn.rollback()
-        print(f"ERROR: {e}", file=sys.stderr)
-        sys.exit(1)
+        print(f"\n[완료] 총 {n_sec + n_perf}건 — 멱등성 보장")
     finally:
-        conn.close()
+        await conn.close()
 
 
 if __name__ == "__main__":
-    main()
+    asyncio.run(main())

@@ -6,10 +6,10 @@ PRD 전체를 한 번에 로드하지 않는다.
 
 | 태스크 유형 | 로드할 파일 |
 |------------|------------|
-| 도메인 모델·유즈케이스 | PRD-domain.md |
-| DB 스키마·Cypher | PRD-schema.md |
+| 도메인 모델·유즈케이스 | PRD-domain-V2.md |
+| DB 스키마·Cypher | PRD-schema-V2.md |
 | 테스트 작성 | PRD-qa.md |
-| 인프라·Docker | PRD-infra.md |
+| 인프라·Docker | PRD-infra-V2.md |
 | 폴더·아키텍처 확인 | PRD-arch.md |
 
 ## 8. 개발 순서 (Development Phases)
@@ -57,3 +57,79 @@ PRD 전체를 한 번에 로드하지 않는다.
 
 구현 GREEN 확인 직후, 커밋 전에 /compact 실행
 → 대화 이력 압축, 생성된 코드는 파일에 이미 저장됨
+
+
+## 12. 형상 관리 및 Git 커밋 규칙 (Git Commit Convention)
+
+모든 개발자 및 AI 협업 도구는 소스코드 변경 이력을 명확히 추적하고 코드 리뷰 효율을 높이기 위해 **Conventional Commits 1.0.0** 규격을 준수한다.
+
+### 12.1. 커밋 메시지 구조
+
+```
+<type>(<scope>): <subject>          ← Header (필수)
+
+[body]                              ← Body (선택, 변경 이유 및 상세 설명)
+
+[footer]                            ← Footer (선택, 이슈 번호, Breaking Change)
+```
+
+- **Header**: 소문자, 50자 이내, 명령형 현재 시제
+- **Body**: 72자 줄바꿈, "무엇을 왜" 설명
+- **Footer**: `Closes #123`, `BREAKING CHANGE: ...`
+
+### 12.2. 필수 커밋 타입 (Type)
+
+| 타입 | 설명 | 예시 |
+|------|------|------|
+| `feat` | 새로운 기능 추가 | 에이전트 로직 구현, API 엔드포인트 신설 |
+| `fix` | 버그 수정 | 파이프라인 락 에러 해결, JSON 파싱 예외 처리 |
+| `docs` | 문서 수정 | PRD 업데이트, README.md 수정 |
+| `style` | 코드 포맷팅, 세미콜론 누락 등 | 비즈니스 로직 변경 없음 |
+| `refactor` | 코드 리팩토링 | 기능 추가나 버그 수정 없는 구조 개선 |
+| `test` | 테스트 코드 추가 및 수정 | 테스트 하네스, PyTest 스크립트 추가 |
+| `chore` | 빌드, 패키지 매니저, 도커파일 수정 | 프로덕션 코드 변경 없음 |
+
+### 12.3. 프로젝트 전용 Scope 규정
+
+제목의 `()` 안에 들어갈 Scope는 아래 항목으로 강제한다.
+
+| Scope | 변경 모듈 |
+|-------|-----------|
+| `input` | Input Agent 및 URL Pre-scan 관련 |
+| `crawler` | Crawler Agent 및 DOM 정제 관련 |
+| `extractor` | Extractor Agent 및 Gemini 프롬프트/JSON 스키마 관련 |
+| `writer` | Graph Writer Agent 및 PostgreSQL/Neo4j 적재 관련 |
+| `resolver` | Link Resolver Agent 및 벡터 유사도 병합 관련 |
+| `db` | 마이그레이션 스크립트, 시드 데이터(`schema.sql`, `seed_data.cypher` 등) 관련 |
+| `infra` | Docker, Docker Compose, Cloud SQL Proxy 설정 관련 |
+| `frontend` | UI 컴포넌트, 상태 관리, react-force-graph 관련 |
+
+### 12.4. 커밋 예시
+
+```bash
+# 기능 추가 — Mechanism/Property 통합 노드 및 TUNED_BY 관계 도입 반영
+feat(extractor): unify mechanism and property nodes for security and performance domains
+
+# 버그 수정
+fix(writer): rollback postgresql on neo4j connection timeout
+
+# 테스트 — Mechanism 통합 및 HAS_EXAMPLE 경로 변경 유닛 테스트
+test(writer): add T04 neo4j mechanism unified label dedup harness test
+
+# 인프라
+chore(infra): add cloud-sql-proxy service with gcp profile
+
+# DB 스키마 — domains TEXT[] 배열 구조 수용 DDL 반영
+feat(db): add staging_concepts table with array validation and state machine columns
+
+# 리팩터
+refactor(resolver): extract alias similarity into shared util
+
+# BREAKING CHANGE 포함
+feat(writer): enforce two-phase commit for cross-db atomicity
+
+BREAKING CHANGE: graph_writer_task now raises CrossDbCommitError
+on neo4j failure instead of silently continuing
+```
+
+---

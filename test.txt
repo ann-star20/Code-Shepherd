@@ -46,3 +46,31 @@ https://docs.djangoproject.com/en/6.0/ref/csrf/
 
 python backend/scripts/test_pipeline_flow.py
 
+
+cd backend
+
+# 프롬프트 전체를 파일로 저장 (터미널 잘림 없음)
+python scripts/run_extractor.py `
+  --url "https://docs.djangoproject.com/en/6.0/ref/csrf/" `
+  --framework Django `
+  --dump-prompt `
+  --request-file output/csrf_request.txt `
+  --out-file output/csrf_full.txt
+
+# mock 모드: 요청 프롬프트 + 응답 JSON 저장
+python scripts/run_extractor.py   --url "https://docs.djangoproject.com/en/6.0/ref/csrf/"   --framework Django  --request-file output/csrf_request.txt  --response-file output/csrf_response.json
+
+# production 모드: LLM 원문까지 저장 (csrf_response.raw.txt 추가 생성)
+python scripts/run_extractor.py `
+  --url "https://docs.djangoproject.com/en/6.0/ref/csrf/" `
+  --mode production --api-key AIza... `
+  --request-file output/csrf_request.txt `
+  --response-file output/csrf_response.json
+생성 파일 구조:
+
+파일	내용
+--out-file	전체 터미널 출력
+--request-file	LLM에 전송되는 프롬프트 (청크별 구분)
+--response-file	파싱된 컨셉 JSON
+--response-file + .raw.txt	Gemini 원문 응답 (production 모드만)
+프롬프트 구조 요약: Gemini는 단일 user turn — system/user 분리 없음. _build_prompt가 반환하는 하나의 문자열 안에 역할지시 + 스키마 + 문서청크가 모두 포함됩니다.

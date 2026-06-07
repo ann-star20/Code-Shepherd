@@ -22,7 +22,7 @@ logger = logging.getLogger(__name__)
 def _pg_conn():
     return psycopg2.connect(
         host=os.getenv("DB_HOST", "localhost"),
-        port=int(os.getenv("DB_PORT", "5433")),
+        port=int(os.getenv("DB_PORT", "5432")),
         user=os.getenv("DB_USER", "postgres"),
         password=os.getenv("DB_PASSWORD", "postgres"),
         dbname=os.getenv("DB_NAME", "postgres"),
@@ -32,7 +32,7 @@ def _pg_conn():
 def _pg_async_dsn() -> str:
     return (
         f"postgresql://{os.getenv('DB_USER','postgres')}:{os.getenv('DB_PASSWORD','postgres')}"
-        f"@{os.getenv('DB_HOST','localhost')}:{os.getenv('DB_PORT','5433')}"
+        f"@{os.getenv('DB_HOST','localhost')}:{os.getenv('DB_PORT','5432')}"
         f"/{os.getenv('DB_NAME','postgres')}"
     )
 

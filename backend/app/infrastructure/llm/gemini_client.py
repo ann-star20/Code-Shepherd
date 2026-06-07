@@ -56,15 +56,15 @@ class GeminiClient(ILLMClient):
 
     def __init__(self, api_key: str, model: str = "gemini-2.5-flash", langsmith_project: str = "") -> None:
         try:
-            import google.generativeai as genai
+            from google import genai
             from langsmith import traceable  # noqa: F401
 
-            genai.configure(api_key=api_key)
-            self._model = genai.GenerativeModel(model)
+            self._client = genai.Client(api_key=api_key)
+            self._model_name = model
             logger.info("GeminiClient 초기화 — model: %s", model)
         except ImportError as exc:
             raise RuntimeError(
-                "google-generativeai 또는 langsmith 패키지가 없습니다: pip install google-generativeai langsmith"
+                "google-genai 또는 langsmith 패키지가 없습니다: pip install google-genai langsmith"
             ) from exc
         self._project = langsmith_project
         self.raw_responses: list[str] = []  # 청크별 LLM 원문 (--response-file 저장용)
@@ -89,7 +89,9 @@ class GeminiClient(ILLMClient):
             chunk_preview,
         )
 
-        response = await self._model.generate_content_async(prompt)
+        response = await self._client.aio.models.generate_content(
+            model=self._model_name, contents=prompt
+        )
 
         self.raw_responses.append(response.text)
         logger.info("[RESPONSE RAW]\n%s", response.text)
@@ -109,7 +111,6 @@ class GeminiClient(ILLMClient):
 
 DEFAULT_DOMAINS = ["security", "performance"]
 
-
 def _build_prompt(
     text_chunk: str,
     metadata: dict,
@@ -122,53 +123,64 @@ def _build_prompt(
     """
     framework = metadata.get("framework", "Unknown")
     lang = metadata.get("lang", "EN")
-    domains = allowed_domains if allowed_domains else DEFAULT_DOMAINS
+    domains = allowed_domains if allowed_domains else ["security", "performance"]
     domain_values = ", ".join(f'"{d}"' for d in domains)
 
+    # 주의: JSON 스키마 부분의 중괄호({}) 충돌을 막기 위해, 
+    # 변수 바인딩이 필요한 라인에만 f-string(f"...")을 적용하여 안전하게 결합합니다.
     return (
-        f"당신은 공식 문서 분석가이자 Neo4j 지식 그래프 아키텍트입니다.\n"
-        f"아래 문서 청크({framework}, {lang})를 분석하여 핵심 개념을 Neo4j 그래프로 "
+        "당신은 공식 문서 분석가이자 Neo4j 지식 그래프 아키텍트입니다.\n"
+        f"아래 문서 청크({framework}, {lang})를 분석하여 핵심 기술 및 보안 개념을 Neo4j 그래프로 "
         "적재할 수 있는 JSON 배열로만 응답하라.\n\n"
-        "## Neo4j 그래프 매핑 — 필드별 노드·엣지 생성 규칙\n\n"
-        "각 JSON 항목은 Concept 노드 1개로 MERGE된다. concept_name이 MERGE 키이다.\n\n"
+        "## Neo4j 그래프 매핑 — 필드별 노드·엣지 생성 규칙 (4레이어 아키텍처)\n\n"
+        "각 JSON 항목은 단일 마스터 Concept 노드로 MERGE된다. 'concept_name'이 병합 기준 키이다.\n\n"
         '  "concept_name"  →  MERGE (c:Concept {name: concept_name})\n'
-        "      + APOC addLabels: domains 배열의 각 값 capitalize → 물리 다중 라벨 누적\n"
+        "      + APOC addLabels: domains 배열의 각 값 capitalize → 물리 다중 라벨 동적 누적\n"
         '        예) domains=["security","performance"] → :Concept:Security:Performance\n'
-        "      ★ 동일 개념이 여러 문서에 등장해도 같은 이름이면 단일 노드로 병합\n"
-        "        → 영문 표준 식별자 사용 (XSS, SQLi, CsrfViewMiddleware 등)\n\n"
-        '  "aliases"  →  Link Resolver가 aliases 교집합으로 (c1)-[:SAME_AS]-(c2) 생성\n'
-        "      → 공식 명칭·약어·별칭 모두 포함 (SAME_AS 탐색 정확도 결정)\n\n"
-        '  "security_mechanism"  →  MERGE (m:SecurityMechanism {name: each})\n'
+        "      ★ 동일 개념이 여러 문서에 등장해도 단일 노드로 수렴. 영문 표준 파스칼케이스 엄수 (예: XSS, SQLi, MemoryLeak)\n\n"
+        '  "aliases"  →  노드 내부 속성 배열로 저장. 입구 단에서 중복 노드를 병합(Deduplication)시키는 데 사용됨.\n'
+        "      → 공식 명칭·약어·별칭·한국어 번역명 모두 포함 (SAME_AS 관계선은 절대 생성하지 않음)\n\n"
+        '  "security_mechanism"  →  MERGE (m:Mechanism {name: mechanism_name})\n'
         "      (c)-[:MITIGATED_BY]->(m)\n"
-        '      → 재사용 가능한 표준 명칭 (예: "CSRFToken", "SameSiteCookie", "RateLimit")\n\n'
+        '      → 완전 소문자 스네이크케이스 강제 (예: "output_encoding", "parameterized_query")\n\n'
         '  "affected_components"  →  MERGE (x:Component {name: each})\n'
         "      (c)-[:AFFECTS]->(x)\n"
-        '      → 구체적 경로·컴포넌트명 (예: "django.middleware.csrf", "HTML 폼", "세션 쿠키")\n\n'
+        '      → 소문자 스네이크케이스 강제 (예: "template_rendering_layer", "heap_memory")\n\n'
         '  "root_cause"  →  MERGE (r:RootCause {name: root_cause})\n'
         "      (c)-[:CAUSED_BY]->(r)\n"
-        "      → 단일 문자열로 작성 (list 반환 금지)\n\n"
-        '  "config_properties"  →  MERGE (p:ConfigProperty {key}) SET p.value\n'
-        "      (c)-[:CONFIGURED_BY]->(p)\n"
-        '      → 반드시 {"key": str, "value": str} 형식 준수\n\n'
-        '  "code_examples"  →  MERGE (e:CodeExample {concept_name, lang, framework})\n'
-        "      (c)-[:HAS_EXAMPLE]->(e)\n"
-        '      → {"lang": str, "framework": str, "code": str} 형식\n\n'
-        "## 스키마\n\n"
-        "필수:\n"
-        '  "concept_name": str  — 영문 표준 식별자 (MERGE 키, 문서 내 실제 개념만)\n'
-        f'  "domains": list[str]  — 허용값: {domain_values}\n'
-        '    교차 도메인 허용. "both" 사용 금지. 미등록 도메인은 그대로 포함.\n'
-        '  "severity": "critical"|"high"|"medium"|"low"\n'
-        '  "description_ko": str  — 한국어 설명 (1~3문장)\n\n'
-        "선택:\n"
-        '  "concept_type": "vulnerability_root_cause"|"security_mechanism"|"attack_vector"|"compliance_control"\n'
-        '  "cwe_id": str,  "owasp_id": str\n'
-        '  "aliases": list[str]\n'
-        '  "security_mechanism": list[str]\n'
-        '  "affected_components": list[str]\n'
-        '  "config_properties": list[{"key": str, "value": str}]\n'
-        '  "root_cause": str\n'
-        '  "code_examples": list[{"lang": str, "framework": str, "code": str}]\n\n'
-        "출력: JSON 배열만 반환 (```json``` 마크다운 허용, 설명 텍스트 금지)\n\n"
+        "      → 소문자 스네이크케이스의 단일 문자열로 작성 (배열 반환 금지)\n\n"
+        '  "config_properties"  →  MERGE (p:Property {unq_key: key}) SET p.value, p.type\n'
+        "      (c)-[:TUNED_BY]->(p)\n"
+        '      → 반드시 {"key": str, "value": str, "type": "security"|"tuning"} 형식 준수. 키는 소문자 스네이크케이스.\n\n'
+        '  "code_examples"  →  MERGE (e:CodeExample {unq_id: 부모명_언어_프레임워크_버전...})\n'
+        "      (m)-[:HAS_EXAMPLE]->(e)\n"
+        '      → security_mechanism 내부에 중첩. {"lang": str, "lang_version": str, "framework": str, "framework_version": str, "code": str, "description": str} 형식\n\n'
+        "## 필수 출력 JSON 스키마\n\n"
+        "[\n"
+        "  {\n"
+        '    "concept_name": "영문_표준_파스칼케이스_식별자",\n'
+        '    "concept_type": "vulnerability_root_cause" | "performance_antipattern",\n'
+        '    "cwe_id": "CWE-번호 (없으면 null)",\n'
+        '    "owasp_id": "A0x:2025 (없으 면 null)",\n'
+        '    "severity": "critical"|"high"|"medium"|"low",\n'
+        f'    "domains": [{domain_values} 중 1개 이상 (교차 도메인 시 복수 포함)],\n'
+        '    "description_ko": "한국어 개념 요약 설명 (1~3문장)",\n'
+        '    "aliases": ["동의어", "한글 번역명", "약어"],\n'
+        '    "root_cause": "원인_스네이크_케이스",\n'
+        '    "affected_components": ["컴포넌트_스네이크_케이스"],\n'
+        '    "security_mechanism": [\n'
+        '      {\n'
+        '        "mechanism_name": "메커니즘_스네이크_케이스",\n'
+        '        "code_examples": [\n'
+        '          {"lang": "...", "lang_version": "...", "framework": "...", "framework_version": "...", "code": "...", "description": "..."}\n'
+        '        ]\n'
+        '      }\n'
+        '    ],\n'
+        '    "config_properties": [\n'
+        '      {"key": "설정키_스네이크_케이스", "value": "값", "type": "security"|"tuning"}\n'
+        '    ]\n'
+        "  }\n"
+        "]\n\n"
+        "출력: 위 JSON 형식의 배열만 반환하라. (```json``` 마크다운 블록 허용, 설명 텍스트 금지)\n\n"
         f"---\n{text_chunk}\n---"
     )

@@ -19,7 +19,7 @@ from app.interfaces.api.graph import router as graph_router
 def _pg_dsn() -> str:
     return (
         f"postgresql://{os.getenv('DB_USER', 'postgres')}:{os.getenv('DB_PASSWORD', 'postgres')}"
-        f"@{os.getenv('DB_HOST', 'localhost')}:{os.getenv('DB_PORT', '5433')}"
+        f"@{os.getenv('DB_HOST', 'localhost')}:{os.getenv('DB_PORT', '5432')}"
         f"/{os.getenv('DB_NAME', 'postgres')}"
     )
 

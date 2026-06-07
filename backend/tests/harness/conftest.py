@@ -10,7 +10,7 @@ from neo4j import GraphDatabase, AsyncGraphDatabase
 def _pg_dsn() -> str:
     return (
         f"postgresql://{os.getenv('DB_USER','postgres')}:{os.getenv('DB_PASSWORD','postgres')}"
-        f"@{os.getenv('DB_HOST','localhost')}:{os.getenv('DB_PORT','5433')}"
+        f"@{os.getenv('DB_HOST','localhost')}:{os.getenv('DB_PORT','5432')}"
         f"/{os.getenv('DB_NAME','postgres')}"
     )
 
@@ -33,7 +33,7 @@ def pg_conn():
     """psycopg2 동기 연결 — schema/UPSERT 통합 테스트용."""
     conn = psycopg2.connect(
         host=os.getenv("DB_HOST", "localhost"),
-        port=int(os.getenv("DB_PORT", "5433")),
+        port=int(os.getenv("DB_PORT", "5432")),
         user=os.getenv("DB_USER", "postgres"),
         password=os.getenv("DB_PASSWORD", "postgres"),
         dbname=os.getenv("DB_NAME", "postgres"),
