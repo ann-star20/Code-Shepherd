@@ -276,6 +276,28 @@ def _convert_pdf_with_pymupdf(file_path: str) -> tuple[str, float]:
     image_blocks = 0
 
     for page in doc:
+        # find_tables() — PyMuPDF 1.22+ 에서 표 구조를 인식, Markdown 파이프 표로 변환
+        try:
+            page_tables = page.find_tables()
+        except AttributeError:
+            page_tables = []  # 구버전 폴백
+
+        # 표 bbox → Markdown 변환 맵
+        table_md_by_bbox: dict[tuple, str] = {}
+        for tbl in page_tables:
+            rows = tbl.extract()
+            if not rows:
+                continue
+            md_lines: list[str] = []
+            for row_idx, row in enumerate(rows):
+                cells = [str(cell or "").replace("\n", " ").strip() for cell in row]
+                md_lines.append("| " + " | ".join(cells) + " |")
+                if row_idx == 0:
+                    md_lines.append("| " + " | ".join(["---"] * len(cells)) + " |")
+            table_md_by_bbox[tuple(tbl.bbox)] = "\n".join(md_lines)
+
+        emitted_tables: set[tuple] = set()
+
         blocks = page.get_text("dict", flags=fitz.TEXT_PRESERVE_WHITESPACE)["blocks"]
         for block in blocks:
             total_blocks += 1
@@ -284,7 +306,21 @@ def _convert_pdf_with_pymupdf(file_path: str) -> tuple[str, float]:
                 image_blocks += 1
                 blocks_md.append("<!-- Image -->\n")
                 continue
-            # 텍스트 블록
+
+            # 텍스트 블록이 표 영역과 겹치면 표 Markdown으로 대체
+            block_rect = fitz.Rect(block["bbox"])
+            table_hit = False
+            for tbbox, tmd in table_md_by_bbox.items():
+                if block_rect.intersects(fitz.Rect(tbbox)):
+                    table_hit = True
+                    if tbbox not in emitted_tables:
+                        emitted_tables.add(tbbox)
+                        blocks_md.append(tmd)
+                    break
+            if table_hit:
+                continue
+
+            # 일반 텍스트 블록
             lines: list[str] = []
             for line in block.get("lines", []):
                 line_text = "".join(span["text"] for span in line.get("spans", []))

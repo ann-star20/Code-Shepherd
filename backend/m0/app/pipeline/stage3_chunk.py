@@ -69,6 +69,8 @@ def _split_by_headers(markdown: str) -> list[tuple[str, str]]:
     """
     ## 또는 ### 헤더 기준으로 섹션 분리.
     반환: [(header, content), ...]
+
+    첫 번째 헤더 이전의 내용(문서 제목, 메타 표 등)도 빈 헤더("")로 첫 섹션에 포함한다.
     """
     pattern = re.compile(r"^(#{1,3} .+)$", re.MULTILINE)
     positions = [(m.start(), m.group()) for m in pattern.finditer(markdown)]
@@ -77,6 +79,12 @@ def _split_by_headers(markdown: str) -> list[tuple[str, str]]:
         return [("", markdown)]
 
     sections = []
+
+    # 첫 번째 헤더 이전 내용 보존 (제목·커버 표 등)
+    pre_header = markdown[: positions[0][0]].strip()
+    if pre_header:
+        sections.append(("", pre_header))
+
     for i, (pos, header) in enumerate(positions):
         start = pos + len(header)
         end = positions[i + 1][0] if i + 1 < len(positions) else len(markdown)
