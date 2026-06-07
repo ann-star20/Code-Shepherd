@@ -153,8 +153,11 @@ def _make_parent_chunks(
         extracted = _extract_section_header(header)
 
         # 상위 H1이 있으면 "H1 > 현재제목" 형태로 컨텍스트 보강
+        # 또한 H1 제목을 section_text 앞에 붙여 청크 내용에서 사라지지 않도록 함
+        h1_prefix = ""
         if pending_h1 and level > 1:
             extracted = f"{pending_h1} > {extracted}" if extracted else pending_h1
+            h1_prefix = f"# {pending_h1}\n\n"
             pending_h1 = ""  # 첫 번째 하위 섹션에만 적용, 이후는 초기화
 
         # 단일 섹션이 PARENT_MAX_TOKENS 초과 시 강제 분할
@@ -173,7 +176,9 @@ def _make_parent_chunks(
             first_header = extracted
 
         # 헤딩을 content에 포함시켜 임베딩 품질 보장
-        section_text = f"{header}\n\n{content}" if header else content
+        # h1_prefix: 빈 content였던 H1 제목을 첫 번째 하위 청크 앞에 포함
+        base_text = f"{header}\n\n{content}" if header else content
+        section_text = h1_prefix + base_text if h1_prefix else base_text
         buffer.append(section_text)
         buffer_tokens += tokens
 
