@@ -133,6 +133,7 @@ CREATE TABLE scan_issues (
   keyword              TEXT,    -- 예: 'SQL Injection'
   sub_category         TEXT,    -- 예: 'raw_query'
   concept_id           TEXT,    -- 예: 'sql_injection'
+  mistake_type_concept_id TEXT, -- M4 실수유형 개념 매핑 (db.py insert_scan_issues가 참조)
   confidence_score     FLOAT,   -- 0.0~1.0
   code_snippet         TEXT,    -- 문제 코드 조각
   name_of_function     TEXT,    -- 이슈 발생 라인을 감싸는 함수명 (함수 밖이면 '')
