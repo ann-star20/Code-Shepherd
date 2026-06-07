@@ -160,9 +160,11 @@ async def _insert_hitl_queue(
         reason_list = state.get("metadata_issues") or []
         quality_score = state.get("metadata_score")
         issues = {
-            "metadata_issues": reason_list,
+            "issues": reason_list,
             "metadata": state.get("metadata"),
             "markdown_storage_path": state.get("markdown_storage_path"),
+            "category_reasoning": state.get("category_reasoning", ""),
+            "category_alternatives": state.get("category_alternatives", []),
         }
     else:
         stage = "stage4_chunk_validate"

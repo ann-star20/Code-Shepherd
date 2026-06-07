@@ -477,7 +477,12 @@ async def _get_hitl_markdown(queue_id: str) -> dict:
 
     async with session_factory() as session:
         result = await session.execute(
-            text("SELECT issues, doc_id::text FROM hitl_queue WHERE queue_id = :queue_id"),
+            text("""
+                SELECT hq.issues, hq.doc_id::text, d.markdown_path AS doc_markdown_path
+                FROM hitl_queue hq
+                LEFT JOIN documents d USING (doc_id)
+                WHERE hq.queue_id = :queue_id
+            """),
             {"queue_id": str(UUID(queue_id))},
         )
         row = result.mappings().fetchone()
@@ -488,11 +493,12 @@ async def _get_hitl_markdown(queue_id: str) -> dict:
     issues = json.loads(raw_issues) if isinstance(raw_issues, str) else raw_issues
     doc_id = row["doc_id"]
 
+    # 우선순위: issues.markdown_storage_path → documents.markdown_path → 표준 경로 폴백
     markdown_path = (
-        issues.get("markdown_storage_path")
-        if isinstance(issues, dict)
-        else None
-    ) or f"markdown/{doc_id}/raw.md"
+        (issues.get("markdown_storage_path") if isinstance(issues, dict) else None)
+        or row.get("doc_markdown_path")
+        or f"markdown/{doc_id}/raw.md"
+    )
 
     try:
         raw = await storage.load(markdown_path)

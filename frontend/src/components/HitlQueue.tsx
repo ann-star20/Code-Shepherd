@@ -102,9 +102,7 @@ export function HitlQueue() {
   // ── KB Evolution ──────────────────────────────────────────────────────────
   const isKbEvolution = (item: HitlQueueItem | null) =>
     item?.stage === "stage5b_metadata_validate" &&
-    Array.isArray((item?.issues as Record<string, unknown>)?.["issues"]) &&
-    ((item!.issues as Record<string, unknown>)?.["issues"] as string[])
-      .some((i: string) => i.includes("새 카테고리"));
+    (item?.reason ?? "").includes("새 카테고리");
 
   const handleKbSuggest = async (item: HitlQueueItem) => {
     setKbLoading(true);
@@ -381,17 +379,21 @@ function ItemDetail({
 
   const handleLoadSplitView = async () => {
     setSplitLoading(true);
+    let md = "";
+    let images: PageImage[] = [];
     try {
-      const [mdRes, images] = await Promise.all([
-        onLoadMarkdown(item.queue_id),
-        onGetPageImages(item.queue_id),
-      ]);
-      setSplitData({ markdown: mdRes.markdown, pageImages: images });
-    } catch {
-      setSplitData({ markdown: "Markdown 로드 실패", pageImages: [] });
-    } finally {
-      setSplitLoading(false);
+      const mdRes = await onLoadMarkdown(item.queue_id);
+      md = mdRes.markdown;
+    } catch (e) {
+      md = `Markdown 로드 실패: ${e instanceof Error ? e.message : "알 수 없는 오류"}`;
     }
+    try {
+      images = await onGetPageImages(item.queue_id);
+    } catch {
+      // 이미지 로드 실패는 무시 — 마크다운은 표시
+    }
+    setSplitData({ markdown: md, pageImages: images });
+    setSplitLoading(false);
   };
 
   const isPending = item.status === "pending";
