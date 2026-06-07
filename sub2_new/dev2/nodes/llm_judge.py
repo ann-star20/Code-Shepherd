@@ -24,6 +24,7 @@ import asyncio
 import json
 import logging
 import os
+import re
 
 from langchain_anthropic import ChatAnthropic
 from langchain_core.messages import HumanMessage
@@ -82,6 +83,52 @@ def _get_mock_response(current_severity: str) -> dict:
     }
 
 
+def _extract_json_object(content) -> str:
+    """
+    LLM 응답에서 json.loads로 넘길 JSON 본문을 추출한다.
+
+    claude는 종종 JSON을 마크다운 코드펜스로 감싸 반환한다:
+        ```json\n{ ... }\n```
+    이 경우 그대로 json.loads하면 "Expecting value: line 1 column 1" 으로 실패해
+    severity가 fallback(원래 값)으로 격하된다. 펜스를 벗겨 실제 객체만 남긴다.
+
+    처리 순서:
+        1. content가 list(content blocks)면 text 부분만 이어붙여 str화
+        2. ```json ... ``` / ``` ... ``` 코드펜스 제거
+        3. 앞뒤 잡텍스트가 남으면 첫 '{' ~ 마지막 '}' 구간만 추출
+
+    Args:
+        content: ChatAnthropic 응답의 content (str 또는 content-block list)
+
+    Returns:
+        json.loads에 넘길 문자열 (파싱 성공을 보장하진 않음 — 호출 측이 예외 처리)
+    """
+    # ① content blocks(list) → text만 이어붙임
+    if isinstance(content, list):
+        text = "".join(
+            b.get("text", "") if isinstance(b, dict) else str(b)
+            for b in content
+        )
+    else:
+        text = content if isinstance(content, str) else str(content)
+
+    s = text.strip()
+
+    # ② 코드펜스 제거: 시작의 ```/```json 와 끝의 ``` 를 벗긴다
+    if s.startswith("```"):
+        s = re.sub(r"^```[a-zA-Z0-9_-]*[ \t]*\r?\n?", "", s)
+        s = re.sub(r"\r?\n?```[ \t]*$", "", s).strip()
+
+    # ③ 펜스 밖 잡텍스트(설명 문장 등) 대비 — {...} 구간만 추출
+    if not s.startswith("{"):
+        start = s.find("{")
+        end = s.rfind("}")
+        if start != -1 and end > start:
+            s = s[start:end + 1]
+
+    return s.strip()
+
+
 async def _call_llm_with_retry(
     prompt: str,
     model_id: str,
@@ -120,7 +167,8 @@ async def _call_llm_with_retry(
             # ainvoke: LangChain 네이티브 비동기 — 이벤트 루프 블록 없음
             # LangSmith LANGCHAIN_TRACING_V2=true 시 자동으로 추적됨 (코드 변경 불필요)
             response = await llm.ainvoke([HumanMessage(content=prompt)])
-            raw_text = response.content
+            # 코드펜스(```json ... ```) 제거 후 파싱 — claude가 자주 펜스로 감싸 반환
+            raw_text = _extract_json_object(response.content)
 
             parsed = json.loads(raw_text)
 
