@@ -4,13 +4,22 @@
 > SESSION_4에서 저장한 **m3 분석 결과(판정·이슈·코멘트)** 를 사용자가 웹사이트에서 눈으로 본다.
 > → 사용자 입장 플로우의 ① "PR 코드리뷰 페이지에 눈에 보이는 결과" 완성.
 
-> 선행: **SESSION_4 완료**(m3 /review 저장 + GET 조회 API 존재)해야 페이지가 읽을 게 있음.
+> 선행: **SESSION_4 완료** + **원래 m3(:8004)를 새 코드 + GITHUB_TOKEN으로 재시작**(지금 :8004는 옛 코드라 `/review`가 없음). 그래야 페이지가 읽을 `/review`가 살아있음. (아래 [선행 0])
 
 ---
 
 ```
 너는 우리 팀 시니어 프론트엔드 엔지니어다. 작업 디렉토리: C:\Users\user\Code-Shepherd\frontend
 기존 패턴(React + lib/api.ts + TeamContext + AppLayout + MSW 테스트)을 따른다.
+
+[선행 0 — 백엔드 m3 재시작 (페이지가 읽을 API 살리기)]
+지금 돌아가는 m3(:8004)는 SESSION_4 이전 옛 코드라 /review 엔드포인트가 없다. 페이지가 읽을 게 없으니 먼저:
+- 원래 m3(:8004)를 종료하고 SESSION_4의 새 코드로 다시 띄운다.
+- 실행 환경에 GITHUB_TOKEN을 넣는다(webhook-gateway/.env 값 재사용 — 코멘트 재게시·조회에 필요).
+- 확인: GET http://localhost:8004/review/{owner}/{repo}/{pr_number} 가 응답하면 OK
+  (저장된 결과 없으면 found:false 빈 결과 + 200도 정상).
+- m1·api-core·프론트는 그대로 둬도 되고, m3만 새 코드로 교체하면 됨.
+- (PR#4 결과를 페이지로 보고 싶으면, 재시작 후 그 PR로 한 번 더 흐르게 하거나 SESSION_4에서 저장된 DB를 그대로 읽게 한다.)
 
 [데이터 출처]
 - PR 목록: api-core 기존 엔드포인트 GET /teams/{teamId}/prs (프론트 /api 프록시로 이미 접근됨)
