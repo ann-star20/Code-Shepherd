@@ -65,6 +65,36 @@ docker compose up --build
 ```
 > Windows 로컬 실행에선 semgrep이 자동 skip되고 Python 보안은 **bandit**이 담당한다(정상). Docker(Linux)에선 semgrep OWASP 룰셋이 추가로 작동한다.
 
+### 1-5. 다른 컴퓨터에서 처음 실행할 때
+
+전역 `C:\Python314` 환경이 없는 신규 머신에서는 아래 순서로 세팅한다.
+
+```powershell
+# Step 1. Python 3.11+ 설치 확인
+python --version
+
+# Step 2. 의존성 설치 (venv 또는 전역 — sentence_transformers 포함 필수)
+pip install -r sub2_new\dev2\requirements.txt
+
+# Step 3. .env 파일 생성 (sub2_new/dev2/.env)
+USE_MOCK_LLM=false
+DATABASE_URL=postgresql+asyncpg://postgres:<비밀번호>@34.22.101.111:5432/tasklink
+POSTGRES_URL=postgresql://postgres:<비밀번호>@34.22.101.111:5432/tasklink
+ANTHROPIC_API_KEY=sk-ant-...
+LANGCHAIN_TRACING_V2=true
+LANGCHAIN_API_KEY=lsv2_...
+LANGCHAIN_PROJECT=dev2-<본인GitHub_ID>
+```
+
+> ⚠️ **bge-m3 모델 (4.56 GB)** — 첫 실행 시 HuggingFace에서 자동 다운로드된다.
+> 시간이 오래 걸리면 기존 머신의 캐시 폴더를 복사해도 된다.
+> - Windows: `C:\Users\<계정>\.cache\huggingface\`
+
+**파이프라인 구조만 빠르게 확인하고 싶을 때** (API 키·모델 없이):
+```env
+USE_MOCK_LLM=true   # bge-m3·Anthropic 호출 없이 동작, severity·RAG는 mock
+```
+
 ---
 
 ## 2. 무엇이 실행되나 — 워크플로우 단계별 실행 파일
