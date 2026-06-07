@@ -823,28 +823,18 @@ async def _embed_query(query_text: str) -> list[float]:
 async def list_doc_page_images(doc_id: str) -> list[dict]:
     """문서의 파싱 페이지 이미지 목록 반환.
 
-    Storage에서 images/{doc_id}/page_N.png 경로를 직접 탐색한다.
-    page_count를 상한으로 사용하고 exists()로 실제 파일 존재 여부를 확인한다.
+    images/{doc_id}/page_N.png 경로를 1번부터 순차 탐색하고
+    파일이 없는 첫 번째 페이지에서 중단한다.
+    DB의 page_count에 의존하지 않으므로 기존 문서에도 동작한다.
     """
     storage = _get_storage()
-    session_factory = _get_session_factory()
-
-    async with session_factory() as session:
-        result = await session.execute(
-            text("SELECT page_count FROM documents WHERE doc_id = :doc_id::uuid"),
-            {"doc_id": str(UUID(doc_id))},
-        )
-        row = result.mappings().fetchone()
-
-    if not row or not row["page_count"]:
-        return []
-
-    page_count: int = row["page_count"]
     pages = []
-    for page_num in range(1, page_count + 1):
+    for page_num in range(1, 501):  # 최대 500페이지 상한
         path = f"images/{doc_id}/page_{page_num}.png"
         if await storage.exists(path):
             pages.append({"page": page_num, "url": f"/kms/docs/{doc_id}/page/{page_num}"})
+        else:
+            break  # 연속된 번호 체계이므로 첫 번째 빈 페이지에서 종료
 
     return pages
 
