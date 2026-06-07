@@ -55,7 +55,7 @@ def pg_cursor(pg_conn):
 @pytest.fixture
 async def async_neo4j_driver():
     """neo4j AsyncDriver — Neo4j 미실행 시 자동 skip."""
-    uri = os.getenv("NEO4J_URI", "bolt://127.0.0.1:7687")
+    uri = os.getenv("NEO4J_URI", "bolt://127.0.0.1:7688")
     auth = (os.getenv("NEO4J_USER", "neo4j"), os.getenv("NEO4J_PASSWORD", "pass1234!"))
     driver = AsyncGraphDatabase.driver(uri, auth=auth)
     try:
@@ -70,7 +70,7 @@ async def async_neo4j_driver():
 @pytest.fixture(scope="session")
 def neo4j_driver():
     """Neo4j 드라이버 — Neo4j 미실행 시 자동 skip."""
-    uri = os.getenv("NEO4J_URI", "bolt://127.0.0.1:7687")
+    uri = os.getenv("NEO4J_URI", "bolt://127.0.0.1:7688")
     auth = (os.getenv("NEO4J_USER", "neo4j"), os.getenv("NEO4J_PASSWORD", "pass1234!"))
     driver = GraphDatabase.driver(uri, auth=auth)
     try:
