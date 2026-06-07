@@ -97,6 +97,7 @@ class ChunkItem(BaseModel):
     token_count: int | None = None
     section_header: str | None = None
     page_number: int | None = None
+    chunk_index: int | None = None
 
 
 class DocDetailsResponse(BaseModel):
@@ -705,11 +706,12 @@ async def get_doc_details(doc_id: str) -> DocDetailsResponse:
         chunk_result = await session.execute(
             text("""
                 SELECT chunk_id::text, chunk_type, content, token_count,
-                       section_header, page_number
+                       section_header, page_number, chunk_index
                 FROM chunks
                 WHERE doc_id = :doc_id
                 ORDER BY
                     CASE WHEN chunk_type = 'parent' THEN 0 ELSE 1 END,
+                    chunk_index NULLS LAST,
                     page_number NULLS LAST
             """),
             {"doc_id": doc_id},
@@ -737,6 +739,7 @@ async def get_doc_details(doc_id: str) -> DocDetailsResponse:
             token_count=r["token_count"],
             section_header=r["section_header"],
             page_number=r["page_number"],
+            chunk_index=r["chunk_index"],
         )
         for r in chunk_rows
     ]

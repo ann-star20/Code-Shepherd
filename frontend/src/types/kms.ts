@@ -46,6 +46,7 @@ export interface ChunkItem {
   token_count: number | null;
   section_header: string | null;
   page_number: number | null;
+  chunk_index: number | null;
 }
 
 export interface DocDetailsResponse {

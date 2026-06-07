@@ -97,6 +97,7 @@ class Chunk(Base):
     token_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
     page_number: Mapped[int | None] = mapped_column(Integer, nullable=True)
     section_header: Mapped[str | None] = mapped_column(Text, nullable=True)
+    chunk_index: Mapped[int | None] = mapped_column(Integer, nullable=True)
 
     document: Mapped["Document"] = relationship("Document", back_populates="chunks")
     embedding: Mapped["ChunkEmbedding | None"] = relationship(

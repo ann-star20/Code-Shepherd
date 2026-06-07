@@ -44,7 +44,11 @@ export function DocumentAnalyzer({ chunks, docId }: DocumentAnalyzerProps) {
 
   const fullMarkdown = parentChunks
     .slice()
-    .sort((a, b) => (a.page_number ?? 999) - (b.page_number ?? 999))
+    .sort((a, b) => {
+      const ai = a.chunk_index ?? (a.page_number != null ? a.page_number * 1000 : 999999);
+      const bi = b.chunk_index ?? (b.page_number != null ? b.page_number * 1000 : 999999);
+      return ai - bi;
+    })
     .map(c => c.content)
     .join("\n\n---\n\n");
 

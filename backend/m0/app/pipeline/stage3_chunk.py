@@ -371,6 +371,10 @@ async def stage3_chunk(state: "DocPipelineState") -> dict:
         children = _make_child_chunks(parent)
         all_chunks.extend(children)
 
+    # 문서 순서를 보장하는 인덱스 부여 (page_number = None인 DOCX 청크 정렬용)
+    for i, chunk in enumerate(all_chunks):
+        chunk["chunk_index"] = i
+
     logger.info(
         "Stage 3 완료",
         extra={

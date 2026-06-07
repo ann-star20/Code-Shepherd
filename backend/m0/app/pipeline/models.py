@@ -27,6 +27,7 @@ class ChunkItem(TypedDict):
     token_count: int
     page_number: Optional[int]
     section_header: Optional[str]      # "3.2 API 설계 원칙"
+    chunk_index: Optional[int]         # 문서 내 청크 순서 (0-based)
 
 
 # ---------------------------------------------------------------------------

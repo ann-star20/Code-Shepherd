@@ -186,6 +186,7 @@ async def _save_chunks(
             "token_count": chunk["token_count"],
             "page_number": chunk.get("page_number"),
             "section_header": chunk.get("section_header"),
+            "chunk_index": chunk.get("chunk_index"),
         }
         for chunk in chunks
     ]
@@ -193,10 +194,10 @@ async def _save_chunks(
         text("""
             INSERT INTO chunks
                 (chunk_id, doc_id, parent_chunk_id, chunk_type, content,
-                 token_count, page_number, section_header)
+                 token_count, page_number, section_header, chunk_index)
             VALUES
                 (:chunk_id, :doc_id, :parent_chunk_id, :chunk_type, :content,
-                 :token_count, :page_number, :section_header)
+                 :token_count, :page_number, :section_header, :chunk_index)
             ON CONFLICT (chunk_id) DO NOTHING
         """),
         rows,
