@@ -1,10 +1,32 @@
-"""G9: commit_staging usecase 통합 테스트."""
+"""G9: commit_staging usecase 통합 테스트.
+
+커버:
+  C01 APPROVED 2행 → concepts 테이블 2행 INSERT
+  C02 APPROVED 2행 → staging_concepts 모두 COMMITTED
+  C03 APPROVED 1행 → Neo4j Concept 노드 1개 (Neo4jConceptRepo.merge_concept)
+  C04 APPROVED 0행 → 반환값 0, 예외 없음
+"""
 
 import json
 import uuid
+from pathlib import Path
+
 import pytest
 
+from app.adapters.db.neo4j_repo import Neo4jConceptRepo
 from app.usecases.commit_staging import commit_staging
+
+_CYPHER_PATH = Path(__file__).parents[2] / "scripts" / "init_db.cypher"
+
+
+# ── 픽스처 ────────────────────────────────────────────────────────────────────
+
+@pytest.fixture
+async def neo4j_repo(async_neo4j_driver):
+    """스키마 초기화 완료된 Neo4jConceptRepo."""
+    repo = Neo4jConceptRepo(async_neo4j_driver)
+    await repo.init_schema(_CYPHER_PATH)
+    return repo
 
 
 # ── 헬퍼 ─────────────────────────────────────────────────────────────────────
@@ -59,11 +81,15 @@ async def _cleanup_neo4j(driver, names: list[str]) -> None:
         )
 
 
-# ── T_commit_writes_concepts ──────────────────────────────────────────────────
+# ── C01: concepts 테이블 INSERT ───────────────────────────────────────────────
 
-@pytest.mark.anyio
-async def test_commit_writes_concepts(asyncpg_pool, async_neo4j_driver):
-    """2행 APPROVED → commit_staging → concepts 테이블 2행."""
+@pytest.mark.asyncio
+async def test_C01_commit_writes_concepts(asyncpg_pool, async_neo4j_driver, neo4j_repo):
+    """
+    Arrange: staging 2행 APPROVED
+    Act:     commit_staging(repo) 호출
+    Assert:  concepts 테이블에 2행 삽입
+    """
     session_id = str(uuid.uuid4())
     doc_id = f"EXT_cs_{uuid.uuid4().hex[:8]}"
     names = [_uid("XSS"), _uid("SQLI")]
@@ -73,7 +99,7 @@ async def test_commit_writes_concepts(asyncpg_pool, async_neo4j_driver):
         for n in names:
             await _insert_approved(conn, session_id, doc_id, n)
         try:
-            count = await commit_staging(session_id, conn, async_neo4j_driver)
+            count = await commit_staging(session_id, conn, neo4j_repo)
             assert count == 2
 
             rows = await conn.fetch(
@@ -85,11 +111,15 @@ async def test_commit_writes_concepts(asyncpg_pool, async_neo4j_driver):
     await _cleanup_neo4j(async_neo4j_driver, names)
 
 
-# ── T_commit_state_committed ──────────────────────────────────────────────────
+# ── C02: staging_concepts → COMMITTED ────────────────────────────────────────
 
-@pytest.mark.anyio
-async def test_commit_state_committed(asyncpg_pool, async_neo4j_driver):
-    """2행 APPROVED → commit_staging → staging 모두 COMMITTED."""
+@pytest.mark.asyncio
+async def test_C02_commit_state_committed(asyncpg_pool, async_neo4j_driver, neo4j_repo):
+    """
+    Arrange: staging 2행 APPROVED
+    Act:     commit_staging(repo) 호출
+    Assert:  staging_concepts 전행 state='COMMITTED'
+    """
     session_id = str(uuid.uuid4())
     doc_id = f"EXT_cs_{uuid.uuid4().hex[:8]}"
     names = [_uid("XSS"), _uid("SQLI")]
@@ -99,7 +129,7 @@ async def test_commit_state_committed(asyncpg_pool, async_neo4j_driver):
         for n in names:
             await _insert_approved(conn, session_id, doc_id, n)
         try:
-            await commit_staging(session_id, conn, async_neo4j_driver)
+            await commit_staging(session_id, conn, neo4j_repo)
 
             states = await conn.fetch(
                 "SELECT state FROM staging_concepts WHERE session_id = $1::uuid",
@@ -111,11 +141,15 @@ async def test_commit_state_committed(asyncpg_pool, async_neo4j_driver):
     await _cleanup_neo4j(async_neo4j_driver, names)
 
 
-# ── T_commit_neo4j ────────────────────────────────────────────────────────────
+# ── C03: Neo4j Concept 노드 생성 확인 ────────────────────────────────────────
 
-@pytest.mark.anyio
-async def test_commit_neo4j(asyncpg_pool, async_neo4j_driver):
-    """XSS APPROVED → commit_staging → Neo4j Concept 존재."""
+@pytest.mark.asyncio
+async def test_C03_commit_neo4j_concept_created(asyncpg_pool, async_neo4j_driver, neo4j_repo):
+    """
+    Arrange: XSS APPROVED staging 1행
+    Act:     commit_staging(repo) 호출
+    Assert:  Neo4j에 Concept{name} 노드 1개
+    """
     session_id = str(uuid.uuid4())
     doc_id = f"EXT_cs_{uuid.uuid4().hex[:8]}"
     name = _uid("XSS")
@@ -124,7 +158,7 @@ async def test_commit_neo4j(asyncpg_pool, async_neo4j_driver):
         await _insert_doc(conn, doc_id)
         await _insert_approved(conn, session_id, doc_id, name)
         try:
-            await commit_staging(session_id, conn, async_neo4j_driver)
+            await commit_staging(session_id, conn, neo4j_repo)
         finally:
             await _cleanup_pg(conn, session_id, doc_id, [name])
 
@@ -139,18 +173,22 @@ async def test_commit_neo4j(asyncpg_pool, async_neo4j_driver):
         await _cleanup_neo4j(async_neo4j_driver, [name])
 
 
-# ── T_commit_zero ─────────────────────────────────────────────────────────────
+# ── C04: 0행 APPROVED → 반환 0 ───────────────────────────────────────────────
 
-@pytest.mark.anyio
-async def test_commit_zero(asyncpg_pool, async_neo4j_driver):
-    """0행 APPROVED → return 0, 예외 없음."""
+@pytest.mark.asyncio
+async def test_C04_commit_zero_returns_zero(asyncpg_pool, async_neo4j_driver, neo4j_repo):
+    """
+    Arrange: staging 0행 APPROVED
+    Act:     commit_staging(repo) 호출
+    Assert:  반환값 0, 예외 없음
+    """
     session_id = str(uuid.uuid4())
     doc_id = f"EXT_cs_{uuid.uuid4().hex[:8]}"
 
     async with asyncpg_pool.acquire() as conn:
         await _insert_doc(conn, doc_id)
         try:
-            result = await commit_staging(session_id, conn, async_neo4j_driver)
+            result = await commit_staging(session_id, conn, neo4j_repo)
             assert result == 0
         finally:
             await _cleanup_pg(conn, session_id, doc_id, [])

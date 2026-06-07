@@ -6,16 +6,15 @@
 import json
 
 import asyncpg
-import neo4j
 
+from app.adapters.db.neo4j_repo import Neo4jConceptRepo
 from app.domain.models import ConceptExtractionSchema
-from app.infrastructure.graph.graph_writer import write_concept_node
 
 
 async def commit_staging(
     session_id: str,
     conn: asyncpg.Connection,
-    driver: neo4j.AsyncDriver,
+    repo: Neo4jConceptRepo,
 ) -> int:
     async with conn.transaction():
         rows = await conn.fetch(
@@ -63,7 +62,7 @@ async def commit_staging(
                 concept.aliases,
             )
 
-            await write_concept_node(concept, driver)
+            await repo.merge_concept(concept)
 
             await conn.execute(
                 "UPDATE staging_concepts SET state='COMMITTED', committed_at=NOW() WHERE id=$1",
