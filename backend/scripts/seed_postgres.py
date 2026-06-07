@@ -7,7 +7,7 @@
 환경변수 (우선순위: DATABASE_URL > 개별 변수):
     DATABASE_URL   postgresql://user:pass@host:port/dbname
     DB_HOST        localhost
-    DB_PORT        5433
+    DB_PORT        5432
     DB_NAME        postgres
     DB_USER        postgres
     DB_PASSWORD    postgres
@@ -27,10 +27,11 @@ sys.path.insert(0, str(Path(__file__).parent.parent))
 
 # ── 경로 상수 ─────────────────────────────────────────────────────────────────
 
-SCRIPTS_DIR = Path(__file__).parent
-SCHEMA_SQL  = SCRIPTS_DIR / "seed" / "security" / "schema.sql"
-SEC_JSON    = SCRIPTS_DIR / "seed" / "security" / "security_concepts.json"
-PERF_JSON   = SCRIPTS_DIR / "seed" / "performance" / "performance_concepts.json"
+SCRIPTS_DIR    = Path(__file__).parent
+SCHEMA_SQL     = SCRIPTS_DIR / "seed" / "security" / "schema.sql"
+MIGRATION_SQL  = SCRIPTS_DIR / "seed" / "migration_v2.sql"
+SEC_JSON       = SCRIPTS_DIR / "seed" / "security" / "security_concepts.json"
+PERF_JSON      = SCRIPTS_DIR / "seed" / "performance" / "performance_concepts.json"
 
 
 def _dsn() -> str:
@@ -53,6 +54,13 @@ async def _apply_schema(conn: asyncpg.Connection) -> None:
         if body:
             await conn.execute(body)
     print(f"  [schema] {SCHEMA_SQL.name} 적용 완료")
+
+
+async def _apply_migration(conn: asyncpg.Connection) -> None:
+    """migration_v2.sql — 기존 DB 컬럼 보강 (멱등성)."""
+    sql = MIGRATION_SQL.read_text(encoding="utf-8")
+    await conn.execute(sql)
+    print(f"  [migration] {MIGRATION_SQL.name} 적용 완료")
 
 
 async def _upsert_concepts(conn: asyncpg.Connection, concepts: list[dict]) -> int:
@@ -99,15 +107,18 @@ async def main() -> None:
 
     conn = await asyncpg.connect(dsn)
     try:
-        print("[1/3] 스키마 DDL 적용...")
+        print("[1/4] 스키마 DDL 적용...")
         await _apply_schema(conn)
 
-        print("[2/3] 보안 도메인 개념 UPSERT...")
+        print("[2/4] 스키마 마이그레이션 적용 (v2)...")
+        await _apply_migration(conn)
+
+        print("[3/4] 보안 도메인 개념 UPSERT...")
         sec_data: list[dict] = json.loads(SEC_JSON.read_text(encoding="utf-8"))
         n_sec = await _upsert_concepts(conn, sec_data)
         print(f"  → {n_sec}건")
 
-        print("[3/3] 성능 도메인 개념 UPSERT...")
+        print("[4/4] 성능 도메인 개념 UPSERT...")
         perf_data: list[dict] = json.loads(PERF_JSON.read_text(encoding="utf-8"))
         n_perf = await _upsert_concepts(conn, perf_data)
         print(f"  → {n_perf}건")

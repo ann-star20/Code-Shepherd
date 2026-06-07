@@ -14,3 +14,46 @@ MATCH (c:Concept)-[:HAS_EXAMPLE]->(e:CodeExample) RETURN c, e
 MATCH (c:Concept)-[:MITIGATED_BY]->(m:SecurityMechanism) RETURN c, m
 MATCH (c:Concept)-[:CAUSED_BY]->(r:RootCause) RETURN c, r
 MATCH (c:Concept)-[:CONFIGURED_BY]->(p:ConfigProperty) RETURN c, p
+
+
+# 단위 테스트만 (DB 없이)
+cd backend
+pytest tests/harness/test_models_v2.py tests/harness/test_seed_data.py -v
+
+# Neo4j 통합 테스트 (Neo4j 실행 필요)
+pytest tests/harness/test_neo4j_repo.py -v
+
+# 전체
+pytest tests/harness/test_models_v2.py tests/harness/test_neo4j_repo.py tests/harness/test_seed_data.py -v
+
+
+--
+
+구현 완료 — 7개 파일
+생성된 파일 구조
+
+backend/
+├── app/
+│   ├── domain/
+│   │   └── models.py                  ① Pydantic 엔티티
+│   └── adapters/db/
+│       └── neo4j_repo.py              ② Neo4j 저장소 클래스
+└── scripts/
+    ├── init_db.cypher                 ③ 8대 제약조건 + 6대 인덱스
+    ├── seed_postgres.py               ④ PostgreSQL UPSERT 스크립트
+    ├── seed_neo4j.py                  ⑤ Neo4j MERGE 스크립트
+    └── seed/
+        ├── security/
+        │   ├── schema.sql             PostgreSQL DDL (5개 테이블)
+        │   └── security_concepts.json 10종 OWASP/CWE 보안 시드
+        └── performance/
+            └── performance_concepts.json 4종 성능 안티패턴 시드
+핵심 설계 포인트
+항목	구현 내용
+구형 필드 수렴	security_mechanism: list[str] → list[MechanismIn], code_examples: list[dict] flat → 첫 번째 Mechanism 귀속
+Alias 중복 방지	find_master_by_alias() → fulltext 인덱스 선처리 → 기존 마스터 name으로 MERGE 수렴
+APOC 동적 라벨	domains: ["security","performance"] → apoc.create.addLabels(c, ["Security","Performance"])
+CodeExample unq_id	{mech}_{lang}_{lang_ver}_{fw}_{fw_ver} 복합 고유키로 버전별 독립 증분
+연쇄 삭제	delete_concept → 고아 Mechanism·CodeExample 탐지 후 DETACH DELETE
+교차 도메인	ConnPoolExhaustion, MemoryLeak → domains: ["performance","security"] → :Concept:Security:Performance
+멱등성	ON CONFLICT DO UPDATE (PG) + MERGE ON MATCH SET (Neo4j) — 반복 실행 안전

@@ -328,5 +328,61 @@
       }
     ],
     "config_properties": []
+  },
+  {
+    "concept_name": "BrokenAccessControl",
+    "concept_type": "vulnerability_root_cause",
+    "cwe_id": "CWE-284",
+    "owasp_id": "A01:2025",
+    "severity": "critical",
+    "domains": ["security"],
+    "description_ko": "취약한 접근 제어는 최소 권한 원칙 미준수, IDOR, 권한 검증 누락 등으로 인증된 사용자가 허용되지 않은 리소스에 접근할 수 있는 취약점. OWASP Top 10 2021/2025 1위.",
+    "aliases": ["Broken Access Control", "IDOR", "취약한 접근 제어", "Insecure Direct Object Reference"],
+    "root_cause": "missing_authorization_check_on_resource",
+    "affected_components": ["authentication_filter", "api_endpoint", "database_access_layer"],
+    "security_mechanism": [
+      {
+        "mechanism_name": "rbac_rules",
+        "code_examples": [
+          {
+            "lang": "python",
+            "lang_version": ">=3.10",
+            "framework": "django",
+            "framework_version": ">=4.0",
+            "code": "from django.contrib.auth.decorators import permission_required\n\n@permission_required('app.view_resource', raise_exception=True)\ndef protected_view(request):\n    ...",
+            "description": "Django permission_required 데코레이터로 뷰 단위 RBAC 강제 적용"
+          }
+        ]
+      },
+      {
+        "mechanism_name": "abac_rules",
+        "code_examples": [
+          {
+            "lang": "python",
+            "lang_version": ">=3.10",
+            "framework": "fastapi",
+            "framework_version": ">=0.100",
+            "code": "from fastapi import Depends, HTTPException\n\ndef authorize_owner(resource_id: int, current_user=Depends(get_current_user)):\n    resource = db.get(resource_id)\n    if resource.owner_id != current_user.id:\n        raise HTTPException(status_code=403)\n    return resource",
+            "description": "리소스 소유자 속성 검증으로 IDOR 차단 (ABAC 패턴)"
+          }
+        ]
+      },
+      {
+        "mechanism_name": "middleware_authorization",
+        "code_examples": [
+          {
+            "lang": "python",
+            "lang_version": ">=3.10",
+            "framework": "django",
+            "framework_version": ">=4.0",
+            "code": "# settings.py\nMIDDLEWARE = [\n    'django.contrib.auth.middleware.AuthenticationMiddleware',\n    'myapp.middleware.ObjectLevelPermissionMiddleware',\n]",
+            "description": "미들웨어 레이어에서 객체 수준 권한을 일괄 강제하여 뷰 우회 차단"
+          }
+        ]
+      }
+    ],
+    "config_properties": [
+      {"key": "login_url", "value": "/login/", "type": "security"}
+    ]
   }
 ]

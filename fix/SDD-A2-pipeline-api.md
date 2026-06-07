@@ -1,0 +1,89 @@
+# **A2 SDD — Pipeline API 완성 설계**
+
+## **현재 상태 (AS-IS)**
+
+| 엔드포인트 | 상태 | 비고 |
+| :---- | :---- | :---- |
+| POST /api/documents | ✅ 구현 | URL → doc\_id 생성 |
+| POST /api/documents/{doc\_id}/prescan | ✅ 구현 | framework/version 추론 |
+| POST /api/pipeline/trigger | ✅ 구현 | Celery 큐 적재 |
+| GET /api/pipeline/logs/{session\_id} | ❌ 미구현 | 프론트 폴링 불가 |
+| GET /api/staging/{session\_id} | 확인 필요 | staging.py 경로 점검 |
+
+## **목표 (TO-BE)**
+
+### **추가할 엔드포인트**
+
+#### **GET /api/pipeline/logs/{session\_id}**
+
+{  
+  "session\_id": "uuid",  
+  "doc\_state": "CRAWLING",  
+  "logs": \[  
+    { "ts": "2026-06-06T12:00:00Z", "agent": "Crawler", "level": "INFO", "message": "크롤링 시작" }  
+  \]  
+}
+
+* pipeline\_logs 테이블에서 session\_id 조회  
+* documents.state JOIN → doc\_state 실시간 반영  
+* 프론트엔드 2초 폴링 사용
+
+#### **GET /api/staging/{session\_id} (경로 통일)**
+
+{  
+  "session\_id": "uuid",  
+  "concepts": \[  
+    { "id": 1, "state": "DRAFT", "concept\_json": { "concept\_name": "XSS", "domains": \["security"\] } }  
+  \],  
+  "diff": { "draft": 3, "approved": 1, "committed": 0 }  
+}
+
+### **프론트엔드 연동 흐름**
+
+\[https://dictionary.reverso.net/korean-english/%EC%9E%85%EB%A0%A5\](https://dictionary.reverso.net/korean-english/%EC%9E%85%EB%A0%A5)  POST /api/documents { urls: \[...\] }  
+             → { documents: \[{ doc\_id }\] }
+
+\[Prescan\]   POST /api/documents/{doc\_id}/prescan  
+             → { framework, version, lang, infer\_confidence }
+
+\[트리거\]    POST /api/pipeline/trigger { doc\_id }  
+             → { session\_id }
+
+\[폴링\]      GET /api/pipeline/logs/{session\_id}  ← 2초마다  
+             doc\_state \== "EXTRACTED" → 폴링 중단, HITL 게이트 오픈
+
+\[HITL\]      GET /api/staging/{session\_id}  
+             개별 PATCH /approve, 최종 POST /commit
+
+\[완료 폴링\] GET /api/pipeline/logs/{session\_id}  
+             doc\_state \== "COMMITTED" → 4대 커밋 규칙 완료 및 동기화 종료
+
+## **TDD 구현 순서**
+
+### **Step 1 — 테스트 먼저 작성**
+
+tests/harness/test\_pipeline\_logs\_api.py:
+
+* test\_logs\_returns\_pipeline\_log\_rows  
+* test\_logs\_includes\_doc\_state  
+* test\_logs\_empty\_for\_unknown\_session
+
+### **Step 2 — 엔드포인트 구현 → GREEN**
+
+interfaces/api/pipeline.py에 GET /logs/{session\_id} 추가
+
+### **Step 3 — Staging 경로 확인**
+
+staging.py GET /{session\_id} 경로 존재 확인 → 없으면 추가
+
+### **Step 4 — 프론트엔드 연동**
+
+MainPage.tsx 시뮬레이션 → 실제 fetch() 교체
+
+## **Mock 모드 실행 명령**
+
+\# mock 모드 (Neo4j 없음, APP\_MODE=mock)  
+docker compose \-f docker-compose.yml \-f docker-compose.mock.yml up postgres redis backend celery\_worker
+
+\# 전체 스택  
+docker compose up  

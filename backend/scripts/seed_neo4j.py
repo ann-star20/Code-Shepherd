@@ -62,7 +62,7 @@ async def _seed_batch(
 
 
 async def main() -> None:
-    uri = os.getenv("NEO4J_URI", "bolt://localhost:7688")
+    uri = os.getenv("NEO4J_URI", "bolt://localhost:7687")
     print(f"[seed_neo4j] 연결: {uri}")
 
     driver = _driver()

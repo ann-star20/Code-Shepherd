@@ -247,28 +247,34 @@ class Neo4jConceptRepo:
     async def get_topology(
         self,
         domains: list[str] | None = None,
+        search: str | None = None,
         limit: int = 200,
     ) -> dict[str, list[dict]]:
-        """4-레이어 전체 토폴로지를 노드+엣지 형태로 반환."""
-        where = (
-            "WHERE any(d IN c.domains WHERE d IN $domains)"
-            if domains
-            else ""
-        )
+        """3-레이어 토폴로지(Domain→Concept→Mechanism)를 nodes/edges 형태로 반환.
+
+        CodeExample/Property/RootCause/Component는 하단 패널 전용으로 포함하지 않는다.
+        """
+        conditions = []
+        if domains:
+            conditions.append("any(d IN c.domains WHERE d IN $domains)")
+        if search:
+            conditions.append(
+                "(toLower(c.name) CONTAINS toLower($search)"
+                " OR any(a IN c.aliases WHERE toLower(a) CONTAINS toLower($search)))"
+            )
+        where = ("WHERE " + " AND ".join(conditions)) if conditions else ""
+
         async with self._driver.session() as session:
             result = await session.run(
                 f"""
                 MATCH (c:Concept) {where}
                 OPTIONAL MATCH (c)-[:BELONGS_TO]->(d:Domain)
                 OPTIONAL MATCH (c)-[:MITIGATED_BY]->(m:Mechanism)
-                OPTIONAL MATCH (m)-[:HAS_EXAMPLE]->(ce:CodeExample)
-                OPTIONAL MATCH (c)-[:TUNED_BY]->(p:Property)
-                OPTIONAL MATCH (c)-[:CAUSED_BY]->(r:RootCause)
-                OPTIONAL MATCH (c)-[:AFFECTS]->(x:Component)
-                RETURN c, d, m, ce, p, r, x
+                RETURN c, d, m
                 LIMIT $limit
                 """,
                 domains=domains or [],
+                search=search or "",
                 limit=limit,
             )
             records = await result.data()
@@ -279,7 +285,7 @@ class Neo4jConceptRepo:
         def _add_node(n: Any, label: str) -> str | None:
             if n is None:
                 return None
-            nid = n.get("name") or n.get("unq_key") or n.get("unq_id") or n.get("id", "")
+            nid = n.get("name") or n.get("id", "")
             if nid and nid not in nodes:
                 nodes[nid] = {"id": nid, "label": label, **dict(n)}
             return nid or None
@@ -288,23 +294,71 @@ class Neo4jConceptRepo:
             cid = _add_node(row.get("c"), "Concept")
             did = _add_node(row.get("d"), "Domain")
             mid = _add_node(row.get("m"), "Mechanism")
-            ceid = _add_node(row.get("ce"), "CodeExample")
-            pid = _add_node(row.get("p"), "Property")
-            rid = _add_node(row.get("r"), "RootCause")
-            xid = _add_node(row.get("x"), "Component")
 
             for src, tgt, rel in [
                 (cid, did, "BELONGS_TO"),
                 (cid, mid, "MITIGATED_BY"),
-                (mid, ceid, "HAS_EXAMPLE"),
-                (cid, pid, "TUNED_BY"),
-                (cid, rid, "CAUSED_BY"),
-                (cid, xid, "AFFECTS"),
             ]:
                 if src and tgt:
                     edges.append({"source": src, "target": tgt, "type": rel})
 
         return {"nodes": list(nodes.values()), "edges": edges}
+
+    # ─── 코드 예제 조회 ──────────────────────────────────────────────────────────
+
+    async def get_concept_code(
+        self,
+        name: str,
+        lang: str | None = None,
+        framework: str | None = None,
+    ) -> dict:
+        """Concept → Mechanism → CodeExample 경로를 조회해 반환.
+
+        lang / framework 필터가 있으면 해당 조건으로 좁힌다.
+        없으면 모든 CodeExample을 반환해 프론트에서 필터링할 수 있도록 한다.
+        """
+        conditions = ["toLower(c.name) = toLower($name)"]
+        if lang:
+            conditions.append("toLower(ce.lang) = toLower($lang)")
+        if framework:
+            conditions.append("toLower(ce.framework) = toLower($framework)")
+        where = "WHERE " + " AND ".join(conditions)
+
+        async with self._driver.session() as session:
+            result = await session.run(
+                f"""
+                MATCH (c:Concept)-[:MITIGATED_BY]->(m:Mechanism)-[:HAS_EXAMPLE]->(ce:CodeExample)
+                {where}
+                RETURN m.name AS mechanism, ce
+                ORDER BY m.name, ce.lang, ce.framework
+                LIMIT 50
+                """,
+                name=name,
+                lang=lang or "",
+                framework=framework or "",
+            )
+            records = await result.data()
+
+        items = []
+        langs: set[str] = set()
+        frameworks: set[str] = set()
+        for row in records:
+            ce = dict(row.get("ce") or {})
+            if not ce:
+                continue
+            ce["mechanism"] = row.get("mechanism", "")
+            items.append(ce)
+            if ce.get("lang"):
+                langs.add(ce["lang"])
+            if ce.get("framework"):
+                frameworks.add(ce["framework"])
+
+        return {
+            "concept": name,
+            "langs": sorted(langs),
+            "frameworks": sorted(frameworks),
+            "examples": items,
+        }
 
 
 # ─── 트랜잭션 함수 ────────────────────────────────────────────────────────────

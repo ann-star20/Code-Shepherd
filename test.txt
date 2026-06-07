@@ -17,7 +17,21 @@ docker exec code-shepherd-redis-1 redis-cli FLUSHDB
 docker compose -f docker-compose.yml -f docker-compose.mock.yml down
 docker compose -f docker-compose.yml -f docker-compose.mock.yml up postgres redis neo4j backend celery_worker
 
+# 기존 postgres 볼륨 초기화
+docker compose -f docker-compose.yml -f docker-compose.mock.yml down -v
 
+# 재빌드 및 실행
+docker compose -f docker-compose.yml -f docker-compose.mock.yml up --build backend
+
+pytest tests/harness/test_models_v2.py tests/harness/test_neo4j_repo.py tests/harness/test_seed_data.py -v
+
+>>>>>>>>>>>>>>
+
+docker compose build --no-cache frontend
+docker compose up -d frontend
+docker compose logs -f frontend
+
+>>>>>>>>>>>>>>>
 mock_client.py 수정:
 
 extract_concepts()에서 _build_prompt()를 실제로 호출해 프롬프트 구조를 검증

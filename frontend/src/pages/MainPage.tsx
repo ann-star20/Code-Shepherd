@@ -1,4 +1,5 @@
-import { useState, useEffect, useRef, useCallback } from "react";
+import { useState, useEffect, useRef, useCallback, useMemo } from "react";
+import { runPipelineStart } from "@/services/pipelineOrchestrator";
 
 // ── 도메인 레지스트리 ────────────────────────────────────────────────────────
 const DOMAIN_REGISTRY: Record<string, { label_ko: string; color_hex: string; bg_hex: string; border_hex: string }> = {
@@ -13,8 +14,8 @@ const INITIAL_CONCEPTS = [
     cwe_id: "CWE-89", owasp_id: "A03:2025", severity: "critical",
     description_ko: "SQL 인젝션. 사용자 입력이 SQL 쿼리에 비위생화된 채 삽입되어 임의 쿼리 실행 또는 데이터 탈취가 가능함.",
     aliases: ["SQL Injection", "SQL 인젝션"],
-    affected_components: ["database_access_layer", "orm_core_layer"],
-    security_mechanism: ["parameterized_query", "orm_use_rules", "input_validation"],
+    affected_components: ["database_query_layer", "orm_layer"],
+    security_mechanism: ["parameterized_query", "input_type_validation"],
     domains: ["security"], state: "COMMITTED",
   },
   {
@@ -23,7 +24,7 @@ const INITIAL_CONCEPTS = [
     description_ko: "크로스 사이트 스크립팅. 사용자 입력값이 HTML 컨텍스트에서 이스케이프 처리 없이 출력되어 공격자가 악성 스크립트를 삽입함.",
     aliases: ["Cross-Site Scripting", "크로스 사이트 스크립팅"],
     affected_components: ["template_rendering_layer", "api_response_serialization"],
-    security_mechanism: ["output_encoding", "content_security_policy", "httponly_cookie"],
+    security_mechanism: ["output_encoding", "content_security_policy"],
     domains: ["security"], state: "COMMITTED",
   },
   {
@@ -32,16 +33,16 @@ const INITIAL_CONCEPTS = [
     description_ko: "크로스 사이트 요청 위조. 인증된 사용자의 브라우저를 통해 공격자가 원하는 요청을 의도치 않게 전송하게 만드는 취약점.",
     aliases: ["Cross-Site Request Forgery", "크로스 사이트 요청 위조"],
     affected_components: ["authentication_filter", "session_management_layer", "api_endpoint"],
-    security_mechanism: ["csrf_token_protection", "samesite_cookie_attribute", "double_submit_cookie"],
+    security_mechanism: ["csrf_token_validation", "samesite_cookie"],
     domains: ["security"], state: "COMMITTED",
   },
   {
     name: "N+1Query", concept_type: "performance_antipattern",
-    cwe_id: "CWE-1072", owasp_id: "", severity: "high",
+    cwe_id: "CWE-1048", owasp_id: "", severity: "medium",
     description_ko: "ORM 관계 조회 시 루프마다 추가 쿼리가 N번 실행되어 DB에 과부하를 유발하는 안티패턴. select_related/prefetch_related로 해결.",
     aliases: ["N+1 Problem", "N+1 Query", "N+1 쿼리 문제"],
-    affected_components: ["orm_layer", "database_layer"],
-    security_mechanism: ["select_related", "prefetch_related", "eager_loading"],
+    affected_components: ["orm_layer", "database_query_layer", "api_list_endpoint"],
+    security_mechanism: ["eager_loading", "batch_fetching"],
     domains: ["performance"], state: "COMMITTED",
   },
   {
@@ -55,11 +56,11 @@ const INITIAL_CONCEPTS = [
   },
   {
     name: "MissingIndex", concept_type: "performance_antipattern",
-    cwe_id: "CWE-1052", owasp_id: "", severity: "high",
+    cwe_id: "CWE-1089", owasp_id: "", severity: "medium",
     description_ko: "인덱스 미설정으로 인한 Full Table Scan 발생. 데이터 증가에 비례하여 응답 지연이 급격히 악화됨.",
     aliases: ["Missing Database Index", "인덱스 누락", "Full Table Scan"],
-    affected_components: ["database_layer", "query_execution_plan"],
-    security_mechanism: ["composite_index", "explain_analyze", "query_optimizer"],
+    affected_components: ["database_query_layer", "api_list_endpoint", "reporting_layer"],
+    security_mechanism: ["composite_index", "query_plan_analysis"],
     domains: ["performance"], state: "COMMITTED",
   },
 ];
@@ -67,11 +68,11 @@ const INITIAL_CONCEPTS = [
 // DRAFT: 교차 도메인(security+performance) — HITL 승인 시연용
 const DRAFT_CONCEPT = {
   name: "ConnPoolExhaustion", concept_type: "performance_antipattern",
-  cwe_id: "CWE-400", owasp_id: "", severity: "critical",
+  cwe_id: "CWE-400", owasp_id: "", severity: "high",
   description_ko: "커넥션 반환 실패 또는 풀 설정 미흡으로 DB 커넥션 풀이 고갈되어 새로운 요청이 대기 또는 실패. 보안·성능 양 도메인에 걸치는 자원 고갈 취약점.",
   aliases: ["Connection Pool Exhaustion", "커넥션 풀 고갈", "DB Connection Leak"],
-  affected_components: ["connection_pool", "database_layer", "middleware"],
-  security_mechanism: ["context_manager_pattern", "pool_monitoring", "connection_timeout"],
+  affected_components: ["database_connection_pool", "http_client_pool", "api_gateway"],
+  security_mechanism: ["connection_pool_sizing", "context_manager_connection"],
   domains: ["security", "performance"], state: "DRAFT",
 };
 
@@ -104,9 +105,63 @@ function mapApiConcept(item: ApiConcept) {
   };
 }
 
+type GraphNode = {
+  id: string; label: "Domain" | "Concept" | "Mechanism";
+  name?: string; concept_type?: string; cwe_id?: string; owasp_id?: string;
+  severity?: string; domains?: string[]; description_ko?: string; aliases?: string[];
+  state?: string;
+};
+type GraphEdge = { source: string; target: string; type: string };
+
+function layoutMechanismNodes(mechs: GraphNode[]): (GraphNode & { cx: number; cy: number })[] {
+  const visible = mechs.slice(0, 6);
+  const count = visible.length;
+  return visible.map((m, i) => ({
+    ...m,
+    cx: Math.round(860 / (count + 1) * (i + 1)),
+    cy: 232,
+  }));
+}
+
 const DOC_STATE_TO_STEP: Record<string, number> = {
   CRAWLING: 2, EXTRACTED: 3, COMMITTED: 5, FAILED: 0,
 };
+
+const SEED_NAMES = new Set(INITIAL_CONCEPTS.map((c) => c.name));
+
+
+const _domainKeys = Object.keys(DOMAIN_REGISTRY);
+const DOMAIN_HUB_POS: Record<string, number[]> = Object.fromEntries(
+  _domainKeys.map((d, i) => [d, [Math.round(860 / (_domainKeys.length + 1) * (i + 1)), 47]])
+);
+const CONCEPT_R = 18;
+const MAX_PER_CONCEPT_ROW = 8;
+const CONCEPT_ROW_Y = [145, 120];
+
+function getConceptStyle(domains: string[]) {
+  const s = domains.includes("security"), p = domains.includes("performance");
+  if (s && p) return { fill: "#FEF3C7", stroke: "#D97706", text: "#D97706" };
+  if (s)      return { fill: "#FEF2F2", stroke: "#B91C1C", text: "#B91C1C" };
+  if (p)      return { fill: "#F0FDF4", stroke: "#0F766E", text: "#0F766E" };
+  return             { fill: "#F5F3FF", stroke: "#7C3AED", text: "#7C3AED" };
+}
+
+function graphLabel(name: string): string {
+  if (name.length <= 5) return name;
+  const caps = Array.from(name).filter(c => c >= "A" && c <= "Z");
+  if (caps.length >= 2) return caps.join("").slice(0, 4);
+  return name.slice(0, 4);
+}
+
+function layoutConceptNodes<T extends { name: string; domains: string[]; cwe_id: string }>(list: T[]) {
+  return list.map((c, i) => {
+    const row     = Math.floor(i / MAX_PER_CONCEPT_ROW);
+    const col     = i % MAX_PER_CONCEPT_ROW;
+    const rowCnt  = Math.min(list.length - row * MAX_PER_CONCEPT_ROW, MAX_PER_CONCEPT_ROW);
+    return { ...c, cx: Math.round(860 / (rowCnt + 1) * (col + 1)), cy: CONCEPT_ROW_Y[Math.min(row, 1)] };
+  });
+}
+
 
 export function MainPage() {
   const [urls, setUrls] = useState([
@@ -125,13 +180,105 @@ export function MainPage() {
   const [showDraft, setShowDraft]         = useState(false);
   const [activeTab, setActiveTab]         = useState("all");
   const [pendingDomain, setPendingDomain] = useState(false);
+  const [apiGraph, setApiGraph]           = useState<{ nodes: GraphNode[]; edges: GraphEdge[] }>({ nodes: [], edges: [] });
+  const [graphSearch, setGraphSearch]     = useState("");
+  const [codeLang, setCodeLang]           = useState("");
+  const [codeFramework, setCodeFramework] = useState("");
+  const [codeResult, setCodeResult]       = useState<{
+    langs: string[]; frameworks: string[]; examples: Array<{
+      mechanism: string; lang: string; framework: string; code: string; description?: string;
+    }>;
+  } | null>(null);
+  const [codeLoading, setCodeLoading]     = useState(false);
+  const [extractorRunning, setExtractorRunning] = useState(false);
   const consoleRef   = useRef<HTMLDivElement>(null);
   const pollRef      = useRef<ReturnType<typeof setInterval> | null>(null);
   const sessionIdRef = useRef<string | null>(null);
   const docIdRef     = useRef<string | null>(null);
 
-  useEffect(() => { consoleRef.current?.scrollIntoView({ behavior: "smooth" }); }, [logs]);
+  // useEffect(() => { consoleRef.current?.scrollIntoView({ behavior: "smooth" }); }, [logs]);
   useEffect(() => () => { if (pollRef.current) clearInterval(pollRef.current); }, []);
+  useEffect(() => {
+    if (consoleRef.current) {
+      consoleRef.current.scrollTop = consoleRef.current.scrollHeight;
+    }
+  }, [logs]);
+
+  const fetchTopology = useCallback(async (domain: string, search: string) => {
+    try {
+      const params = new URLSearchParams();
+      if (domain !== "all") params.set("domains", domain);
+      if (search.trim()) params.set("search", search.trim());
+      const res = await fetch(`/api/graph/topology?${params}`);
+      if (!res.ok) return;
+      const data = await res.json();
+      setApiGraph(data);
+      // INITIAL_CONCEPTS 시드 데이터와 병합: affected_components·security_mechanism 보존
+      const seedMap = new Map(INITIAL_CONCEPTS.map((c) => [c.name, c]));
+      const apiConcepts = (data.nodes as GraphNode[])
+        .filter((n) => n.label === "Concept")
+        .map((n) => {
+          const seed = seedMap.get(n.name ?? "");
+          return {
+            name: n.name ?? n.id,
+            concept_type: n.concept_type ?? seed?.concept_type ?? "vulnerability_root_cause",
+            cwe_id: n.cwe_id ?? seed?.cwe_id ?? "",
+            owasp_id: n.owasp_id ?? seed?.owasp_id ?? "",
+            severity: n.severity ?? seed?.severity ?? "medium",
+            description_ko: n.description_ko ?? seed?.description_ko ?? "",
+            aliases: n.aliases ?? seed?.aliases ?? [],
+            affected_components: seed?.affected_components ?? [],
+            security_mechanism: seed?.security_mechanism ?? [],
+            domains: n.domains ?? seed?.domains ?? [],
+            state: n.state ?? "COMMITTED",
+          };
+        });
+      if (apiConcepts.length > 0) {
+        setConcepts(apiConcepts as typeof INITIAL_CONCEPTS);
+        setSelectedConcept(apiConcepts[0] as typeof INITIAL_CONCEPTS[0]);
+      }
+    } catch { /* 네트워크 오류 시 하드코딩 초기값 유지 */ }
+  }, []);
+
+  // 초기 로드
+  useEffect(() => { fetchTopology("all", ""); }, [fetchTopology]);
+
+  // 탭/검색 변경 시 재조회 (300ms debounce)
+  useEffect(() => {
+    const id = setTimeout(() => fetchTopology(activeTab, graphSearch), 300);
+    return () => clearTimeout(id);
+  }, [activeTab, graphSearch, fetchTopology]);
+
+  const fetchCode = useCallback(async (conceptName: string, lang: string, framework: string) => {
+    setCodeLoading(true);
+    setCodeResult(null);
+    try {
+      const params = new URLSearchParams();
+      if (lang) params.set("lang", lang);
+      if (framework) params.set("framework", framework);
+      const res = await fetch(`/api/graph/concept/${encodeURIComponent(conceptName)}/code?${params}`);
+      if (res.ok) setCodeResult(await res.json());
+    } catch { /* neo4j 미연결 시 null 유지 */ }
+    finally { setCodeLoading(false); }
+  }, []);
+
+  // Concept 선택 변경 시 코드 재조회 (lang/framework 초기화)
+  useEffect(() => {
+    if (!selectedConcept) return;
+    setCodeLang("");
+    setCodeFramework("");
+    fetchCode(selectedConcept.name, "", "");
+  }, [selectedConcept?.name, fetchCode]);
+
+  function handleCodeLangChange(lang: string) {
+    setCodeLang(lang);
+    fetchCode(selectedConcept.name, lang, codeFramework);
+  }
+
+  function handleCodeFrameworkChange(fw: string) {
+    setCodeFramework(fw);
+    fetchCode(selectedConcept.name, codeLang, fw);
+  }
 
   function addLog(type: string, message: string) {
     const t = new Date().toTimeString().slice(0, 8);
@@ -156,11 +303,21 @@ export function MainPage() {
           return [...prev, ...newEntries.filter((e) => !existing.has(e.message))];
         });
 
+        // Extractor 로그 감지 → step-3 스피너
+        const hasExtractorLog = (data.logs ?? []).some(
+          (l: { agent: string }) => l.agent.toLowerCase() === "extractor",
+        );
+        if (hasExtractorLog && docState !== "EXTRACTED" && docState !== "COMMITTED") {
+          setExtractorRunning(true);
+          setCurrentStep(3);
+        }
+
         if (docState && DOC_STATE_TO_STEP[docState] !== undefined) {
           setCurrentStep(DOC_STATE_TO_STEP[docState]);
         }
 
         if (docState === "EXTRACTED") {
+          setExtractorRunning(false);
           clearInterval(pollRef.current!);
           pollRef.current = null;
           const sRes = await fetch(`/api/staging/${sessionId}?all_states=true`);
@@ -182,6 +339,7 @@ export function MainPage() {
         }
 
         if (docState === "COMMITTED") {
+          setExtractorRunning(false);
           clearInterval(pollRef.current!);
           pollRef.current = null;
           setConcepts((prev) => prev.map((c) => ({ ...c, state: "COMMITTED" })) as typeof INITIAL_CONCEPTS);
@@ -193,6 +351,7 @@ export function MainPage() {
         }
 
         if (docState === "FAILED") {
+          setExtractorRunning(false);
           clearInterval(pollRef.current!);
           pollRef.current = null;
           addLog("ERROR", "파이프라인 오류 — FAILED");
@@ -236,40 +395,8 @@ export function MainPage() {
     setCurrentStep(1);
     addLog("INPUT", "1단계 [Input Agent] 개시: 수집 링크 대기열 ETag 해시 검사 수행 중...");
 
-    try {
-      let docId = docIdRef.current;
-      if (!docId) {
-        const regRes = await fetch("/api/documents", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ urls: [urls[0].value] }),
-        });
-        if (!regRes.ok) throw new Error("문서 등록 실패");
-        const regData = await regRes.json();
-        docId = regData.documents[0].doc_id;
-        docIdRef.current = docId;
-      }
-
-      const psRes = await fetch(`/api/documents/${docId}/prescan`, { method: "POST" });
-      if (psRes.ok) {
-        const ps = await psRes.json();
-        addLog("INPUT", `프리스캔 완료: framework=${ps.framework ?? "unknown"}, confidence=${ps.infer_confidence?.toFixed(2)}`);
-      }
-
-      const trigRes = await fetch("/api/pipeline/trigger", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ doc_id: docId }),
-      });
-      if (!trigRes.ok) throw new Error(`트리거 실패: ${trigRes.status}`);
-      const trigData = await trigRes.json();
-      sessionIdRef.current = trigData.session_id;
-      addLog("CRAWLER", `2단계 [Crawler Agent] 개시 — session: ${trigData.session_id.slice(0, 8)}...`);
-      setCurrentStep(2);
-      startPolling(trigData.session_id);
-    } catch (err: unknown) {
-      const msg = err instanceof Error ? err.message : String(err);
-      addLog("ERROR", `파이프라인 시작 실패: ${msg} — 시뮬레이션 모드로 전환`);
+    // ── DEV: 하드코딩 시뮬레이션 (VITE_MOCK_PIPELINE=false 로 비활성화 가능) ──
+    if (import.meta.env.DEV && import.meta.env.VITE_MOCK_PIPELINE !== "false") {
       setTimeout(() => { setCurrentStep(2); addLog("CRAWLER", "2단계 [Crawler Agent] DOM 파싱 완료."); }, 1500);
       setTimeout(() => { setCurrentStep(3); addLog("EXTRACTOR", "3단계 [Extractor Agent] 스키마 매핑 중..."); }, 3000);
       setTimeout(() => {
@@ -277,6 +404,24 @@ export function MainPage() {
         setPendingDomain(true);
         setPipelineState("WAITING_APPROVAL");
       }, 5000);
+      return;
+    }
+
+    // ── PROD: 실제 API 호출 (pipelineOrchestrator) ────────────────────────────
+    try {
+      const { docId, sessionId } = await runPipelineStart(
+        urls.map((u) => u.value),
+        docIdRef.current,
+        { onLog: addLog },
+      );
+      docIdRef.current = docId;
+      sessionIdRef.current = sessionId;
+      setCurrentStep(2);
+      startPolling(sessionId);
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : String(err);
+      addLog("ERROR", `파이프라인 시작 실패: ${msg}`);
+      setPipelineState("IDLE");
     }
   }
 
@@ -344,6 +489,41 @@ export function MainPage() {
     activeTab === "all" || c.domains.includes(activeTab),
   );
 
+  // API 그래프 기반 노드 — API 응답 없으면 하드코딩 폴백
+  const apiConceptNodes = useMemo(() => {
+    const fromApi = apiGraph.nodes.filter((n) => n.label === "Concept") as (GraphNode & { name: string; cwe_id: string; domains: string[] })[];
+    if (fromApi.length > 0) {
+      return layoutConceptNodes([
+        ...fromApi,
+        ...(showDraft ? [DRAFT_CONCEPT as unknown as typeof fromApi[0]] : []),
+      ]);
+    }
+    return layoutConceptNodes([
+      ...concepts,
+      ...(showDraft ? [DRAFT_CONCEPT as typeof INITIAL_CONCEPTS[0]] : []),
+    ]);
+  }, [apiGraph, concepts, showDraft]);
+
+  const allConceptNodes = apiConceptNodes;
+
+  // 선택 Concept에 연결된 Mechanism 노드 (레이어 3)
+  const selectedMechanismNodes = useMemo(() => {
+    if (!selectedConcept) return [];
+    const mechIds = new Set(
+      apiGraph.edges
+        .filter((e) => e.source === selectedConcept.name && e.type === "MITIGATED_BY")
+        .map((e) => e.target),
+    );
+    const mechs = apiGraph.nodes.filter((n) => n.label === "Mechanism" && mechIds.has(n.id));
+    return layoutMechanismNodes(mechs);
+  }, [selectedConcept, apiGraph]);
+
+  // 검색 dim 여부 판단
+  const isConceptDimmed = useCallback((name: string) => {
+    if (!graphSearch.trim()) return false;
+    const q = graphSearch.toLowerCase();
+    return !name.toLowerCase().includes(q);
+  }, [graphSearch]);
   const STEPS = [
     { step: 1, title: "Input Agent",        desc: "링크 유효성 및 ETag 캐싱 분석" },
     { step: 2, title: "Crawler Agent",       desc: "DOM 파싱 및 텍스트 블록 정제" },
@@ -358,10 +538,10 @@ export function MainPage() {
     :                  "bg-stone-50 text-stone-600 border border-stone-200";
 
   return (
-    <div className="min-h-screen bg-[#FAF8F5] text-[#1C1917] font-sans antialiased">
+    <div className="min-h-screen overflow-y-auto bg-[#FAF8F5] text-[#1C1917] font-sans antialiased">
 
-      {/* ── HEADER (fixed) ── */}
-      <header className="fixed top-0 left-0 right-0 z-40 border-b border-stone-200/60 bg-white/90 backdrop-blur-md px-8 py-4 flex items-center justify-between">
+      {/* ── HEADER: sticky 상태 유지 ── */}
+      <header className="sticky top-0 z-40 border-b border-stone-200/60 bg-white/90 backdrop-blur-md px-8 py-4 flex items-center justify-between">
         <div className="flex items-center space-x-3">
           <div className="w-8 h-8 rounded-lg bg-[#115E59] flex items-center justify-center text-white font-bold text-lg">K</div>
           <div>
@@ -383,9 +563,8 @@ export function MainPage() {
         </div>
       </header>
 
-      {/* ── MAIN: pt-20 = fixed 헤더 높이(~72px) 확보 ── */}
-      <main className="max-w-[1600px] mx-auto px-8 pt-20 pb-8">
-
+      {/* ── MAIN: 과도한 pt-[600px]를 지우고 자연스러운 여백으로 수정 ── */}
+      <main className="max-w-[2000px] mx-auto px-8 pt-8 pb-8">
         {/* ── 지표 카드 (full-width, 두 컬럼 위) ── */}
         <div className="grid grid-cols-5 gap-4 mb-6">
           {[
@@ -452,13 +631,24 @@ export function MainPage() {
                 {STEPS.map((s) => {
                   const isActive  = currentStep >= s.step;
                   const isCurrent = currentStep === s.step && pipelineState === "RUNNING";
+                  const isExtractorWaiting = s.step === 3 && extractorRunning;
                   return (
                     <div key={s.step} className="relative pl-6">
                       <span className={`absolute left-[-5px] top-1.5 w-2.5 h-2.5 rounded-full transition-all ${
                         isCurrent ? "bg-[#115E59] ring-4 ring-teal-100" : isActive ? "bg-[#115E59]" : "bg-stone-200"
                       }`} />
-                      <h4 className={`text-xs font-bold transition-all ${isActive ? "text-stone-900" : "text-stone-400"}`}>{s.step}. {s.title}</h4>
-                      <p  className={`text-[11px] transition-all ${isActive ? "text-stone-500" : "text-stone-300"}`}>{s.desc}</p>
+                      <h4 className={`text-xs font-bold transition-all flex items-center gap-1.5 ${isActive ? "text-stone-900" : "text-stone-400"}`}>
+                        {s.step}. {s.title}
+                        {isExtractorWaiting && (
+                          <svg className="animate-spin h-3 w-3 text-[#0F766E]" viewBox="0 0 24 24" fill="none" aria-label="추출 중">
+                            <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                            <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
+                          </svg>
+                        )}
+                      </h4>
+                      <p className={`text-[11px] transition-all ${isActive ? "text-stone-500" : "text-stone-300"}`}>
+                        {isExtractorWaiting ? "LLM 응답 대기 중..." : s.desc}
+                      </p>
                     </div>
                   );
                 })}
@@ -510,8 +700,8 @@ export function MainPage() {
                   </div>
                 </div>
                 <div className="flex space-x-2">
-                  <button onClick={resolveDomain} className="px-3.5 py-1.5 text-xs bg-amber-600 text-white font-semibold rounded-lg hover:bg-amber-700 transition-all">도메인 즉시 등록 및 복구</button>
-                  <button onClick={rejectAll}      className="px-3.5 py-1.5 text-xs border border-amber-300 text-amber-800 font-semibold rounded-lg hover:bg-amber-100 transition-all">기각 및 폐기</button>
+                  <button onClick={resolveDomain} className="px-3.5 py-1.5 text-xs bg-amber-600 text-white font-semibold rounded-lg hover:bg-amber-700 transition-all">도메인 등록</button>
+                  <button onClick={rejectAll}      className="px-3.5 py-1.5 text-xs border border-amber-300 text-amber-800 font-semibold rounded-lg hover:bg-amber-100 transition-all">기각</button>
                 </div>
               </div>
             )}
@@ -526,12 +716,20 @@ export function MainPage() {
                   </h3>
                   <p className="text-xs text-stone-400 mt-0.5">노드를 클릭하면 하단 인스펙터 패널에서 속성 정보와 대응 설정값을 확인할 수 있습니다.</p>
                 </div>
-                <div className="flex items-center space-x-2 text-[10px] font-medium text-stone-500">
-                  {[["#292524","Domain"],["#D6D3D1","CWE"],["#B91C1C","보안"],["#0F766E","성능"]].map(([c,l]) => (
-                    <span key={l} className="flex items-center space-x-1">
-                      <span className="w-2.5 h-2.5 rounded-full" style={{ background: c }} /><span>{l}</span>
-                    </span>
-                  ))}
+                <div className="flex items-center space-x-3">
+                  <input
+                    value={graphSearch}
+                    onChange={(e) => setGraphSearch(e.target.value)}
+                    placeholder="개념 검색..."
+                    className="px-3 py-1 text-xs border border-stone-200 rounded-lg bg-stone-50 focus:outline-none focus:ring-1 focus:ring-[#115E59] w-32"
+                  />
+                  <div className="flex items-center space-x-2 text-[10px] font-medium text-stone-500">
+                    {[["#292524","Domain"],["#6366F1","Mechanism"],["#B91C1C","보안"],["#0F766E","성능"]].map(([c,l]) => (
+                      <span key={l} className="flex items-center space-x-1">
+                        <span className="w-2.5 h-2.5 rounded-full" style={{ background: c }} /><span>{l}</span>
+                      </span>
+                    ))}
+                  </div>
                 </div>
               </div>
 
@@ -541,106 +739,132 @@ export function MainPage() {
                     <marker id="arr" viewBox="0 0 10 10" refX="24" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
                       <path d="M 0 0 L 10 5 L 0 10 z" fill="#D6D3D1" />
                     </marker>
+                    <marker id="arr-sm" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="5" markerHeight="5" orient="auto-start-reverse">
+                      <path d="M 0 0 L 10 5 L 0 10 z" fill="#A8A29E" />
+                    </marker>
                   </defs>
-                  {/* 도메인 → OWASP */}
-                  <line x1="280" y1="295" x2="165" y2="215" stroke="#E7E5E4" strokeWidth="1.5" markerEnd="url(#arr)" />
-                  <line x1="280" y1="295" x2="375" y2="215" stroke="#E7E5E4" strokeWidth="1.5" markerEnd="url(#arr)" />
-                  <line x1="570" y1="295" x2="630" y2="215" stroke="#E7E5E4" strokeWidth="1.5" markerEnd="url(#arr)" />
-                  {/* OWASP → CWE */}
-                  <line x1="165" y1="215" x2="95"  y2="150" stroke="#E7E5E4" strokeWidth="1.5" markerEnd="url(#arr)" />
-                  <line x1="165" y1="215" x2="220" y2="150" stroke="#E7E5E4" strokeWidth="1.5" markerEnd="url(#arr)" />
-                  <line x1="375" y1="215" x2="375" y2="150" stroke="#E7E5E4" strokeWidth="1.5" markerEnd="url(#arr)" />
-                  <line x1="630" y1="215" x2="590" y2="150" stroke="#E7E5E4" strokeWidth="1.5" markerEnd="url(#arr)" />
-                  <line x1="630" y1="215" x2="685" y2="150" stroke="#E7E5E4" strokeWidth="1.5" markerEnd="url(#arr)" />
-                  {/* CWE → Concept */}
-                  <line x1="95"  y1="150" x2="70"  y2="75"  stroke="#E7E5E4" strokeWidth="1.5" markerEnd="url(#arr)" />
-                  <line x1="220" y1="150" x2="195" y2="75"  stroke="#E7E5E4" strokeWidth="1.5" markerEnd="url(#arr)" />
-                  <line x1="375" y1="150" x2="330" y2="75"  stroke="#E7E5E4" strokeWidth="1.5" markerEnd="url(#arr)" />
-                  <line x1="375" y1="150" x2="445" y2="75"  stroke="#E7E5E4" strokeWidth="1.5" markerEnd="url(#arr)" />
-                  <line x1="590" y1="150" x2="560" y2="75"  stroke="#E7E5E4" strokeWidth="1.5" markerEnd="url(#arr)" />
-                  <line x1="685" y1="150" x2="685" y2="75"  stroke="#E7E5E4" strokeWidth="1.5" markerEnd="url(#arr)" />
-                  {/* DRAFT 점선 — ConnPool (교차 도메인) */}
-                  {showDraft && <>
-                    <line x1="95"  y1="150" x2="790" y2="68" stroke="#F59E0B" strokeWidth="1.5" strokeDasharray="4,4" markerEnd="url(#arr)" />
-                    <line x1="590" y1="150" x2="790" y2="68" stroke="#F59E0B" strokeWidth="1.5" strokeDasharray="4,4" markerEnd="url(#arr)" />
-                    <text x="610" y="100" fill="#D97706" fontSize="9" fontWeight="bold">교차 도메인 병합 예정</text>
-                  </>}
-                  {/* FINISHED 실선 */}
-                  {pipelineState === "FINISHED" && <>
-                    <line x1="95"  y1="150" x2="790" y2="68" stroke="#7C3AED" strokeWidth="1.5" markerEnd="url(#arr)" />
-                    <line x1="590" y1="150" x2="790" y2="68" stroke="#7C3AED" strokeWidth="1.5" markerEnd="url(#arr)" />
-                  </>}
-
-                  {/* 도메인 허브 */}
-                  <g className="cursor-pointer" onClick={() => addLog("SYSTEM", "Security 마스터 도메인 노드입니다.")}>
-                    <circle cx="280" cy="295" r="25" fill="#292524" />
-                    <text x="280" y="299" fill="#FFF" fontSize="9" textAnchor="middle" fontWeight="bold">Security</text>
-                  </g>
-                  <g className="cursor-pointer" onClick={() => addLog("SYSTEM", "Performance 마스터 도메인 노드입니다.")}>
-                    <circle cx="570" cy="295" r="25" fill="#115E59" />
-                    <text x="570" y="299" fill="#FFF" fontSize="9" textAnchor="middle" fontWeight="bold">Perf</text>
-                  </g>
-
-                  {/* OWASP */}
-                  <g><circle cx="165" cy="215" r="20" fill="#78716C"/><text x="165" y="219" fill="#FFF" fontSize="8" textAnchor="middle" fontWeight="bold">A01</text></g>
-                  <g><circle cx="375" cy="215" r="20" fill="#78716C"/><text x="375" y="219" fill="#FFF" fontSize="8" textAnchor="middle" fontWeight="bold">A03</text></g>
-                  <g><circle cx="630" cy="215" r="20" fill="#0F766E"/><text x="630" y="219" fill="#FFF" fontSize="8" textAnchor="middle" fontWeight="bold">P01</text></g>
-
-                  {/* CWE */}
-                  <g><circle cx="95"  cy="150" r="15" fill="#D6D3D1"/><text x="95"  y="154" fill="#1C1917" fontSize="6.5" textAnchor="middle">CWE-352</text></g>
-                  <g><circle cx="220" cy="150" r="15" fill="#D6D3D1"/><text x="220" y="154" fill="#1C1917" fontSize="6.5" textAnchor="middle">CWE-284</text></g>
-                  <g><circle cx="375" cy="150" r="15" fill="#D6D3D1"/><text x="375" y="154" fill="#1C1917" fontSize="6.5" textAnchor="middle">CWE-89</text></g>
-                  <g><circle cx="590" cy="150" r="15" fill="#D6D3D1"/><text x="590" y="154" fill="#1C1917" fontSize="6" textAnchor="middle">CWE-1072</text></g>
-                  <g><circle cx="685" cy="150" r="15" fill="#D6D3D1"/><text x="685" y="154" fill="#1C1917" fontSize="6" textAnchor="middle">CWE-1052</text></g>
-
-                  {/* Concept 노드 — index 순서: SQLi[0] XSS[1] CSRF[2] N+1Q[3] BAC[4] Idx[5] */}
-                  <g className="cursor-pointer" onClick={() => setSelectedConcept(concepts[2])}>
-                    <circle cx="70" cy="75" r="18" fill="#FEF2F2" stroke="#B91C1C" strokeWidth="1.5"/>
-                    <text x="70" y="79" fill="#B91C1C" fontSize="8" textAnchor="middle" fontWeight="bold">CSRF</text>
-                  </g>
-                  <g className="cursor-pointer" onClick={() => setSelectedConcept(concepts[4])}>
-                    <circle cx="195" cy="75" r="18" fill="#FEF2F2" stroke="#B91C1C" strokeWidth="1.5"/>
-                    <text x="195" y="72" fill="#B91C1C" fontSize="6.5" textAnchor="middle" fontWeight="bold">BAC</text>
-                    <title>BrokenAccessControl</title>
-                  </g>
-                  <g className="cursor-pointer" onClick={() => setSelectedConcept(concepts[0])}>
-                    <circle cx="330" cy="75" r="18" fill="#FEF2F2" stroke="#B91C1C" strokeWidth="1.5"/>
-                    <text x="330" y="79" fill="#B91C1C" fontSize="8" textAnchor="middle" fontWeight="bold">SQLi</text>
-                  </g>
-                  <g className="cursor-pointer" onClick={() => setSelectedConcept(concepts[1])}>
-                    <circle cx="445" cy="75" r="18" fill="#FEF2F2" stroke="#B91C1C" strokeWidth="1.5"/>
-                    <text x="445" y="79" fill="#B91C1C" fontSize="8" textAnchor="middle" fontWeight="bold">XSS</text>
-                  </g>
-                  <g className="cursor-pointer" onClick={() => setSelectedConcept(concepts[3])}>
-                    <circle cx="560" cy="75" r="18" fill="#F0FDF4" stroke="#0F766E" strokeWidth="1.5"/>
-                    <text x="560" y="79" fill="#0F766E" fontSize="7" textAnchor="middle" fontWeight="bold">N+1Q</text>
-                  </g>
-                  <g className="cursor-pointer" onClick={() => setSelectedConcept(concepts[5])}>
-                    <circle cx="685" cy="75" r="18" fill="#F0FDF4" stroke="#0F766E" strokeWidth="1.5"/>
-                    <text x="685" y="79" fill="#0F766E" fontSize="7" textAnchor="middle" fontWeight="bold">Idx</text>
-                    <title>MissingIndex</title>
-                  </g>
-
-                  {/* DRAFT: ConnPoolExhaustion */}
-                  {showDraft && (
-                    <g className="cursor-pointer" onClick={() => { setSelectedConcept(DRAFT_CONCEPT); addLog("SYSTEM", "가상 DRAFT 노드 ConnPoolExhaustion (security+performance) 선택."); }}>
-                      <circle cx="790" cy="68" r="21" fill="#FEF3C7" stroke="#D97706" strokeWidth="2" strokeDasharray="4,4"/>
-                      <text x="790" y="64" fill="#D97706" fontSize="7" textAnchor="middle" fontWeight="bold">Pool</text>
-                      <text x="790" y="74" fill="#D97706" fontSize="6" textAnchor="middle">Exhaust</text>
-                      <rect x="758" y="28" width="64" height="14" rx="3" fill="#D97706"/>
-                      <text x="790" y="38" fill="#FFF" fontSize="6.5" textAnchor="middle" fontWeight="bold">교차 도메인</text>
-                    </g>
+                  {/* ── 3-레이어 배경 밴드 ── */}
+                  <rect x="0" y="0"   width="860" height="80"  fill="#F2F0EC" />
+                  <rect x="0" y="80"  width="860" height="115" fill="#FAFAF8" />
+                  <rect x="0" y="195" width="860" height="145" fill="#F6F4F1" />
+                  <line x1="0" y1="80"  x2="860" y2="80"  stroke="#E2DDD8" strokeWidth="0.5" strokeDasharray="2,4" />
+                  <line x1="0" y1="195" x2="860" y2="195" stroke="#E2DDD8" strokeWidth="0.5" strokeDasharray="2,4" />
+                  <text x="6" y="12"  fill="#C2BCB4" fontSize="6.5" fontFamily="monospace">DOMAIN</text>
+                  <text x="6" y="92"  fill="#C2BCB4" fontSize="6.5" fontFamily="monospace">CONCEPT</text>
+                  <text x="6" y="207" fill="#C2BCB4" fontSize="6.5" fontFamily="monospace">MECHANISM (선택 개념)</text>
+                  {/* 동적: Domain → Concept 엣지 (레이어 1 → 2) */}
+                  {allConceptNodes.flatMap((c) =>
+                    c.domains.map((d) => {
+                      const dPos = DOMAIN_HUB_POS[d];
+                      if (!dPos) return null;
+                      return (
+                        <line key={`de-${c.name}-${d}`}
+                          x1={dPos[0]} y1={dPos[1] + 25}
+                          x2={c.cx} y2={c.cy - CONCEPT_R}
+                          stroke={DOMAIN_REGISTRY[d]?.color_hex ?? "#E7E5E4"}
+                          strokeWidth="0.8" opacity="0.2"
+                        />
+                      );
+                    })
                   )}
-                  {/* FINISHED: ConnPoolExhaustion COMMITTED */}
-                  {pipelineState === "FINISHED" && (
-                    <g className="cursor-pointer" onClick={() => setSelectedConcept((concepts[6] as typeof DRAFT_CONCEPT | undefined) ?? { ...DRAFT_CONCEPT, state: "COMMITTED" })}>
-                      <circle cx="790" cy="68" r="21" fill="#F5F3FF" stroke="#7C3AED" strokeWidth="2"/>
-                      <text x="790" y="64" fill="#7C3AED" fontSize="7" textAnchor="middle" fontWeight="bold">Pool</text>
-                      <text x="790" y="74" fill="#7C3AED" fontSize="6" textAnchor="middle">Exhaust</text>
-                      <rect x="758" y="28" width="64" height="14" rx="3" fill="#7C3AED"/>
-                      <text x="790" y="38" fill="#FFF" fontSize="6.5" textAnchor="middle" fontWeight="bold">교차 도메인</text>
-                    </g>
-                  )}
+                  {/* 동적: 선택 Concept → Mechanism 엣지 (레이어 2 → 3, 선택 시만) */}
+                  {selectedConcept && (() => {
+                    const selNode = allConceptNodes.find((c) => c.name === selectedConcept.name);
+                    if (!selNode) return null;
+                    const style = getConceptStyle(selNode.domains);
+                    return selectedMechanismNodes.map((m) => (
+                      <line key={`me-${selNode.name}-${m.id}`}
+                        x1={selNode.cx} y1={selNode.cy + CONCEPT_R}
+                        x2={m.cx} y2={m.cy - 16}
+                        stroke={style.stroke}
+                        strokeWidth="1.2" opacity="0.5"
+                        markerEnd="url(#arr-sm)"
+                      />
+                    ));
+                  })()}
+
+                  {/* 동적: 도메인 허브 (레이어 1) — 클릭 시 인스펙터 필터 연동 */}
+                  {Object.entries(DOMAIN_REGISTRY).map(([key, domain]) => {
+                    const pos = DOMAIN_HUB_POS[key] ?? [280, 47];
+                    const isActive = activeTab === key;
+                    return (
+                      <g key={key} className="cursor-pointer"
+                        onClick={() => setActiveTab(key)}>
+                        {isActive && (
+                          <circle cx={pos[0]} cy={pos[1]} r="31"
+                            fill="none" stroke={domain.color_hex} strokeWidth="2" opacity="0.5" />
+                        )}
+                        <circle cx={pos[0]} cy={pos[1]} r="25"
+                          fill={isActive ? domain.color_hex : "#292524"} />
+                        <text x={pos[0]} y={pos[1] + 4} fill="#FFF"
+                          fontSize="9" textAnchor="middle" fontWeight="bold">
+                          {domain.label_ko}
+                        </text>
+                        <title>{domain.label_ko} 도메인 — 클릭하여 인스펙터 필터</title>
+                      </g>
+                    );
+                  })}
+
+                  {/* 동적: Mechanism 노드 (레이어 3) — 선택 Concept 기준, max 6개 */}
+                  {selectedMechanismNodes.map((m) => {
+                    const shortLabel = (m.name ?? m.id).replace(/_/g, " ").slice(0, 8);
+                    return (
+                      <g key={`mech-${m.id}`}>
+                        <circle cx={m.cx} cy={m.cy} r="16" fill="#F0F0FD" stroke="#6366F1" strokeWidth="1" />
+                        <text x={m.cx} y={m.cy + 4} fill="#4338CA" fontSize="6" textAnchor="middle" fontWeight="bold">{shortLabel}</text>
+                        <title>:Mechanism — {m.name ?? m.id}</title>
+                      </g>
+                    );
+                  })}
+
+                  {/* 동적: Concept 노드 */}
+                  {allConceptNodes.map((c) => {
+                    const style = getConceptStyle(c.domains);
+                    const isNew = !SEED_NAMES.has(c.name) && c.state !== "DRAFT";
+                    const label = graphLabel(c.name);
+                    return (
+                      <g key={c.name} className="cursor-pointer"
+                        opacity={c.state === "DRAFT" ? 0.7 : isConceptDimmed(c.name) ? 0.2 : undefined}
+                        onClick={() => {
+                          const full = concepts.find((con) => con.name === c.name);
+                          setSelectedConcept((full ?? c) as typeof INITIAL_CONCEPTS[0]);
+                        }}>
+                        {isNew && (
+                          <circle cx={c.cx} cy={c.cy} r={CONCEPT_R + 6}
+                            fill="none" stroke={style.stroke} strokeWidth="1" opacity="0.4">
+                            <animate attributeName="r"
+                              values={`${CONCEPT_R};${CONCEPT_R + 8};${CONCEPT_R}`}
+                              dur="2s" repeatCount="indefinite" />
+                            <animate attributeName="opacity"
+                              values="0.4;0;0.4" dur="2s" repeatCount="indefinite" />
+                          </circle>
+                        )}
+                        <circle cx={c.cx} cy={c.cy} r={CONCEPT_R}
+                          fill={c.state === "DRAFT" ? "#FFFCF5" : style.fill}
+                          stroke={style.stroke}
+                          strokeWidth={c.state === "DRAFT" ? "2" : "1.5"}
+                          strokeDasharray={c.state === "DRAFT" ? "5,3" : undefined}
+                        />
+                        <text x={c.cx} y={c.cy + 3} fill={style.text}
+                          fontSize="7.5" textAnchor="middle" fontWeight="bold">{label}</text>
+                        {c.state === "DRAFT" && (
+                          <>
+                            <rect x={c.cx - 14} y={c.cy - CONCEPT_R - 13} width={28} height={10} rx={3} fill="#D97706" />
+                            <text x={c.cx} y={c.cy - CONCEPT_R - 6} fill="white"
+                              fontSize="5.5" textAnchor="middle" fontWeight="bold">DRAFT</text>
+                          </>
+                        )}
+                        {isNew && (
+                          <>
+                            <rect x={c.cx - 10} y={c.cy - CONCEPT_R - 13} width={20} height={10} rx={3} fill={style.stroke} />
+                            <text x={c.cx} y={c.cy - CONCEPT_R - 6} fill="white"
+                              fontSize="5.5" textAnchor="middle" fontWeight="bold">NEW</text>
+                          </>
+                        )}
+                        <title>{c.name}</title>
+                      </g>
+                    );
+                  })}
                 </svg>
 
                 {showDraft && (
@@ -650,8 +874,8 @@ export function MainPage() {
                       <span className="text-xs font-bold text-stone-800">가상 노드 병합 예비 요약: 신규 1개(ConnPoolExhaustion) / 교차 도메인 security+performance</span>
                     </div>
                     <div className="flex space-x-2">
-                      <button onClick={approveAll} className="px-4 py-1.5 text-xs bg-[#115E59] text-white rounded-lg font-bold hover:bg-[#0e4e4a] transition-all">최종 승인 게이트 통과</button>
-                      <button onClick={rejectAll}  className="px-3 py-1.5 text-xs border border-stone-200 text-stone-600 rounded-lg hover:bg-stone-50 transition-all">전체 반려</button>
+                      <button onClick={approveAll} className="px-4 py-1.5 text-xs bg-[#115E59] text-white rounded-lg font-bold hover:bg-[#0e4e4a] transition-all">게이트 승인</button>
+                      <button onClick={rejectAll}  className="px-3 py-1.5 text-xs border border-stone-200 text-stone-600 rounded-lg hover:bg-stone-50 transition-all">반려</button>
                     </div>
                   </div>
                 )}
@@ -665,13 +889,16 @@ export function MainPage() {
                   <h3 className="font-serif text-base font-bold text-stone-900">보안 및 성능 개념(Concept) 인스펙터</h3>
                   <p className="text-xs text-stone-400 mt-0.5">도메인별로 선별 조회하거나 마스터 상세 정보를 조회합니다.</p>
                 </div>
-                <div className="flex bg-stone-100 p-0.5 rounded-lg border border-stone-200/60">
-                  {[["all","전체 기술"],["security","보안 취약점"],["performance","성능 안티패턴"]].map(([id,label]) => (
-                    <button key={id} onClick={() => setActiveTab(id)}
-                      className={`px-3 py-1 text-xs font-semibold rounded-md transition-all ${activeTab === id ? "bg-white text-stone-900 shadow-sm" : "text-stone-500 hover:text-stone-700"}`}
-                    >{label}</button>
+                <select
+                  value={activeTab}
+                  onChange={(e) => setActiveTab(e.target.value)}
+                  className="px-3 py-1.5 text-xs font-semibold rounded-lg border border-stone-200 bg-stone-50 text-stone-900 focus:ring-1 focus:ring-[#115E59] focus:outline-none cursor-pointer"
+                >
+                  <option value="all">전체 기술</option>
+                  {Object.entries(DOMAIN_REGISTRY).map(([key, domain]) => (
+                    <option key={key} value={key}>{domain.label_ko}</option>
                   ))}
-                </div>
+                </select>
               </div>
 
               <div className="grid grid-cols-1 md:grid-cols-12 gap-6">
@@ -736,6 +963,9 @@ export function MainPage() {
                           {selectedConcept.state === "DRAFT" && (
                             <span className="ml-2 text-[10px] px-1.5 py-0.5 bg-amber-100 text-amber-700 rounded font-bold border border-amber-200">DRAFT</span>
                           )}
+                          {!SEED_NAMES.has(selectedConcept.name) && selectedConcept.state !== "DRAFT" && (
+                            <span className="ml-2 text-[10px] px-1.5 py-0.5 bg-emerald-100 text-emerald-700 rounded font-bold border border-emerald-200">신규 추가</span>
+                          )}
                         </h4>
                         <div className="flex items-center flex-wrap gap-1 mt-1">
                           <span className="text-xs text-stone-500">동의어:</span>
@@ -780,6 +1010,70 @@ export function MainPage() {
                         {selectedConcept.severity}
                       </span>
                     </div>
+
+                    {/* ── 코드 예제 뷰어 ─────────────────────────────────── */}
+                    <div className="border-t border-stone-100 pt-4 space-y-3">
+                      <div className="flex items-center justify-between">
+                        <span className="text-xs font-bold text-stone-700">코드 예제</span>
+                        <div className="flex items-center gap-2">
+                          {/* lang 셀렉터 */}
+                          <select
+                            value={codeLang}
+                            onChange={(e) => handleCodeLangChange(e.target.value)}
+                            className="text-[11px] border border-stone-200 rounded-lg px-2 py-1 bg-white text-stone-700 focus:outline-none focus:ring-1 focus:ring-stone-300"
+                          >
+                            <option value="">언어 전체</option>
+                            {(codeResult?.langs ?? []).map((l) => (
+                              <option key={l} value={l}>{l}</option>
+                            ))}
+                          </select>
+                          {/* framework 셀렉터 */}
+                          <select
+                            value={codeFramework}
+                            onChange={(e) => handleCodeFrameworkChange(e.target.value)}
+                            className="text-[11px] border border-stone-200 rounded-lg px-2 py-1 bg-white text-stone-700 focus:outline-none focus:ring-1 focus:ring-stone-300"
+                          >
+                            <option value="">프레임워크 전체</option>
+                            {(codeResult?.frameworks ?? []).map((f) => (
+                              <option key={f} value={f}>{f}</option>
+                            ))}
+                          </select>
+                        </div>
+                      </div>
+
+                      {codeLoading && (
+                        <p className="text-[11px] text-stone-400 animate-pulse">코드 예제 로딩 중…</p>
+                      )}
+
+                      {!codeLoading && codeResult && codeResult.examples.length === 0 && (
+                        <p className="text-[11px] text-stone-400">선택한 조건에 해당하는 코드 예제가 없습니다.</p>
+                      )}
+
+                      {!codeLoading && !codeResult && (
+                        <p className="text-[11px] text-stone-400">Neo4j 연결 후 코드 예제를 불러올 수 있습니다.</p>
+                      )}
+
+                      {!codeLoading && codeResult && codeResult.examples.map((ex, idx) => (
+                        <div key={idx} className="rounded-xl border border-stone-200 overflow-hidden">
+                          <div className="flex items-center justify-between bg-stone-50 px-3 py-1.5 border-b border-stone-200">
+                            <span className="text-[10px] font-bold text-stone-600">{ex.mechanism}</span>
+                            <div className="flex items-center gap-1.5">
+                              <span className="text-[10px] px-1.5 py-0.5 bg-blue-50 text-blue-700 rounded font-mono">{ex.lang}</span>
+                              {ex.framework && (
+                                <span className="text-[10px] px-1.5 py-0.5 bg-violet-50 text-violet-700 rounded font-mono">{ex.framework}</span>
+                              )}
+                            </div>
+                          </div>
+                          {ex.description && (
+                            <p className="text-[10px] text-stone-500 px-3 pt-2">{ex.description}</p>
+                          )}
+                          <pre className="text-[10px] font-mono text-stone-800 bg-[#FAFAF9] px-3 py-2.5 overflow-x-auto leading-relaxed whitespace-pre-wrap max-h-48">
+                            {ex.code}
+                          </pre>
+                        </div>
+                      ))}
+                    </div>
+                    {/* ── /코드 예제 뷰어 ────────────────────────────────── */}
                   </>}
                 </div>
               </div>

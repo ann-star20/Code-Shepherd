@@ -10,21 +10,9 @@ T_dc_02: APPROVED 0건 → documents 상태 변경 없음
 
 import json
 import uuid
-from pathlib import Path
-
 import pytest
 
-from app.adapters.db.neo4j_repo import Neo4jConceptRepo
 from app.usecases.commit_staging import commit_staging
-
-_CYPHER_PATH = Path(__file__).parents[2] / "scripts" / "init_db.cypher"
-
-
-@pytest.fixture
-async def neo4j_repo(async_neo4j_driver):
-    repo = Neo4jConceptRepo(async_neo4j_driver)
-    await repo.init_schema(_CYPHER_PATH)
-    return repo
 
 
 def _cj(name: str) -> str:
@@ -63,12 +51,11 @@ async def _cleanup(conn, session_id: str, doc_id: str, concept_names: list[str])
 
 # ── T_dc_01 ───────────────────────────────────────────────────────────────────
 
-@pytest.mark.asyncio
-async def test_dc_01_commit_updates_document_state(asyncpg_pool, async_neo4j_driver, neo4j_repo):
-    """
-    Arrange: EXTRACTED 상태 document + 1건 APPROVED staging.
-    Act:     commit_staging(repo) 호출.
-    Assert:  documents.state == 'COMMITTED'.
+@pytest.mark.anyio
+async def test_dc_01_commit_updates_document_state(asyncpg_pool, async_neo4j_driver):
+    """Arrange: EXTRACTED 상태 document + 1건 APPROVED staging.
+    Act: commit_staging.
+    Assert: documents.state == 'COMMITTED'.
     """
     session_id = str(uuid.uuid4())
     doc_id = f"EXT_dc_{uuid.uuid4().hex[:8]}"
@@ -78,7 +65,7 @@ async def test_dc_01_commit_updates_document_state(asyncpg_pool, async_neo4j_dri
         await _insert_doc(conn, doc_id, state="EXTRACTED")
         await _insert_approved(conn, session_id, doc_id, name)
         try:
-            count = await commit_staging(session_id, conn, neo4j_repo)
+            count = await commit_staging(session_id, conn, async_neo4j_driver)
             assert count == 1
 
             doc_state = await conn.fetchval(
@@ -94,12 +81,11 @@ async def test_dc_01_commit_updates_document_state(asyncpg_pool, async_neo4j_dri
 
 # ── T_dc_02 ───────────────────────────────────────────────────────────────────
 
-@pytest.mark.asyncio
-async def test_dc_02_zero_approved_no_document_change(asyncpg_pool, neo4j_repo):
-    """
-    Arrange: document PENDING, APPROVED staging 없음.
-    Act:     commit_staging(repo) (0건 반환).
-    Assert:  documents.state 변경 없음 (여전히 PENDING).
+@pytest.mark.anyio
+async def test_dc_02_zero_approved_no_document_change(asyncpg_pool, async_neo4j_driver):
+    """Arrange: document PENDING, APPROVED staging 없음.
+    Act: commit_staging (0건 반환).
+    Assert: documents.state 변경 없음 (여전히 PENDING).
     """
     session_id = str(uuid.uuid4())
     doc_id = f"EXT_dc_{uuid.uuid4().hex[:8]}"
@@ -107,7 +93,7 @@ async def test_dc_02_zero_approved_no_document_change(asyncpg_pool, neo4j_repo):
     async with asyncpg_pool.acquire() as conn:
         await _insert_doc(conn, doc_id, state="PENDING")
         try:
-            count = await commit_staging(session_id, conn, neo4j_repo)
+            count = await commit_staging(session_id, conn, async_neo4j_driver)
             assert count == 0
 
             doc_state = await conn.fetchval(
