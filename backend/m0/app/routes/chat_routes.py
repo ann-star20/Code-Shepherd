@@ -218,49 +218,91 @@ async def _query_pgvector(
     session_factory: async_sessionmaker[AsyncSession],
     top_k: int = 5,
 ) -> list[dict]:
-    """질문을 임베딩해 chunk_embeddings에서 코사인 유사도 상위 k개를 반환한다."""
-    embedding = await _embed_question(question)
-    embedding_str = json.dumps(embedding)
+    """질문을 임베딩해 chunk_embeddings에서 코사인 유사도 상위 k개를 반환한다.
 
+    chunk_embeddings에 저장된 model_name을 확인해 쿼리 임베딩 모델을 맞춘다.
+    모델이 섞여 있으면 각 모델로 임베딩 후 UNION해서 top_k를 재정렬한다.
+    """
     async with session_factory() as session:
-        result = await session.execute(
-            text("""
-                SELECT
-                    chunk_id::text,
-                    content,
-                    1 - (embedding <=> CAST(:embedding AS vector)) AS score,
-                    metadata->>'doc_title' AS doc_title,
-                    metadata
-                FROM chunk_embeddings
-                ORDER BY embedding <=> CAST(:embedding AS vector)
-                LIMIT :top_k
-            """),
-            {"embedding": embedding_str, "top_k": top_k},
+        model_rows = await session.execute(
+            text("SELECT DISTINCT model_name FROM chunk_embeddings WHERE model_name IS NOT NULL")
         )
-        rows = result.mappings().fetchall()
+        stored_models: list[str] = [r[0] for r in model_rows.fetchall()]
 
-    return [
-        {
-            "chunk_id": r["chunk_id"],
-            "content": r["content"],
-            "score": float(r["score"]),
-            "doc_title": r["doc_title"],
-            "source_type": "pgvector",
-            "metadata": r["metadata"] if isinstance(r.get("metadata"), dict) else {},
-        }
-        for r in rows
-    ]
+    if not stored_models:
+        stored_models = [_EMBEDDING_MODEL]
+
+    openai_model_prefix = "text-embedding"
+    all_results: list[dict] = []
+
+    for model_name in stored_models:
+        if model_name.startswith(openai_model_prefix):
+            embedding = await _embed_question_openai(question, model_name)
+        else:
+            embedding = await _embed_question_ollama(question, model_name)
+
+        embedding_str = json.dumps(embedding)
+
+        async with session_factory() as session:
+            result = await session.execute(
+                text("""
+                    SELECT
+                        chunk_id::text,
+                        content,
+                        1 - (embedding <=> CAST(:embedding AS vector)) AS score,
+                        metadata->>'doc_title' AS doc_title,
+                        metadata
+                    FROM chunk_embeddings
+                    WHERE model_name = :model_name
+                    ORDER BY embedding <=> CAST(:embedding AS vector)
+                    LIMIT :top_k
+                """),
+                {"embedding": embedding_str, "top_k": top_k, "model_name": model_name},
+            )
+            rows = result.mappings().fetchall()
+
+        for r in rows:
+            all_results.append({
+                "chunk_id": r["chunk_id"],
+                "content": r["content"],
+                "score": float(r["score"]),
+                "doc_title": r["doc_title"],
+                "source_type": "pgvector",
+                "metadata": r["metadata"] if isinstance(r.get("metadata"), dict) else {},
+            })
+
+    # 여러 모델이 섞인 경우 score 내림차순 재정렬 후 top_k 반환
+    all_results.sort(key=lambda x: x["score"], reverse=True)
+    return all_results[:top_k]
 
 
-async def _embed_question(question: str) -> list[float]:
-    """Ollama bge-m3로 질문을 임베딩한다."""
+async def _embed_question_ollama(question: str, model: str | None = None) -> list[float]:
+    """Ollama로 질문을 임베딩한다 (model 미지정 시 환경변수 기본값 사용)."""
     async with httpx.AsyncClient(timeout=30.0) as client:
         response = await client.post(
             f"{_OLLAMA_BASE_URL}/api/embeddings",
-            json={"model": _EMBEDDING_MODEL, "prompt": question},
+            json={"model": model or _EMBEDDING_MODEL, "prompt": question},
         )
         response.raise_for_status()
         return response.json()["embedding"]
+
+
+async def _embed_question_openai(question: str, model: str) -> list[float]:
+    """OpenAI로 질문을 임베딩한다 (저장 시와 동일 dimensions 유지)."""
+    from openai import AsyncOpenAI
+    pgvector_dim = int(os.getenv("PGVECTOR_DIMENSION", "1024"))
+    client = AsyncOpenAI(api_key=os.getenv("OPENAI_API_KEY"))
+    response = await client.embeddings.create(
+        model=model,
+        input=question,
+        dimensions=pgvector_dim,
+    )
+    return response.data[0].embedding
+
+
+async def _embed_question(question: str) -> list[float]:
+    """하위 호환용 래퍼 — bge-m3 기본값."""
+    return await _embed_question_ollama(question)
 
 
 _POSTGRESQL_SCHEMA_HINT = """\
