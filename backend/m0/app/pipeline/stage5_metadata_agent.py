@@ -24,7 +24,7 @@ logger = logging.getLogger(__name__)
 
 from langchain_core.messages import HumanMessage, SystemMessage
 
-from app.pipeline._gemini import call_gemini_with_retry
+from app.pipeline._gemini import call_gemini_with_retry, parse_gemini_json
 
 import app.pipeline._category_definitions as _cat_defs
 from app.pipeline._category_definitions import build_category_prompt_snippet
@@ -140,14 +140,7 @@ async def _extract_metadata(
             SystemMessage(content=_SYSTEM_PROMPT),
             HumanMessage(content=_METADATA_PROMPT.format(markdown=sample)),
         ])
-        raw = response.content.strip()
-        # Gemini가 ```json ... ``` 블록으로 감싸는 경우 제거
-        if raw.startswith("```"):
-            raw = raw.split("```")[1]
-            if raw.startswith("json"):
-                raw = raw[4:]
-            raw = raw.strip()
-        data = json.loads(raw)
+        data = parse_gemini_json(response.content)
     except json.JSONDecodeError as e:
         logger.error(
             "Stage 5: JSON 파싱 실패",

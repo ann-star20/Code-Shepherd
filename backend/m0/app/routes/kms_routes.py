@@ -826,20 +826,24 @@ async def _embed_query(query_text: str) -> list[float]:
 async def list_doc_page_images(doc_id: str) -> list[dict]:
     """문서의 파싱 페이지 이미지 목록 반환.
 
-    images/{doc_id}/page_N.png 경로를 1번부터 순차 탐색하고
-    파일이 없는 첫 번째 페이지에서 중단한다.
-    DB의 page_count에 의존하지 않으므로 기존 문서에도 동작한다.
+    Storage.list_prefix()로 images/{doc_id}/ 아래 모든 경로를 한 번에 조회한다.
+    기존 문서(page_count 없음)에도 동작하며 GCS 순차 탐색(최대 500회) 대비 1-call로 처리.
     """
     storage = _get_storage()
+    prefix = f"images/{doc_id}/"
+    all_paths = await storage.list_prefix(prefix)
+    # page_N.png 형식만 추출하고 페이지 번호 순서로 정렬
     pages = []
-    for page_num in range(1, 501):  # 최대 500페이지 상한
-        path = f"images/{doc_id}/page_{page_num}.png"
-        if await storage.exists(path):
-            pages.append({"page": page_num, "url": f"/kms/docs/{doc_id}/page/{page_num}"})
-        else:
-            break  # 연속된 번호 체계이므로 첫 번째 빈 페이지에서 종료
-
-    return pages
+    for path in all_paths:
+        name = path.split("/")[-1]  # page_N.png
+        if name.startswith("page_") and name.endswith(".png"):
+            try:
+                page_num = int(name[5:-4])
+                pages.append((page_num, path))
+            except ValueError:
+                continue
+    pages.sort(key=lambda x: x[0])
+    return [{"page": pn, "url": f"/kms/docs/{doc_id}/page/{pn}"} for pn, _ in pages]
 
 
 @router.get("/docs/{doc_id}/page/{page_num}")

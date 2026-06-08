@@ -280,7 +280,7 @@ class TestStage1ReturnsImageData:
     # ---- PDF ----
 
     async def test_pdf_state_contains_image_data(self):
-        """PDF 처리 후 state['page_images']에 페이지 이미지가 담겨야 한다."""
+        """PDF 처리 후 state['page_image_paths']에 GCS 경로가 담겨야 한다."""
         from app.pipeline.stage1_document_parser_agent import document_parser_agent
 
         state = self._make_base_state("pdf")
@@ -300,12 +300,11 @@ class TestStage1ReturnsImageData:
         ):
             result = await document_parser_agent(state, storage=storage)
 
-        assert result.get("page_images") is not None, (
-            "PDF 처리 후 page_images가 None이면 안 됩니다"
-        )
-        assert isinstance(result["page_images"], list)
-        assert len(result["page_images"]) == 1
-        assert result["page_images"][0]["page_number"] == 1
+        paths = result.get("page_image_paths")
+        assert paths is not None, "PDF 처리 후 page_image_paths가 None이면 안 됩니다"
+        assert isinstance(paths, list)
+        assert len(paths) == 1
+        assert "page_1.png" in paths[0]
 
     # ---- PPTX ----
 
@@ -331,10 +330,9 @@ class TestStage1ReturnsImageData:
         ):
             result = await document_parser_agent(state, storage=storage)
 
-        assert result.get("page_images") is not None, (
-            "PPTX 처리 후 page_images가 None이면 안 됩니다"
-        )
-        assert isinstance(result["page_images"], list)
+        paths = result.get("page_image_paths")
+        assert paths is not None, "PPTX 처리 후 page_image_paths가 None이면 안 됩니다"
+        assert isinstance(paths, list)
 
     # ---- TXT (이미지 없음) ----
 

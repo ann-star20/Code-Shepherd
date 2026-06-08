@@ -277,11 +277,10 @@ class TestStage1DocxPageImages:
         ):
             result = await document_parser_agent(state, storage=storage)
 
-        assert result.get("page_images") is not None, (
-            "DOCX 처리 후 page_images가 None이면 안 됩니다"
-        )
-        assert isinstance(result["page_images"], list)
-        assert len(result["page_images"]) >= 1
+        paths = result.get("page_image_paths")
+        assert paths is not None, "DOCX 처리 후 page_image_paths가 None이면 안 됩니다"
+        assert isinstance(paths, list)
+        assert len(paths) >= 1
 
     async def test_pptx_uses_libreoffice_extractor(self):
         """PPTX 처리 시 _extract_page_images_docx가 호출되어야 한다."""
@@ -311,4 +310,4 @@ class TestStage1DocxPageImages:
             result = await document_parser_agent(state, storage=storage)
 
         mock_extractor.assert_called_once_with("dummy.pptx")
-        assert result.get("page_images") is not None
+        assert result.get("page_image_paths") is not None

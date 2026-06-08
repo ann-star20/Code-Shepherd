@@ -13,6 +13,7 @@ POST /chat : question 임베딩 → Intent 분류 → 멀티 스토리지 쿼리
 
 from __future__ import annotations
 
+import asyncio
 import base64
 import json
 import logging
@@ -479,18 +480,18 @@ async def _load_page_image(path: str | None) -> bytes | None:
 # ---------------------------------------------------------------------------
 
 async def _collect_page_images(chunks: list[dict]) -> list[bytes]:
-    """청크 목록에서 page_image_path를 수집해 중복 제거 후 이미지 로드."""
+    """청크 목록에서 page_image_path를 수집해 중복 제거 후 이미지를 병렬 로드."""
     seen: set[str] = set()
-    images: list[bytes] = []
+    paths: list[str] = []
     for chunk in chunks:
         path = (chunk.get("metadata") or {}).get("page_image_path")
-        if not path or path in seen:
-            continue
-        seen.add(path)
-        img = await _load_page_image(path)
-        if img is not None:
-            images.append(img)
-    return images
+        if path and path not in seen:
+            seen.add(path)
+            paths.append(path)
+    if not paths:
+        return []
+    results = await asyncio.gather(*[_load_page_image(p) for p in paths])
+    return [img for img in results if img is not None]
 
 
 # ---------------------------------------------------------------------------

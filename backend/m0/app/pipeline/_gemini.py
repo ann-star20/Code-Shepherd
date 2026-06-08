@@ -53,6 +53,28 @@ def _get_gemini_llm() -> Any:
     return _gemini_llm
 
 
+def parse_gemini_json(raw: str) -> dict:
+    """Gemini 응답에서 JSON 객체를 파싱한다.
+
+    Gemini는 가끔 ```json ... ``` 코드 블록으로 감싸서 반환한다.
+    이 함수는 그 wrapper를 제거하고 순수 JSON만 파싱한다.
+
+    Raises:
+        json.JSONDecodeError: JSON 파싱에 실패한 경우
+    """
+    import json
+
+    raw = raw.strip()
+    if raw.startswith("```"):
+        parts = raw.split("```")
+        # ```json\n{...}\n``` 형태: parts[1]이 "json\n{...}\n"
+        inner = parts[1] if len(parts) > 1 else ""
+        if inner.startswith("json"):
+            inner = inner[4:]
+        raw = inner.strip()
+    return json.loads(raw)
+
+
 @retry(
     stop=stop_after_attempt(3),
     wait=wait_exponential(multiplier=1, min=1, max=10),

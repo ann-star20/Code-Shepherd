@@ -97,6 +97,7 @@ class DocPipelineState(TypedDict):
     image_data: Optional[list]           # 임시 이미지 바이너리 (Stage 1→6 전달용)
     # 형식: [{"page_number": int, "image_bytes": bytes}, ...]
     page_images: Optional[list]          # 페이지별 PNG bytes (Stage 1 추출 → Stage 6 GCS 저장)
+    page_image_paths: Optional[list[str]]  # Stage 1에서 GCS에 저장한 경로 목록 → Stage 6에서 재사용
 
     # Stage 2: Markdown 검증 출력
     validated_markdown: Optional[str]

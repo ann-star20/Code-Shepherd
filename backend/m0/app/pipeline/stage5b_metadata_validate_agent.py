@@ -31,7 +31,7 @@ logger = logging.getLogger(__name__)
 
 from langchain_core.messages import HumanMessage, SystemMessage
 
-from app.pipeline._gemini import call_gemini_with_retry
+from app.pipeline._gemini import call_gemini_with_retry, parse_gemini_json
 
 METADATA_QUALITY_THRESHOLD = float(os.getenv("METADATA_QUALITY_THRESHOLD", "0.7"))
 
@@ -213,13 +213,7 @@ async def _validate_with_llm(
                 markdown=sample,
             ))
         ])
-        raw = response.content.strip()
-        if raw.startswith("```"):
-            raw = raw.split("```")[1]
-            if raw.startswith("json"):
-                raw = raw[4:]
-            raw = raw.strip()
-        data = json.loads(raw)
+        data = parse_gemini_json(response.content)
 
     except json.JSONDecodeError as e:
         logger.error(

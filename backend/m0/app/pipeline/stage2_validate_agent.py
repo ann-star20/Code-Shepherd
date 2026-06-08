@@ -25,7 +25,7 @@ logger = logging.getLogger(__name__)
 
 from langchain_core.messages import HumanMessage, SystemMessage
 
-from app.pipeline._gemini import call_gemini_with_retry
+from app.pipeline._gemini import call_gemini_with_retry, parse_gemini_json
 from app.pipeline.stage1_document_parser_agent import (
     _gemini_format_correct,
     _normalize_heading_hierarchy,
@@ -224,10 +224,7 @@ async def _select_fix_tool_with_llm(issues: list[str], data: dict) -> str:
     try:
         from langchain_core.messages import HumanMessage as _HumanMessage
         response = await call_gemini_with_retry([_HumanMessage(content=prompt)])
-        raw = response.content.strip()
-        if raw.startswith("```"):
-            raw = raw.split("```")[1].lstrip("json").strip()
-        parsed = json.loads(raw)
+        parsed = parse_gemini_json(response.content)
         tool = parsed.get("tool", "")
         if tool in ("post_process", "normalize_heading", "format_correct"):
             logger.debug(f"_select_fix_tool_with_llm: LLM 선택 → {tool}")
@@ -277,14 +274,7 @@ async def _evaluate_quality(markdown: str, doc_id: str) -> tuple[float, list[str
             SystemMessage(content=_SYSTEM_PROMPT),
             HumanMessage(content=_QUALITY_PROMPT.format(markdown=sample)),
         ])
-        raw = response.content.strip()
-        # Gemini가 ```json ... ``` 블록으로 감싸는 경우 제거
-        if raw.startswith("```"):
-            raw = raw.split("```")[1]
-            if raw.startswith("json"):
-                raw = raw[4:]
-            raw = raw.strip()
-        data = json.loads(raw)
+        data = parse_gemini_json(response.content)
     except json.JSONDecodeError as e:
         logger.error(
             "Stage 2: LLM 응답 JSON 파싱 실패",
