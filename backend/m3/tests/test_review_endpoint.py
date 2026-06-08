@@ -6,11 +6,44 @@
 - 토큰 없음/게시 실패 → comment_posted=false + 사유, 예외 안 터짐(정직).
 - GET /review: 저장된 결과 반환 / 없으면 빈 결과.
 """
+import sys
+
 import pytest
 from httpx import ASGITransport, AsyncClient
 
 import app.main as appmain
 from app.main import app
+
+
+def test_review_aggregate_survives_tp_at_path_front():
+    """순서 회귀: persist/get 가 _TP(test-performance-agent)를 sys.path 앞에 꽂아둔 상태에서도
+    _review_aggregate 가 pr-comment-agent 의 contracts(CombinedIssue)를 올바로 import 해야 한다.
+    (이전엔 _TP 가 앞에 있으면 'from contracts import CombinedIssue' 가 _TP/contracts.py 로 풀려
+     ImportError → /review 500 이 났다.)"""
+    sys.path.insert(0, appmain._TP)  # 오염 재현
+    try:
+        verdict, combined = appmain._review_aggregate(
+            [
+                {
+                    "agent": "performance",
+                    "issues": [
+                        {
+                            "severity": "Critical",
+                            "file": "a.py",
+                            "line": 1,
+                            "message": "m",
+                            "rule_id": "PERF-001",
+                            "suggestion": "",
+                        }
+                    ],
+                }
+            ]
+        )
+        assert verdict == "escalate"
+        assert len(combined) == 1
+    finally:
+        while appmain._TP in sys.path:
+            sys.path.remove(appmain._TP)
 
 
 def _result(agent, issues):

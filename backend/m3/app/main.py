@@ -87,8 +87,11 @@ def _analyze_pr(payload: M3VerifyRequest):
 
     for m in _DEV3_MODS:
         sys.modules.pop(m, None)
-    if _TP not in sys.path:
-        sys.path.insert(0, _TP)
+    # _TP 를 sys.path 맨 앞으로 강제 — pr-comment-agent(_PRC)도 동명 contracts 를 가지므로
+    # 순서에 따라 'from contracts import Dev3Input'가 엉뚱한 패키지로 풀리는 걸 막는다.
+    while _TP in sys.path:
+        sys.path.remove(_TP)
+    sys.path.insert(0, _TP)
     work_dir = None
     try:
         from contracts import Dev3Input, Developer, RepoInfo
@@ -253,11 +256,17 @@ def _load_env_file(path: str) -> None:
 
 @contextlib.contextmanager
 def _prc_isolation():
-    """pr-comment-agent 모듈을 동명 충돌 없이 import 하기 위한 sys.path/sys.modules 격리."""
+    """pr-comment-agent 모듈을 동명 충돌 없이 import 하기 위한 sys.path/sys.modules 격리.
+
+    _PRC 를 sys.path 맨 앞으로 강제한다 — test-performance-agent(_TP)도 동명 contracts/config 를
+    가지므로, persist/get 등이 _TP 를 앞에 꽂아둔 상태면 'from contracts import CombinedIssue'가
+    엉뚱한 패키지로 풀려 ImportError 가 난다. 호출 순서와 무관하게 _PRC 가 우선되게 한다.
+    """
     for m in _PRC_MODS:
         sys.modules.pop(m, None)
-    if _PRC not in sys.path:
-        sys.path.insert(0, _PRC)
+    while _PRC in sys.path:
+        sys.path.remove(_PRC)
+    sys.path.insert(0, _PRC)
     _load_env_file(os.path.join(_PRC, ".env"))
     try:
         yield
