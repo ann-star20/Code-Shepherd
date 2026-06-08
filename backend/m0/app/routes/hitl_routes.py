@@ -364,10 +364,14 @@ async def get_markdown_endpoint(queue_id: str) -> dict:
 async def list_page_images(queue_id: str) -> list[dict]:
     """HITL 항목 문서의 파싱 페이지 이미지 목록 반환.
 
-    chunk_embeddings.metadata.page_image_path에서 중복 제거 후 페이지 순서로 반환.
-    각 URL은 /hitl/queue/{queue_id}/page/{page_num} 엔드포인트를 가리킨다.
+    stage1에서 GCS에 저장된 images/{doc_id}/page_*.png 를 우선 조회하고,
+    없으면 chunk_embeddings.metadata.page_image_path 로 폴백한다.
+    HITL은 stage5b 이후 stage6(저장) 전에 발생하므로, chunk_embeddings가
+    비어있는 상태에서도 stage1에서 저장된 이미지를 제공할 수 있다.
     """
     session_factory = _get_session_factory()
+    storage = _storage or get_storage()
+
     async with session_factory() as session:
         result = await session.execute(
             text("SELECT doc_id::text FROM hitl_queue WHERE queue_id = :queue_id"),
@@ -378,19 +382,35 @@ async def list_page_images(queue_id: str) -> list[dict]:
         raise HTTPException(status_code=404, detail="HITL 항목 없음")
 
     doc_id = row["doc_id"]
-    async with session_factory() as session:
-        result = await session.execute(
-            text("""
-                SELECT DISTINCT ce.metadata->>'page_image_path' AS path
-                FROM chunk_embeddings ce
-                JOIN chunks c ON c.chunk_id = ce.chunk_id
-                WHERE c.doc_id::text = :doc_id
-                  AND ce.metadata->>'page_image_path' IS NOT NULL
-                ORDER BY path
-            """),
-            {"doc_id": doc_id},
-        )
-        paths = [r["path"] for r in result.mappings().fetchall() if r["path"]]
+
+    # 1순위: stage1에서 GCS에 저장된 이미지 직접 조회
+    paths: list[str] = []
+    try:
+        raw_paths = await storage.list_prefix(f"images/{doc_id}/")
+        # page_N.png 순으로 정렬 (N을 숫자로 파싱)
+        def _page_num(p: str) -> int:
+            import re
+            m = re.search(r"page_(\d+)", p)
+            return int(m.group(1)) if m else 0
+        paths = sorted(raw_paths, key=_page_num)
+    except Exception as e:
+        logger.warning(f"storage.list_prefix 실패 — chunk_embeddings 폴백: {e}", extra={"doc_id": doc_id})
+
+    # 2순위: chunk_embeddings.metadata 폴백 (stage6 이후 도달한 경우)
+    if not paths:
+        async with session_factory() as session:
+            result = await session.execute(
+                text("""
+                    SELECT DISTINCT ce.metadata->>'page_image_path' AS path
+                    FROM chunk_embeddings ce
+                    JOIN chunks c ON c.chunk_id = ce.chunk_id
+                    WHERE c.doc_id::text = :doc_id
+                      AND ce.metadata->>'page_image_path' IS NOT NULL
+                    ORDER BY path
+                """),
+                {"doc_id": doc_id},
+            )
+            paths = [r["path"] for r in result.mappings().fetchall() if r["path"]]
 
     page_images = []
     for i, path in enumerate(paths, start=1):
@@ -418,19 +438,34 @@ async def get_page_image_bytes(queue_id: str, page_num: int) -> Response:
         raise HTTPException(status_code=404, detail="HITL 항목 없음")
 
     doc_id = row["doc_id"]
-    async with session_factory() as session:
-        result = await session.execute(
-            text("""
-                SELECT DISTINCT ce.metadata->>'page_image_path' AS path
-                FROM chunk_embeddings ce
-                JOIN chunks c ON c.chunk_id = ce.chunk_id
-                WHERE c.doc_id::text = :doc_id
-                  AND ce.metadata->>'page_image_path' IS NOT NULL
-                ORDER BY path
-            """),
-            {"doc_id": doc_id},
-        )
-        paths = [r["path"] for r in result.mappings().fetchall() if r["path"]]
+
+    # 1순위: stage1 GCS 저장 이미지 직접 조회
+    paths: list[str] = []
+    try:
+        import re
+        raw_paths = await storage.list_prefix(f"images/{doc_id}/")
+        def _page_num_key(p: str) -> int:
+            m = re.search(r"page_(\d+)", p)
+            return int(m.group(1)) if m else 0
+        paths = sorted(raw_paths, key=_page_num_key)
+    except Exception:
+        pass
+
+    # 2순위: chunk_embeddings 폴백
+    if not paths:
+        async with session_factory() as session:
+            result = await session.execute(
+                text("""
+                    SELECT DISTINCT ce.metadata->>'page_image_path' AS path
+                    FROM chunk_embeddings ce
+                    JOIN chunks c ON c.chunk_id = ce.chunk_id
+                    WHERE c.doc_id::text = :doc_id
+                      AND ce.metadata->>'page_image_path' IS NOT NULL
+                    ORDER BY path
+                """),
+                {"doc_id": doc_id},
+            )
+            paths = [r["path"] for r in result.mappings().fetchall() if r["path"]]
 
     if page_num < 1 or page_num > len(paths):
         raise HTTPException(status_code=404, detail=f"페이지 {page_num} 없음 (총 {len(paths)}페이지)")
