@@ -20,11 +20,15 @@ async def lifespan(_app: FastAPI):
     from app.storage import get_storage
     from app.pipeline.graph import build_pipeline
     from app.categories_db import get_valid_categories
+    from app.pipeline.stage6_store import _ensure_neo4j_indexes
     import app.pipeline._category_definitions as _cat_defs
 
     session_factory = _AsyncSessionFactory
     storage = get_storage()
     pipeline = build_pipeline(db_session_factory=session_factory, storage=storage)
+
+    # Neo4j 인덱스/제약 보장 (멱등 실행)
+    await _ensure_neo4j_indexes()
 
     # DB 카테고리를 로드해 VALID_CATEGORIES 갱신 (KB Evolution으로 추가된 카테고리 반영)
     try:

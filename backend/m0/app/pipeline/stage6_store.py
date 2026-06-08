@@ -66,6 +66,34 @@ def _get_neo4j_driver():
     return _neo4j_driver
 
 
+async def _ensure_neo4j_indexes() -> None:
+    """앱 시작 시 Neo4j 인덱스·제약 생성.
+
+    MERGE 성능을 위해 각 레이블의 주요 식별자에 유니크 제약(= 자동 인덱스)을 건다.
+    IF NOT EXISTS 로 멱등 실행 가능하다.
+    """
+    if AsyncGraphDatabase is None:
+        return
+    try:
+        driver = _get_neo4j_driver()
+        constraints = [
+            "CREATE CONSTRAINT doc_id_unique IF NOT EXISTS "
+            "FOR (d:Document) REQUIRE d.doc_id IS UNIQUE",
+            "CREATE CONSTRAINT entity_name_unique IF NOT EXISTS "
+            "FOR (e:Entity) REQUIRE e.name IS UNIQUE",
+            "CREATE CONSTRAINT category_name_unique IF NOT EXISTS "
+            "FOR (c:Category) REQUIRE c.name IS UNIQUE",
+            "CREATE INDEX chunk_id_index IF NOT EXISTS "
+            "FOR (c:Chunk) ON (c.chunk_id)",
+        ]
+        async with driver.session() as session:
+            for stmt in constraints:
+                await session.run(stmt)
+        logger.info("Neo4j 인덱스/제약 확인 완료")
+    except Exception as e:
+        logger.warning(f"Neo4j 인덱스 생성 실패 (무시): {e}")
+
+
 # ---------------------------------------------------------------------------
 # 임베딩 생성
 # ---------------------------------------------------------------------------
@@ -367,7 +395,7 @@ async def _save_to_neo4j(state: "DocPipelineState") -> bool:
             for entity in entities:
                 await neo_session.run(
                     "MERGE (e:Entity {name: $name}) SET e.type = $type, e.description = $desc",
-                    name=entity.get("name", ""),
+                    name=entity.get("name", "").strip(),
                     type=entity.get("type", "Concept"),
                     desc=entity.get("description", ""),
                 )
@@ -378,6 +406,24 @@ async def _save_to_neo4j(state: "DocPipelineState") -> bool:
                     "MERGE (c)-[:MENTIONS]->(e)",
                     chunk_id=rel["from_chunk_id"],
                     entity_name=rel["entity_name"],
+                )
+            # P2: Document → Entity 직접 연결 (2-hop 쿼리 제거)
+            for entity in entities:
+                await neo_session.run(
+                    "MATCH (d:Document {doc_id: $doc_id}) "
+                    "MATCH (e:Entity {name: $entity_name}) "
+                    "MERGE (d)-[:COVERS]->(e)",
+                    doc_id=doc_id,
+                    entity_name=entity.get("name", "").strip(),
+                )
+            # P3: 공통 Entity를 가진 Document 간 SHARES_ENTITY 연결
+            if entities:
+                await neo_session.run(
+                    "MATCH (d1:Document {doc_id: $doc_id})-[:COVERS]->(e:Entity)"
+                    "<-[:COVERS]-(d2:Document) "
+                    "WHERE d1 <> d2 "
+                    "MERGE (d1)-[:SHARES_ENTITY {via: e.name}]->(d2)",
+                    doc_id=doc_id,
                 )
         logger.info("Neo4j 저장 완료", extra={"doc_id": doc_id})
         return True
