@@ -822,9 +822,17 @@ async def _reprocess_document(
             )
         state = {**state, **result}
 
+        final_status = state.get("status", "stored")
+        async with session_factory() as session:
+            await session.execute(
+                text("UPDATE documents SET upload_status = :status WHERE doc_id = :doc_id"),
+                {"status": final_status, "doc_id": doc_id},
+            )
+            await session.commit()
+
         logger.info(
             "재처리 완료",
-            extra={"doc_id": doc_id, "status": state.get("status")},
+            extra={"doc_id": doc_id, "status": final_status},
         )
 
     except Exception as e:
