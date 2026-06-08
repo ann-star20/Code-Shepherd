@@ -156,7 +156,7 @@ async def _save_document(
         {
             "doc_id": str(state["doc_id"]),
             "title": metadata.get("title") or state.get("original_filename", ""),
-            "source": state.get("source", "upload"),
+            "source": state.get("source", "upload") if state.get("source") in ("notion", "confluence", "upload", "slack") else "upload",
             "category": metadata.get("category", "기타"),
             "file_type": state.get("file_type") or None,
             "file_path": original_path,
