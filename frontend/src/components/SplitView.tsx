@@ -66,14 +66,16 @@ export function SplitView({ markdown, pageImages, rawText }: SplitViewProps) {
       >
         {/* Toolbar */}
         <div style={{
-          padding:      "5px 10px",
+          padding:      "0 10px",
           borderBottom: "1px solid #e2e8f0",
           display:      "flex",
           alignItems:   "center",
           gap:          5,
-          flexWrap:     "wrap",
+          flexWrap:     "nowrap",
           background:   "#fff",
           flexShrink:   0,
+          height:       36,
+          boxSizing:    "border-box",
         }}>
           {/* Page buttons */}
           {totalPages > 0 && pageImages.map(p => (
@@ -189,18 +191,31 @@ export function SplitView({ markdown, pageImages, rawText }: SplitViewProps) {
       <div
         data-testid="markdown-panel"
         style={{
-          flex:       1,
-          minWidth:   0,
-          overflowY:  "auto",
-          overflowX:  "auto",
-          padding:    "14px 18px",
-          background: "#fff",
-          fontSize:   14,
-          lineHeight: 1.7,
-          color:      "#1e293b",
+          flex:          1,
+          minWidth:      0,
+          display:       "flex",
+          flexDirection: "column",
+          overflow:      "hidden",
+          background:    "#fff",
         }}
       >
-        <ReactMarkdown remarkPlugins={[remarkGfm]}>{markdown}</ReactMarkdown>
+        {/* 왼쪽 툴바와 높이를 맞추는 헤더 */}
+        <div style={{
+          padding:      "5px 14px",
+          borderBottom: "1px solid #e2e8f0",
+          background:   "#fff",
+          flexShrink:   0,
+          display:      "flex",
+          alignItems:   "center",
+          height:       36,
+          boxSizing:    "border-box",
+        }}>
+          <span style={{ fontSize: 11, fontWeight: 600, color: "#64748b" }}>파싱 결과</span>
+        </div>
+
+        <div style={{ flex: 1, overflowY: "auto", overflowX: "auto", padding: "14px 18px", fontSize: 14, lineHeight: 1.7, color: "#1e293b" }}>
+          <ReactMarkdown remarkPlugins={[remarkGfm]}>{markdown}</ReactMarkdown>
+        </div>
       </div>
     </div>
   );
