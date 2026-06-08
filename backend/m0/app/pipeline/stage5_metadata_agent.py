@@ -24,7 +24,7 @@ logger = logging.getLogger(__name__)
 
 from langchain_core.messages import HumanMessage, SystemMessage
 
-from app.pipeline._gemini import call_gemini_with_retry, parse_gemini_json
+from app.pipeline._gemini import call_gemini_quality, parse_gemini_json
 
 import app.pipeline._category_definitions as _cat_defs
 from app.pipeline._category_definitions import build_category_prompt_snippet
@@ -136,7 +136,7 @@ async def _extract_metadata(
     sample = markdown[:4000] if len(markdown) > 4000 else markdown
 
     try:
-        response = await call_gemini_with_retry([
+        response = await call_gemini_quality([
             SystemMessage(content=_SYSTEM_PROMPT),
             HumanMessage(content=_METADATA_PROMPT.format(markdown=sample)),
         ])
