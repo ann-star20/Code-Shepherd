@@ -35,10 +35,8 @@ from app.pipeline._gemini import call_gemini_with_retry
 
 METADATA_QUALITY_THRESHOLD = float(os.getenv("METADATA_QUALITY_THRESHOLD", "0.7"))
 
-from app.pipeline._category_definitions import (
-    VALID_CATEGORIES,
-    build_category_prompt_snippet,
-)
+import app.pipeline._category_definitions as _cat_defs
+from app.pipeline._category_definitions import build_category_prompt_snippet
 
 FALLBACK_TITLE = "제목 없음"
 
@@ -133,7 +131,7 @@ async def stage5b_metadata_validate(state: "DocPipelineState") -> dict:
     if not title or title == FALLBACK_TITLE:
         rule_issues.append(f"제목이 없음 (fallback 감지: '{title}')")
 
-    if category not in VALID_CATEGORIES:
+    if category not in _cat_defs.VALID_CATEGORIES:
         rule_issues.append(f"유효하지 않은 카테고리: '{category}'")
 
     if rule_issues:

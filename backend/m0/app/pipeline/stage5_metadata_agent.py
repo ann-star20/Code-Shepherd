@@ -26,10 +26,8 @@ from langchain_core.messages import HumanMessage, SystemMessage
 
 from app.pipeline._gemini import call_gemini_with_retry
 
-from app.pipeline._category_definitions import (
-    VALID_CATEGORIES,
-    build_category_prompt_snippet,
-)
+import app.pipeline._category_definitions as _cat_defs
+from app.pipeline._category_definitions import build_category_prompt_snippet
 
 _SYSTEM_PROMPT = f"""\
 당신은 사내 기술 문서 메타데이터 추출 에이전트입니다.
@@ -116,7 +114,7 @@ async def stage5_metadata(state: "DocPipelineState") -> dict:
     category = metadata.get("category", "기타")
     reasoning = metadata.pop("category_reasoning", "")
     alternatives = metadata.pop("category_alternatives", [])
-    is_new = category not in VALID_CATEGORIES
+    is_new = category not in _cat_defs.VALID_CATEGORIES
 
     return {
         "metadata": metadata,
