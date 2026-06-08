@@ -100,9 +100,8 @@ def extract_task(self, session_id: str, doc_id: str, chunks: list[str]):
     conn = _pg_conn()
     try:
         _log(conn, doc_id, session_id, "Extractor", "INFO", f"LLM 추출 시작 — {len(chunks)} 청크")
-        _set_state(conn, doc_id, "EXTRACTED")
-
         asyncio.run(_do_extract(session_id, doc_id, chunks))
+        _set_state(conn, doc_id, "EXTRACTED")
         _log(conn, doc_id, session_id, "Extractor", "INFO", "추출 완료 — staging 적재 완료")
     except Exception as exc:
         _log(conn, doc_id, session_id, "Extractor", "ERROR", str(exc))
@@ -175,15 +174,23 @@ async def _do_write_graph(session_id: str) -> None:
                 "WHERE session_id=$1::uuid AND state='APPROVED'",
                 session_id,
             )
+
+            # Phase 1: Neo4j MERGE — 모두 성공해야 PG 업데이트 진행
+            # 실패 시 예외가 전파되어 PG는 APPROVED 상태로 유지됨
+            committed_ids: list = []
             for row in rows:
                 raw = row["concept_json"]
                 data = json.loads(raw) if isinstance(raw, str) else dict(raw)
                 concept = ConceptExtractionSchema(**data)
                 await write_concept_node(concept, driver)
+                committed_ids.append(row["id"])
+
+            # Phase 2: 전체 Neo4j 적재 성공 확인 후 PG COMMITTED 일괄 업데이트
+            for row_id in committed_ids:
                 await db_conn.execute(
                     "UPDATE staging_concepts SET state='COMMITTED', committed_at=now() "
                     "WHERE id=$1",
-                    row["id"],
+                    row_id,
                 )
     finally:
         await pool.close()

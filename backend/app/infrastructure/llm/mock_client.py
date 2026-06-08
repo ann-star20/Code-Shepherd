@@ -8,9 +8,14 @@
 
 from __future__ import annotations
 
+import json
 import logging
+import pathlib
 from app.domain.models import ConceptExtractionSchema
 from app.infrastructure.llm.interface import ILLMClient
+
+# backend/llm_response.json → Docker 마운트 시 /app/llm_response.json
+_JSON_PATH = pathlib.Path(__file__).parents[3] / "llm_response.json"
 
 logger = logging.getLogger(__name__)
 
@@ -198,21 +203,25 @@ class MockClient(ILLMClient):
     """
 
     async def extract_concepts(
-        self, 
-        text_chunk: str, 
-        doc_id: str, 
+        self,
+        text_chunk: str,
+        doc_id: str,
         metadata: dict
     ) -> list[ConceptExtractionSchema]:
-        
+
         chunk_preview = text_chunk[:100].replace("\n", " ").strip()
         logger.info(
-            "[MOCK_ENGINE] %d 차원 청크 유입 포착 | 미리보기: '%.100s...'", 
-            len(text_chunk), 
+            "[MOCK_ENGINE] %d 차원 청크 유입 포착 | 미리보기: '%.100s...'",
+            len(text_chunk),
             chunk_preview
         )
-        logger.info("  ➔ Gemini API 호출 우회 수립 (APP_MODE=mock). %d건 가상 컨셉 인스턴스 반환 완료.", len(_MOCK_CONCEPTS))
 
-        # 4대 마스터 규격 필터링 레이어를 타서 완전무결한 Pydantic 인스턴스 배열로 반환
+        if _JSON_PATH.exists():
+            raw = json.loads(_JSON_PATH.read_text(encoding="utf-8"))
+            logger.info("  ➔ llm_response.json 로드 (APP_MODE=mock). %d건 컨셉 반환.", len(raw))
+            return [ConceptExtractionSchema(**item) for item in raw]
+
+        logger.info("  ➔ Gemini API 호출 우회 (APP_MODE=mock). %d건 내장 mock 반환.", len(_MOCK_CONCEPTS))
         return [ConceptExtractionSchema(**item) for item in _MOCK_CONCEPTS]
 
     def is_tracing_enabled(self) -> bool:

@@ -48,3 +48,13 @@ services:
         condition: service_healthy
       neo4j:
         condition: service_healthy
+
+# frontend:
+#   build:
+#     context: ./frontend
+#     dockerfile: Dockerfile.dev
+#   volumes:
+#     - ./frontend:/app
+#     - /app/node_modules
+#   ports:
+#     - "5173:5173"

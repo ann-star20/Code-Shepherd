@@ -2,12 +2,13 @@ import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { MainPage } from "@/pages/MainPage";
+import { PipelineStepList, ToastContainer } from "@/pages/MainPage";
+import type { StepStatuses, ToastItem } from "@/pages/MainPage";
 import { DashboardLayout } from "@/components/templates/DashboardLayout";
 import { pipelineService } from "@/services/pipelineService";
 import { stagingService } from "@/services/stagingService";
 import { graphService } from "@/services/graphService";
 import { runPipelineStart } from "@/services/pipelineOrchestrator";
-import type { GraphNode } from "@/types/graph";
 
 vi.mock("react-force-graph-2d", () => ({
   default: ({
@@ -73,6 +74,7 @@ beforeEach(() => {
   vi.mocked(runPipelineStart).mockResolvedValue({ docId: "doc-default", sessionId: "ses-default" });
 });
 
+// ── DashboardLayout ───────────────────────────────────────────────────────────
 describe("DashboardLayout", () => {
   it("T_F12_three_panels: renders all 3 panel slots", () => {
     render(
@@ -88,7 +90,7 @@ describe("DashboardLayout", () => {
   });
 });
 
-// ── T_F13: ConceptInspector 영향 컴포넌트·대응 메커니즘 표시 ──────────────────────
+// ── T_F13: ConceptInspector ───────────────────────────────────────────────────
 describe("ConceptInspector", () => {
   it("T_F13_components_on_mount: SQLi의 affected_components가 인스펙터에 표시된다", () => {
     // Arrange + Act
@@ -110,20 +112,20 @@ describe("ConceptInspector", () => {
     // Arrange
     const user = userEvent.setup();
     render(<MainPage />);
-    // Act – 인스펙터 목록의 XSS 버튼 클릭
+    // Act
     const allBtns = screen.getAllByRole("button");
     const xssBtn = allBtns.find(
       (b) => b.textContent?.includes("XSS") && b.textContent?.includes("CWE-79"),
     );
     expect(xssBtn).toBeDefined();
     await user.click(xssBtn!);
-    // Assert – XSS의 affected_components 표시
+    // Assert
     expect(screen.getByText("template_rendering_layer")).toBeTruthy();
     expect(screen.getByText("api_response_serialization")).toBeTruthy();
   });
 
   it("T_F13_api_merge_preserves_seed: 토폴로지 API 응답 후 시드 데이터의 affected_components 보존", async () => {
-    // Arrange – fetch를 모킹하여 API가 SQLi 노드를 반환 (affected_components 없이)
+    // Arrange
     const fetchMock = vi.fn().mockImplementation((url: string) => {
       if (typeof url === "string" && url.includes("/api/graph/topology")) {
         return Promise.resolve({
@@ -147,9 +149,9 @@ describe("ConceptInspector", () => {
     });
     vi.stubGlobal("fetch", fetchMock);
     render(<MainPage />);
-    // Act – API 응답 대기
+    // Act
     await waitFor(() => expect(fetchMock).toHaveBeenCalled());
-    // Assert – 시드 데이터 병합으로 affected_components 보존
+    // Assert
     await waitFor(
       () => { expect(screen.queryByText("database_query_layer")).toBeTruthy(); },
       { timeout: 2000 },
@@ -157,12 +159,11 @@ describe("ConceptInspector", () => {
   });
 });
 
-// ── T_F12: 기존 MainPage 테스트 ──────────────────────────────────────────────────
+// ── T_F12: 기존 MainPage 테스트 ──────────────────────────────────────────────
 describe("MainPage", () => {
   it("T_F12_layout_renders: renders header and all 6 initial seed concepts", () => {
     render(<MainPage />);
     expect(screen.getByText("수집 에이전트 지식 그래프 실시간 웹뷰")).toBeTruthy();
-    // INITIAL_CONCEPTS 6개 인스펙터 목록 + SVG 양쪽에 표시될 수 있어 getAllByText 사용
     expect(screen.getAllByText("SQLi").length).toBeGreaterThan(0);
     expect(screen.getAllByText("BrokenAccessControl").length).toBeGreaterThan(0);
     expect(screen.getAllByText("MissingIndex").length).toBeGreaterThan(0);
@@ -171,63 +172,164 @@ describe("MainPage", () => {
   it("T_F12_trigger_flow: pipeline start emits Input Agent log (DEV simulation)", async () => {
     const user = userEvent.setup();
     render(<MainPage />);
-
-    // 초기 URL 2개 존재 → 버튼 활성
     await user.click(
       screen.getByRole("button", { name: /에이전트 통합 크롤러 기동하기/ }),
     );
-
-    // DEV 시뮬레이션: Input Agent 로그 즉시 생성
     expect(screen.getAllByText(/Input Agent/).length).toBeGreaterThan(0);
   });
 
   it("T_F12_no_mock_sim_when_pipeline_off: VITE_MOCK_PIPELINE=false 시 runPipelineStart(실 API)가 호출된다", async () => {
-    // Arrange – VITE_MOCK_PIPELINE=false → DEV 시뮬 억제, PROD 경로 진입
+    // Arrange
     vi.stubEnv("VITE_MOCK_PIPELINE", "false");
     const fetchMock = vi.fn().mockResolvedValue({ ok: false, json: () => Promise.resolve({}) });
     vi.stubGlobal("fetch", fetchMock);
     const user = userEvent.setup();
     render(<MainPage />);
-
     // Act
     await user.click(screen.getByRole("button", { name: /에이전트 통합 크롤러 기동하기/ }));
-
-    // Assert – 실제 runPipelineStart 가 호출됨 (DEV 시뮬 return 없이 PROD 경로)
+    // Assert
     await waitFor(() => expect(vi.mocked(runPipelineStart)).toHaveBeenCalled());
   });
 
   it("T_F12_concept_select: clicking concept list item updates inspector detail", async () => {
     const user = userEvent.setup();
     render(<MainPage />);
-
-    // 초기 선택: SQLi → 상세 패널 헤더에 "(CWE-89)" 표시
     expect(screen.getByText("(CWE-89)")).toBeTruthy();
-
-    // 인스펙터 목록에서 XSS 버튼 클릭
     const allButtons = screen.getAllByRole("button");
     const xssBtn = allButtons.find(
       (b) => b.textContent?.includes("XSS") && b.textContent?.includes("CWE-79"),
     );
     expect(xssBtn).toBeDefined();
     await user.click(xssBtn!);
-
-    // 상세 패널이 XSS로 업데이트 → "(CWE-79)" 표시
     expect(screen.getByText("(CWE-79)")).toBeTruthy();
   });
 });
 
-// ── T_F14: Extractor 스피너 + PROD 실제 staging 데이터 표시 ──────────────────
-// llm_response.json 응답값 기반 mock (Gemini 실비용 방지)
-describe("ExtractorSpinner", () => {
+// ── T12: PipelineStepList 단계별 StepStatus 렌더링 (단위 테스트) ──────────────
+const IDLE_STATUSES: StepStatuses = { 1: "IDLE", 2: "IDLE", 3: "IDLE", 4: "IDLE", 5: "IDLE" };
+
+describe("T12 PipelineStepList — 단계별 상태 전이 렌더링", () => {
+  it("T12_Assert1: LOADING 상태에서 step에 animate-spin 스피너가 존재한다", () => {
+    // Arrange
+    const statuses: StepStatuses = { ...IDLE_STATUSES, 3: "LOADING" };
+    // Act
+    render(<PipelineStepList statuses={statuses} />);
+    const step3 = document.querySelector('[data-testid="step-3"]')!;
+    // Assert
+    const spinner = step3.querySelector('[data-testid="spinner"]');
+    expect(spinner).toBeTruthy();
+    expect(spinner!.className).toContain("animate-spin");
+  });
+
+  it("T12_Assert2: SUCCESS 전이 시 스피너 소거 + ✓ 체크가 렌더링된다", () => {
+    // Arrange
+    const statuses: StepStatuses = { ...IDLE_STATUSES, 2: "SUCCESS" };
+    // Act
+    render(<PipelineStepList statuses={statuses} />);
+    const step2 = document.querySelector('[data-testid="step-2"]')!;
+    // Assert — spinner 없음
+    expect(step2.querySelector('[data-testid="spinner"]')).toBeNull();
+    // Assert — check mark
+    const check = step2.querySelector('[data-testid="check"]');
+    expect(check).toBeTruthy();
+    expect(check!.textContent).toBe("✓");
+  });
+
+  it("T12_Assert3: LOADING 상태에서 해당 단계 subText(Gemini)가 정확히 출력된다", () => {
+    // Arrange
+    const statuses: StepStatuses = { ...IDLE_STATUSES, 3: "LOADING" };
+    // Act
+    render(<PipelineStepList statuses={statuses} />);
+    // Assert
+    expect(screen.getByText(/Gemini 2\.5 Flash 가동 중/)).toBeTruthy();
+  });
+
+  it("T12_Assert4: FAILED 상태에서 ✗ 아이콘이 렌더링된다", () => {
+    // Arrange
+    const statuses: StepStatuses = { ...IDLE_STATUSES, 1: "FAILED" };
+    // Act
+    render(<PipelineStepList statuses={statuses} />);
+    const step1 = document.querySelector('[data-testid="step-1"]')!;
+    // Assert
+    const xMark = step1.querySelector('[data-testid="x-mark"]');
+    expect(xMark).toBeTruthy();
+    expect(xMark!.textContent).toBe("✗");
+  });
+
+  it("T12_Assert5: IDLE 상태에서 idle-dot만 존재하고 spinner/check 없다", () => {
+    // Arrange + Act
+    render(<PipelineStepList statuses={IDLE_STATUSES} />);
+    const step4 = document.querySelector('[data-testid="step-4"]')!;
+    // Assert
+    expect(step4.querySelector('[data-testid="idle-dot"]')).toBeTruthy();
+    expect(step4.querySelector('[data-testid="spinner"]')).toBeNull();
+    expect(step4.querySelector('[data-testid="check"]')).toBeNull();
+  });
+});
+
+// ── T13: ToastContainer 렌더링 및 해제 ───────────────────────────────────────
+describe("T13 ToastContainer — 알림 렌더링 및 해제", () => {
+  it("T13_Assert1: 토스트 메시지가 화면에 렌더링된다", () => {
+    // Arrange
+    const toasts: ToastItem[] = [
+      { id: "toast-1", kind: "success", message: "10개 핵심 기술 개념 도출 완료" },
+    ];
+    // Act
+    render(<ToastContainer toasts={toasts} onDismiss={() => {}} />);
+    // Assert
+    expect(screen.getByText("10개 핵심 기술 개념 도출 완료")).toBeTruthy();
+  });
+
+  it("T13_Assert2: success 토스트에 ✓ 아이콘이 표시된다", () => {
+    // Arrange
+    const toasts: ToastItem[] = [{ id: "t1", kind: "success", message: "완료" }];
+    // Act
+    render(<ToastContainer toasts={toasts} onDismiss={() => {}} />);
+    const toast = document.querySelector('[data-testid="toast"]')!;
+    // Assert
+    expect(toast.textContent).toContain("✓");
+  });
+
+  it("T13_Assert3: error 토스트에 ✗ 아이콘이 표시된다", () => {
+    // Arrange
+    const toasts: ToastItem[] = [{ id: "t2", kind: "error", message: "오류 발생" }];
+    // Act
+    render(<ToastContainer toasts={toasts} onDismiss={() => {}} />);
+    const toast = document.querySelector('[data-testid="toast"]')!;
+    // Assert
+    expect(toast.textContent).toContain("✗");
+  });
+
+  it("T13_Assert4: × 버튼 클릭 시 onDismiss가 해당 id로 호출된다", async () => {
+    // Arrange
+    const mockDismiss = vi.fn();
+    const toasts: ToastItem[] = [{ id: "toast-99", kind: "info", message: "알림" }];
+    const user = userEvent.setup();
+    // Act
+    render(<ToastContainer toasts={toasts} onDismiss={mockDismiss} />);
+    await user.click(document.querySelector('[data-testid="toast-dismiss"]')!);
+    // Assert
+    expect(mockDismiss).toHaveBeenCalledWith("toast-99");
+  });
+
+  it("T13_Assert5: 토스트가 없으면 아무것도 렌더링되지 않는다", () => {
+    // Arrange + Act
+    render(<ToastContainer toasts={[]} onDismiss={() => {}} />);
+    // Assert
+    expect(document.querySelectorAll('[data-testid="toast"]').length).toBe(0);
+  });
+});
+
+// ── T14: Extractor 스피너 + PROD staging 데이터 통합 ─────────────────────────
+describe("T14 ExtractorSpinner — 통합 폴링 테스트", () => {
   afterEach(() => {
     vi.unstubAllEnvs();
   });
 
-  it("T_F14_extractor_spinner_shows: Extractor 로그 감지 시 step-3에 스피너가 나타난다", async () => {
+  it("T14_extractor_spinner_shows: Extractor 로그 감지 시 '응답 대기 중...' 배지가 나타난다", async () => {
     // Arrange
     vi.stubEnv("VITE_MOCK_PIPELINE", "false");
     vi.mocked(runPipelineStart).mockResolvedValue({ docId: "doc-t14a", sessionId: "ses-t14a" });
-
     const fetchMock = vi.fn().mockImplementation((url: string) => {
       if (typeof url === "string" && url.includes("/api/pipeline/logs/ses-t14a")) {
         return Promise.resolve({
@@ -246,30 +348,25 @@ describe("ExtractorSpinner", () => {
       return Promise.resolve({ ok: true, json: () => Promise.resolve({ concept: "", langs: [], frameworks: [], examples: [] }) });
     });
     vi.stubGlobal("fetch", fetchMock);
-
     const user = userEvent.setup();
     render(<MainPage />);
-
-    // Act – 파이프라인 시작
+    // Act
     await user.click(screen.getByRole("button", { name: /에이전트 통합 크롤러 기동하기/ }));
-
-    // Assert – "LLM 응답 대기 중..." 텍스트가 step-3에 나타남
+    // Assert — 구현에서 "응답 대기 중..." 배지 (구: "LLM 응답 대기 중...")
     await waitFor(
-      () => { expect(screen.getByText("LLM 응답 대기 중...")).toBeTruthy(); },
+      () => { expect(screen.getByText("응답 대기 중...")).toBeTruthy(); },
       { timeout: 5000 },
     );
   });
 
-  it("T_F14_extractor_spinner_hides: EXTRACTED 상태 도달 시 스피너가 사라진다", async () => {
+  it("T14_extractor_spinner_hides: EXTRACTED 상태 도달 시 '응답 대기 중...' 배지가 사라진다", async () => {
     // Arrange
     vi.stubEnv("VITE_MOCK_PIPELINE", "false");
     vi.mocked(runPipelineStart).mockResolvedValue({ docId: "doc-t14b", sessionId: "ses-t14b" });
-
     let callCount = 0;
     const fetchMock = vi.fn().mockImplementation((url: string) => {
       if (typeof url === "string" && url.includes("/api/pipeline/logs/ses-t14b")) {
         callCount++;
-        // 첫 번째 폴링: Extractor 실행 중
         if (callCount === 1) {
           return Promise.resolve({
             ok: true,
@@ -279,17 +376,13 @@ describe("ExtractorSpinner", () => {
             }),
           });
         }
-        // 두 번째 폴링: EXTRACTED 완료
         return Promise.resolve({
           ok: true,
           json: () => Promise.resolve({ doc_state: "EXTRACTED", logs: [] }),
         });
       }
       if (typeof url === "string" && url.includes("/api/staging/ses-t14b")) {
-        return Promise.resolve({
-          ok: true,
-          json: () => Promise.resolve({ items: [] }),
-        });
+        return Promise.resolve({ ok: true, json: () => Promise.resolve({ items: [] }) });
       }
       if (typeof url === "string" && url.includes("/api/graph/topology")) {
         return Promise.resolve({ ok: true, json: () => Promise.resolve({ nodes: [], edges: [] }) });
@@ -297,21 +390,18 @@ describe("ExtractorSpinner", () => {
       return Promise.resolve({ ok: true, json: () => Promise.resolve({ concept: "", langs: [], frameworks: [], examples: [] }) });
     });
     vi.stubGlobal("fetch", fetchMock);
-
     const user = userEvent.setup();
     render(<MainPage />);
-
     await user.click(screen.getByRole("button", { name: /에이전트 통합 크롤러 기동하기/ }));
-
-    // Assert – EXTRACTED 후 스피너 메시지 사라짐
+    // Assert — EXTRACTED 후 "응답 대기 중..." 배지 소거
     await waitFor(
-      () => { expect(screen.queryByText("LLM 응답 대기 중...")).toBeNull(); },
+      () => { expect(screen.queryByText("응답 대기 중...")).toBeNull(); },
       { timeout: 8000 },
     );
   });
 
-  it("T_F14_draft_from_staging: EXTRACTED 후 llm_response.json 기반 DRAFT 개념이 스테이징에 표시된다", async () => {
-    // Arrange – llm_response.json 실제 Gemini 응답값 기반 mock staging data
+  it("T14_draft_from_staging: EXTRACTED 후 DRAFT 개념이 스테이징에 표시된다", async () => {
+    // Arrange
     const stagingItems = [
       {
         id: "st-csrf-1", state: "DRAFT",
@@ -319,15 +409,13 @@ describe("ExtractorSpinner", () => {
         concept_type: "vulnerability_root_cause",
         cwe_id: "CWE-352", owasp_id: "A04:2021", severity: "high",
         domains: ["security"], aliases: ["CSRF", "XSRF"],
-        affected_components: ["web_application", "http_request_handler", "user_session"],
+        affected_components: ["web_application", "http_request_handler"],
         security_mechanism: ["csrf_cookie", "csrf_middleware_token_field"],
-        description_ko: "악의적인 웹사이트가 로그인한 사용자의 자격 증명을 이용하여 특정 동작을 수행하도록 유도하는 공격입니다.",
+        description_ko: "악의적인 웹사이트가 로그인한 사용자의 자격 증명을 이용하는 공격.",
       },
     ];
-
     vi.stubEnv("VITE_MOCK_PIPELINE", "false");
     vi.mocked(runPipelineStart).mockResolvedValue({ docId: "doc-t14c", sessionId: "ses-t14c" });
-
     const fetchMock = vi.fn().mockImplementation((url: string) => {
       if (typeof url === "string" && url.includes("/api/pipeline/logs/ses-t14c")) {
         return Promise.resolve({
@@ -336,10 +424,7 @@ describe("ExtractorSpinner", () => {
         });
       }
       if (typeof url === "string" && url.includes("/api/staging/ses-t14c")) {
-        return Promise.resolve({
-          ok: true,
-          json: () => Promise.resolve({ items: stagingItems }),
-        });
+        return Promise.resolve({ ok: true, json: () => Promise.resolve({ items: stagingItems }) });
       }
       if (typeof url === "string" && url.includes("/api/graph/topology")) {
         return Promise.resolve({ ok: true, json: () => Promise.resolve({ nodes: [], edges: [] }) });
@@ -347,15 +432,50 @@ describe("ExtractorSpinner", () => {
       return Promise.resolve({ ok: true, json: () => Promise.resolve({ concept: "", langs: [], frameworks: [], examples: [] }) });
     });
     vi.stubGlobal("fetch", fetchMock);
-
     const user = userEvent.setup();
     render(<MainPage />);
     await user.click(screen.getByRole("button", { name: /에이전트 통합 크롤러 기동하기/ }));
-
-    // Assert – 스테이징 완료 안내 메시지 + DRAFT 승인 대기
+    // Assert
     await waitFor(
       () => { expect(screen.getByText(/스테이징 적재 완료/)).toBeTruthy(); },
       { timeout: 6000 },
     );
+  });
+});
+
+// ── T15: Debug Drawer 열기/닫기 ───────────────────────────────────────────────
+describe("T15 DebugDrawer — 터미널 로그 드로어", () => {
+  it("T15_Assert1: 'Terminal Raw Logs' 버튼 클릭 시 드로어 dialog가 열린다", async () => {
+    // Arrange
+    const user = userEvent.setup();
+    render(<MainPage />);
+    // Act
+    await user.click(screen.getByText(/Terminal Raw Logs/));
+    // Assert
+    expect(screen.getByRole("dialog")).toBeTruthy();
+    expect(screen.getByText("TERMINAL RAW LOGS")).toBeTruthy();
+  });
+
+  it("T15_Assert2: 드로어 × 버튼 클릭 시 dialog가 닫힌다", async () => {
+    // Arrange
+    const user = userEvent.setup();
+    render(<MainPage />);
+    await user.click(screen.getByText(/Terminal Raw Logs/));
+    expect(screen.getByRole("dialog")).toBeTruthy();
+    // Act
+    await user.click(screen.getByLabelText("close-drawer"));
+    // Assert
+    expect(screen.queryByRole("dialog")).toBeNull();
+  });
+
+  it("T15_Assert3: 드로어 오버레이 클릭 시 닫힌다", async () => {
+    // Arrange
+    const user = userEvent.setup();
+    render(<MainPage />);
+    await user.click(screen.getByText(/Terminal Raw Logs/));
+    // Act
+    await user.click(screen.getByTestId("drawer-overlay"));
+    // Assert
+    expect(screen.queryByRole("dialog")).toBeNull();
   });
 });

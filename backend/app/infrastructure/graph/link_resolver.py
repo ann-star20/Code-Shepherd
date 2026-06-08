@@ -8,13 +8,20 @@
 
 import neo4j
 
+_DELETE_STALE_SAME_AS = """
+MATCH (t:Concept {name: $name})-[r:SAME_AS]-()
+DELETE r
+"""
+
 _FIND_ALIAS_OVERLAPS = """
 MATCH (target:Concept {name: $name})
-WHERE size(target.aliases) > 0
 MATCH (other:Concept)
 WHERE other.name <> target.name
-  AND size(other.aliases) > 0
-  AND any(a IN target.aliases WHERE a IN other.aliases)
+  AND (
+    any(a IN target.aliases WHERE a IN other.aliases)
+    OR target.name IN other.aliases
+    OR other.name IN target.aliases
+  )
 RETURN other.name AS other_name
 """
 
@@ -31,12 +38,17 @@ async def resolve_links(
 ) -> tuple[int, int]:
     """aliases 중복 탐색 후 SAME_AS 관계를 MERGE로 형성한다.
 
+    이전 실행의 스테일 SAME_AS 엣지를 먼저 삭제한 후 재생성하여 멱등성 보장.
+    concept 이름 자체가 상대방 aliases에 포함된 경우도 동의어로 인식.
+
     Returns:
         (same_as_count, related_count) — 현재 related_count는 항상 0.
     """
     same_as_count = 0
 
     async with driver.session() as session:
+        await session.run(_DELETE_STALE_SAME_AS, name=concept_name)
+
         result = await session.run(_FIND_ALIAS_OVERLAPS, name=concept_name)
         matches = await result.data()
 
