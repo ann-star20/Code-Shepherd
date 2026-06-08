@@ -43,6 +43,9 @@ coverage/
 test-results/
 playwright-report/
 
+# Claude Code (개인 설정 — 공유 안 함)
+.claude/skills/
+
 # IDE
 .vscode/
 .idea/
@@ -70,3 +73,6 @@ PRD_조직지식관리_온보딩_플랫폼.md
 # TypeScript build info
 *.tsbuildinfo
 frontend/vite.config.d.ts
+
+# KMS 사내문서 (git 제외)
+backend/m4/data/kms/
