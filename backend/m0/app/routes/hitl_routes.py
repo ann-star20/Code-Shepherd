@@ -799,6 +799,15 @@ async def _reprocess_document(
             result = await h.run(stage5_metadata, state)
         state = {**state, **result}
 
+        # corrected_category가 있으면 Stage 5 LLM 출력이 덮어쓴 값을 복구
+        if corrected_category:
+            if state.get("metadata") is None:
+                state["metadata"] = {}
+            state["metadata"]["category"] = corrected_category
+            state["category_is_new"] = False
+            state["category_reasoning"] = ""
+            state["category_alternatives"] = []
+
         # Stage 5b: 메타데이터 검증
         async with _harness(DocPipelineStage.METADATA_VALIDATE, "MetadataValidateAgent") as h:
             result = await h.run(stage5b_metadata_validate, state)
