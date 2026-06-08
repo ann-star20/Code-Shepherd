@@ -24,8 +24,8 @@ import Team from "./pages/Team";
 import Settings from "./pages/Settings";
 import KmsPage from "./pages/kms/KmsPage";
 import KmsManagePage from "./pages/kms/KmsManagePage";
-import ReviewPlaceholder from "./pages/review/Placeholder";
-import LearningPlaceholder from "./pages/learning/Placeholder";
+import ReviewPage from "./pages/review/ReviewPage";
+import LearningPage from "./pages/learning/LearningPage";
 import YoutubePlaceholder from "./pages/youtube/Placeholder";
 import ApprovalsPlaceholder from "./pages/approvals/Placeholder";
 
@@ -78,8 +78,8 @@ function AppRoutes() {
           <Route path="/settings" element={<Settings />} />
           <Route path="/kms" element={<KmsPage />} />
           <Route path="/kms/manage" element={<KmsManagePage />} />
-          <Route path="/review" element={<ReviewPlaceholder />} />
-          <Route path="/learning" element={<LearningPlaceholder />} />
+          <Route path="/review" element={<ReviewPage />} />
+          <Route path="/learning" element={<LearningPage />} />
           <Route path="/youtube" element={<YoutubePlaceholder />} />
           <Route path="/approvals" element={<ApprovalsPlaceholder />} />
         </Route>

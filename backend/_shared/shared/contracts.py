@@ -88,6 +88,10 @@ class M3VerifyRequest(BaseModel):
     task_id: str
     pr_id: str
     pr_diff: str
+    # 선택: 실제 분석(clone→run)에 필요. 없으면 빈 issues 반환(가짜 만들지 않음).
+    # 하위호환 — m1이 아직 안 보내도 됨(None).
+    clone_url: str | None = None
+    commit_sha: str | None = None
     context: AnalysisContext = Field(default_factory=AnalysisContext)
     developer: DeveloperProfile | None = None
     trace_id: str | None = None
@@ -99,6 +103,29 @@ class M3VerifyResponse(BaseModel):
     issues: list[IssueItem] = Field(default_factory=list)
     summary: IssueSummary = Field(default_factory=IssueSummary)
     execution_ms: int = 0
+
+
+class M3ReviewRequest(BaseModel):
+    """4개 모듈 결과를 모아 판정·코멘트·게시를 요청 (M4EvaluateRequest 동형 + repository/pr_number)."""
+    task_id: str
+    pr_id: str
+    repository: str  # "owner/repo" — 코멘트를 게시할 대상
+    pr_number: int
+    static_analysis: M2AnalyzeResponse | None = None
+    security_scan: M2AnalyzeResponse | None = None
+    test_verification: M3VerifyResponse | None = None
+    performance: M3VerifyResponse | None = None
+    developer: DeveloperProfile | None = None
+    trace_id: str | None = None
+
+
+class M3ReviewResponse(BaseModel):
+    task_id: str
+    pr_id: str
+    verdict: Literal["lgtm", "rework", "escalate"] = "lgtm"
+    comment_posted: bool = False
+    comment_url: str | None = None
+    persisted: bool = False
 
 
 # ---------------------------------------------------------------------------

@@ -98,3 +98,11 @@ USE_MOCK_LLM=false   # 통합 테스트 / 데모
 ```
 
 코드 변경 없이 환경변수만으로 전환한다.
+
+## 7. 모듈별 세부 스펙
+
+코딩 시작 전 현재 브랜치를 확인하고, 해당 스펙 문서를 먼저 읽는다.
+
+| 브랜치 | 읽어야 할 문서 |
+|--------|--------------|
+| `feature/module4-curriculum` | [`backend/m4/BACKEND_SPEC.md`](backend/m4/BACKEND_SPEC.md) (백엔드) [`frontend/src/pages/learning/FRONTEND_SPEC.md`](frontend/src/pages/learning/FRONTEND_SPEC.md) (프론트) |

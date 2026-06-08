@@ -5,6 +5,7 @@
 import { http, HttpResponse } from "msw";
 
 const BASE = "/api";
+const M3_BASE = "/m3-api";
 
 const MOCK_TEAM_ID = "11111111-1111-1111-1111-111111111111";
 const MOCK_TEAM_ID_2 = "22222222-2222-2222-2222-222222222222";
@@ -108,6 +109,37 @@ export const handlers = [
           status: "open",
           submitted_at: "2026-01-01T00:00:00Z",
           is_lgtm: false,
+        },
+      ],
+    });
+  }),
+
+  // m3 리뷰 결과 조회 (SESSION 5) — GET /m3-api/review/{owner}/{repo}/{pr}
+  http.get(`${M3_BASE}/review/:owner/:repo/:pr`, ({ params }) => {
+    return HttpResponse.json({
+      owner: params.owner,
+      repo: params.repo,
+      pr_number: Number(params.pr),
+      found: true,
+      verdict: "rework",
+      comment:
+        "## 🤖 자동 리뷰 (rework)\n\n테스트 커버리지가 부족하고 N+1 쿼리가 있습니다.",
+      issues: [
+        {
+          severity: "Major",
+          file: "src/payment.py",
+          line: 8,
+          message: "N+1 쿼리: 루프 안에서 DB 호출이 반복됩니다.",
+          rule_id: "PERF-002",
+          suggestion: "joinedload()/selectinload() 로 루프 밖에서 조회하세요.",
+        },
+        {
+          severity: "Minor",
+          file: "src/payment.py",
+          line: 21,
+          message: "O(n^2) 시간복잡도: 2중 중첩 루프.",
+          rule_id: "PERF-001",
+          suggestion: "해시맵으로 복잡도를 낮추세요.",
         },
       ],
     });
