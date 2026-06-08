@@ -168,7 +168,7 @@ export function DocumentAnalyzer({ chunks, docId }: DocumentAnalyzerProps) {
       )}
 
       {topView === "preview" && (
-        <div style={{ height: 520, overflow: "hidden" }}>
+        <div style={{ height: "calc(100vh - 280px)", minHeight: 480, overflow: "hidden" }}>
           {!imagesLoaded ? (
             <p style={{ color: "#94a3b8", fontSize: 13, textAlign: "center", padding: 40 }}>이미지 로딩 중...</p>
           ) : (
