@@ -342,12 +342,16 @@ async def _save_to_neo4j(state: "DocPipelineState") -> bool:
     try:
         driver = _get_neo4j_driver()
         async with driver.session() as neo_session:
+            category = metadata.get("category", "기타")
             await neo_session.run(
                 "MERGE (d:Document {doc_id: $doc_id}) "
-                "SET d.title = $title, d.category = $category",
+                "SET d.title = $title, d.category = $category "
+                "WITH d "
+                "MERGE (cat:Category {name: $category}) "
+                "MERGE (d)-[:BELONGS_TO]->(cat)",
                 doc_id=doc_id,
                 title=metadata.get("title", ""),
-                category=metadata.get("category", "기타"),
+                category=category,
             )
             for chunk in chunks:
                 await neo_session.run(
