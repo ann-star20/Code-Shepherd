@@ -1,9 +1,10 @@
 -- =============================================================================
--- schema.sql — PostgreSQL 마스터 테이블 DDL
--- 멱등성: IF NOT EXISTS — 중복 실행 완전 안전
+-- schema.sql — PostgreSQL 마스터 테이블 통합 DDL (v3. Final Clean)
+-- 멱등성: IF NOT EXISTS — 중복 실행 완전 안전 (migration_v2 통합 완료)
 -- =============================================================================
 CREATE EXTENSION IF NOT EXISTS vector;
--- ── 도메인 레지스트리 (파이프라인 DOMAIN_PENDING 인터락 기준)
+
+-- ── 1. 도메인 레지스트리 (파이프라인 DOMAIN_PENDING 인터락 기준)
 CREATE TABLE IF NOT EXISTS domain_registry (
     id           UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     name         TEXT NOT NULL UNIQUE,
@@ -15,7 +16,7 @@ CREATE TABLE IF NOT EXISTS domain_registry (
     created_by   TEXT NOT NULL DEFAULT 'system'
 );
 
--- ── 출처 문서 마스터 테이블
+-- ── 2. 출처 문서 마스터 테이블 (migration_v2 필드 흡수 완료)
 CREATE TABLE IF NOT EXISTS documents (
     doc_id            TEXT PRIMARY KEY,
     source_prefix     TEXT NOT NULL,
@@ -25,16 +26,16 @@ CREATE TABLE IF NOT EXISTS documents (
     lang              TEXT,
     framework         TEXT,
     version           TEXT,
-    infer_confidence  FLOAT,
+    infer_confidence  FLOAT,                              -- [통합] 메타 추론 신뢰도 지표
+    is_deprecated     BOOLEAN NOT NULL DEFAULT false,     -- [통합] 문서 소프트 딜리트 플래그
     state             TEXT NOT NULL DEFAULT 'PENDING',
     created_at        TIMESTAMPTZ DEFAULT now(),
     updated_at        TIMESTAMPTZ,
-    is_deprecated BOOLEAN NOT NULL DEFAULT false;
     CONSTRAINT documents_state_check
         CHECK (state IN ('PENDING','CRAWLING','EXTRACTED','COMMITTED','FAILED'))
 );
 
--- ── 개념 마스터 테이블 (PostgreSQL 정규화 사본)
+-- ── 3. 개념 마스터 테이블 (migration_v2 및 하이브리드 벡터 통합 완료)
 CREATE TABLE IF NOT EXISTS concepts (
     id             UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     concept_name   TEXT NOT NULL UNIQUE,
@@ -45,37 +46,37 @@ CREATE TABLE IF NOT EXISTS concepts (
     owasp_id       TEXT,
     severity       TEXT,
     description_ko TEXT,
+    root_cause     TEXT,                               -- [통합] 취약점/결함 발생 근본 원인 문자열
+    is_deprecated  BOOLEAN NOT NULL DEFAULT false,     -- [통합] 개념 소프트 딜리트 플래그
     aliases        TEXT[] NOT NULL DEFAULT '{}',
+    name_vector    vector(768),                        -- [통합] 이름+동의어 융합형 3-Factor 매칭 벡터
+    desc_vector    vector(768),                        -- [통합] 요약 설명문 문맥 인지용 시맨틱 벡터
     created_at     TIMESTAMPTZ DEFAULT now(),
     updated_at     TIMESTAMPTZ
 );
--- PostgreSQL pgvector 플러그인 활용 (하이브리드 메타 검색)
 
--- concepts 테이블에 임베딩 벡터 컬럼 추가 (Gemini embedding-001 기준 768차원)
--- [핵심 보정] 1. 단어/동의어 집합 임베딩 벡터 컬럼 (Lexical & Semantic 1)
-ALTER TABLE concepts ADD COLUMN IF NOT EXISTS name_vector vector(768);
--- [핵심 보정] 2. 요약 설명 임베딩 벡터 컬럼 (Semantic 2)
-ALTER TABLE concepts ADD COLUMN IF NOT EXISTS desc_vector vector(768);
+-- ── [마이그레이션] 기존 볼륨 스키마 → 현행 스키마 안전 업그레이드 (멱등성 보장)
+-- documents: migration_v2 통합 컬럼
+ALTER TABLE documents ADD COLUMN IF NOT EXISTS infer_confidence FLOAT;
+ALTER TABLE documents ADD COLUMN IF NOT EXISTS is_deprecated    BOOLEAN NOT NULL DEFAULT false;
 
--- HNSW 인덱스 빌드 (코사인 유사도 전용)
--- 단어 벡터는 매칭이 빡빡해야 하므로 파라미터를 가볍게 가져갑니다.
-CREATE INDEX IF NOT EXISTS idx_concepts_name_vector_hnsw 
+-- concepts: migration_v2 + 하이브리드 벡터 통합 컬럼
+ALTER TABLE concepts ADD COLUMN IF NOT EXISTS root_cause     TEXT;
+ALTER TABLE concepts ADD COLUMN IF NOT EXISTS is_deprecated  BOOLEAN NOT NULL DEFAULT false;
+ALTER TABLE concepts ADD COLUMN IF NOT EXISTS aliases        TEXT[] NOT NULL DEFAULT '{}';
+ALTER TABLE concepts ADD COLUMN IF NOT EXISTS name_vector    vector(768);
+ALTER TABLE concepts ADD COLUMN IF NOT EXISTS desc_vector    vector(768);
+
+-- HNSW 고속 유사도 검색 인덱스 빌드 (코사인 유사도 연산 전용)
+CREATE INDEX IF NOT EXISTS idx_concepts_name_vector_hnsw
 ON concepts USING hnsw (name_vector vector_cosine_ops)
 WITH (m = 16, ef_construction = 64);
 
--- 설명문은 데이터 밀도(Density)와 엔트로피가 높으므로 HNSW 그래프 구조를 더 촘촘히 짜서 재현율(Recall)을 극대화합니다.
-CREATE INDEX IF NOT EXISTS idx_concepts_desc_vector_hnsw 
+CREATE INDEX IF NOT EXISTS idx_concepts_desc_vector_hnsw
 ON concepts USING hnsw (desc_vector vector_cosine_ops)
 WITH (m = 24, ef_construction = 100);
 
--- ── 런타임 고속 검색 질의문 예시 (Query-time ef_search 튜닝)
--- ef_search 값을 조정하여 쿼리 속도(Speed)와 재현율(Recall) 사이의 트레이드오프를 동적으로 제어합니다.
--- SET hnsw.ef_search = 40; 
--- SELECT concept_name, description_ko, 1 - (desc_vector <=> $1) AS similarity 
--- FROM concepts 
--- ORDER BY desc_vector <=> $1 LIMIT 5;
-
--- ── 스테이징 테이블 (DRAFT → APPROVED → COMMITTED)
+-- ── 4. 스테이징 테이블 (DRAFT → APPROVED → COMMITTED)
 CREATE TABLE IF NOT EXISTS staging_concepts (
     id              UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     session_id      UUID NOT NULL,
@@ -89,19 +90,30 @@ CREATE TABLE IF NOT EXISTS staging_concepts (
     created_at      TIMESTAMPTZ DEFAULT now()
 );
 
--- ── 파이프라인 실행 로그 (에이전트별 이벤트 스트림)
+-- staging_concepts: 마이그레이션 안전 컬럼 추가
+ALTER TABLE staging_concepts ADD COLUMN IF NOT EXISTS known_domains   TEXT[] DEFAULT '{}';
+ALTER TABLE staging_concepts ADD COLUMN IF NOT EXISTS unknown_domains  TEXT[] DEFAULT '{}';
+ALTER TABLE staging_concepts ADD COLUMN IF NOT EXISTS committed_at     TIMESTAMPTZ;
+
+-- ── 5. 파이프라인 실행 로그 (에이전트별 이벤트 스트림 리팩토링 반영 완료)
 CREATE TABLE IF NOT EXISTS pipeline_logs (
     id         UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     doc_id     TEXT REFERENCES documents(doc_id) ON DELETE SET NULL,
-    session_id UUID NOT NULL,
-    agent      TEXT NOT NULL,
-    level      TEXT NOT NULL DEFAULT 'INFO',
-    message    TEXT,
+    session_id UUID NOT NULL,                          -- [통합] 태스크 세션 식별 고유키
+    agent      TEXT NOT NULL,                          -- [통합] 이벤트를 유발한 에이전트명
+    level      TEXT NOT NULL DEFAULT 'INFO',           -- [통합] 로그 레벨
+    message    TEXT,                                   -- [통합] 실시간 상태 롤링 subText 메시지
     created_at TIMESTAMPTZ DEFAULT now()
 );
 
+-- pipeline_logs: 마이그레이션 안전 컬럼 추가
+ALTER TABLE pipeline_logs ADD COLUMN IF NOT EXISTS session_id UUID NOT NULL DEFAULT gen_random_uuid();
+ALTER TABLE pipeline_logs ADD COLUMN IF NOT EXISTS agent      TEXT NOT NULL DEFAULT 'system';
+ALTER TABLE pipeline_logs ADD COLUMN IF NOT EXISTS level      TEXT NOT NULL DEFAULT 'INFO';
+ALTER TABLE pipeline_logs ADD COLUMN IF NOT EXISTS message    TEXT;
+
 -- ── 초기 도메인 레지스트리 시드
 INSERT INTO domain_registry (name, label_ko, description, color_hex) VALUES
-    ('security',    '보안',    '보안 취약점 및 방어 메커니즘', '#c84848'),
+    ('security',    '보안',    '보안 취약점 및 방어 메커니즘', '#ef4444'),
     ('performance', '성능',    '성능 안티패턴 및 최적화 기법', '#3b82f6')
 ON CONFLICT (name) DO NOTHING;
