@@ -164,6 +164,36 @@ _MOCK_CONCEPTS: list[dict] = [
         "config_properties": []
     },
     {
+        # ── MERGE 미끼 ── concept_name은 다르지만 cwe_id=CWE-352 로 기존 CSRF 노드로
+        # 흡수되어야 한다. aliases 룩업 실패 → CWE 기반 fallback merge 경로를 검증.
+        "concept_name": "CrossSiteRequestForgery",
+        "domains": ["security"],
+        "concept_type": "vulnerability_root_cause",
+        "cwe_id": "CWE-352",
+        "owasp_id": "A01:2025",
+        "severity": "high",
+        "description_ko": "LLM이 파스칼케이스 풀네임으로 뱉어낸 CSRF 변형 — 이름 기준 exact-match 방어선을 통과하더라도 CWE-352 식별자로 기존 CSRF 마스터 노드에 병합되어야 한다.",
+        "aliases": ["CSRF", "Cross-Site Request Forgery", "XSRF"],
+        "root_cause": "missing_request_origin_verification",
+        "affected_components": ["form_submission_handler", "state_changing_api"],
+        "security_mechanism": [
+          {
+            "mechanism_name": "csrf_token_validation",
+            "code_examples": [
+              {
+                "lang": "python",
+                "lang_version": ">=3.10",
+                "framework": "django",
+                "framework_version": ">=4.0",
+                "code": "# settings.py\nMIDDLEWARE = ['django.middleware.csrf.CsrfViewMiddleware']",
+                "description": "CSRF 미끼 노드 — CWE 기반 머지 경로 검증용"
+              }
+            ]
+          }
+        ],
+        "config_properties": []
+    },
+    {
         "concept_name": "SameSiteCookie",
         "domains": ["security"],
         "concept_type": "security_mechanism",

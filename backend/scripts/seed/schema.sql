@@ -29,6 +29,7 @@ CREATE TABLE IF NOT EXISTS documents (
     state             TEXT NOT NULL DEFAULT 'PENDING',
     created_at        TIMESTAMPTZ DEFAULT now(),
     updated_at        TIMESTAMPTZ,
+    is_deprecated BOOLEAN NOT NULL DEFAULT false;
     CONSTRAINT documents_state_check
         CHECK (state IN ('PENDING','CRAWLING','EXTRACTED','COMMITTED','FAILED'))
 );
@@ -48,12 +49,20 @@ CREATE TABLE IF NOT EXISTS concepts (
     created_at     TIMESTAMPTZ DEFAULT now(),
     updated_at     TIMESTAMPTZ
 );
--- PostgreSQL pgvector 플러그인 활용 (하이브리드 메타 검색)/
--- ② concepts 테이블에 임베딩 벡터 컬럼 추가 (Gemini embedding-001 기준 768차원)
+-- PostgreSQL pgvector 플러그인 활용 (하이브리드 메타 검색)
+
+-- concepts 테이블에 임베딩 벡터 컬럼 추가 (Gemini embedding-001 기준 768차원)
+-- [핵심 보정] 1. 단어/동의어 집합 임베딩 벡터 컬럼 (Lexical & Semantic 1)
+ALTER TABLE concepts ADD COLUMN IF NOT EXISTS name_vector vector(768);
+-- [핵심 보정] 2. 요약 설명 임베딩 벡터 컬럼 (Semantic 2)
 ALTER TABLE concepts ADD COLUMN IF NOT EXISTS desc_vector vector(768);
--- ③ 고속 유사도 검색을 위한 HNSW 인덱스 빌드 (코사인 유사도 전용)
--- ③ 설명 임베딩 인덱스 빌드 (Semantic RELATED_TO 추천용) ★ 훨씬 더 중요함 ★
--- m = 24 (더 촘촘한 연결선 구축), ef_construction = 100 (더 정교한 그래프 레이어 빌드)
+
+-- HNSW 인덱스 빌드 (코사인 유사도 전용)
+-- 단어 벡터는 매칭이 빡빡해야 하므로 파라미터를 가볍게 가져갑니다.
+CREATE INDEX IF NOT EXISTS idx_concepts_name_vector_hnsw 
+ON concepts USING hnsw (name_vector vector_cosine_ops)
+WITH (m = 16, ef_construction = 64);
+
 -- 설명문은 데이터 밀도(Density)와 엔트로피가 높으므로 HNSW 그래프 구조를 더 촘촘히 짜서 재현율(Recall)을 극대화합니다.
 CREATE INDEX IF NOT EXISTS idx_concepts_desc_vector_hnsw 
 ON concepts USING hnsw (desc_vector vector_cosine_ops)
@@ -93,6 +102,6 @@ CREATE TABLE IF NOT EXISTS pipeline_logs (
 
 -- ── 초기 도메인 레지스트리 시드
 INSERT INTO domain_registry (name, label_ko, description, color_hex) VALUES
-    ('security',    '보안',    '보안 취약점 및 방어 메커니즘', '#ef4444'),
+    ('security',    '보안',    '보안 취약점 및 방어 메커니즘', '#c84848'),
     ('performance', '성능',    '성능 안티패턴 및 최적화 기법', '#3b82f6')
 ON CONFLICT (name) DO NOTHING;

@@ -1,81 +1,42 @@
 import { useState, useEffect, useRef, useCallback, useMemo } from "react";
 import { runPipelineStart } from "@/services/pipelineOrchestrator";
 
-// ── 도메인 레지스트리 ────────────────────────────────────────────────────────
+// ── 도메인 레지스트리 (수정 없음) ───────────────────────────────────────────
 const DOMAIN_REGISTRY: Record<string, { label_ko: string; color_hex: string; bg_hex: string; border_hex: string }> = {
   security:    { label_ko: "보안",  color_hex: "#B91C1C", bg_hex: "#FEF2F2", border_hex: "#FCA5A5" },
   performance: { label_ko: "성능",  color_hex: "#0F766E", bg_hex: "#F0FDF4", border_hex: "#86EFAC" },
 };
 
-const INITIAL_CONCEPTS = []
-// ── 시드 기반 Concept 초기 데이터 ─────────────────────────────────────────────
-// const INITIAL_CONCEPTS = [
-//   {
-//     name: "SQLi", concept_type: "vulnerability_root_cause",
-//     cwe_id: "CWE-89", owasp_id: "A03:2025", severity: "critical",
-//     description_ko: "SQL 인젝션. 사용자 입력이 SQL 쿼리에 비위생화된 채 삽입되어 임의 쿼리 실행 또는 데이터 탈취가 가능함.",
-//     aliases: ["SQL Injection", "SQL 인젝션"],
-//     affected_components: ["database_query_layer", "orm_layer"],
-//     security_mechanism: ["parameterized_query", "input_type_validation"],
-//     domains: ["security"], state: "COMMITTED",
-//   },
-//   {
-//     name: "XSS", concept_type: "vulnerability_root_cause",
-//     cwe_id: "CWE-79", owasp_id: "A03:2025", severity: "high",
-//     description_ko: "크로스 사이트 스크립팅. 사용자 입력값이 HTML 컨텍스트에서 이스케이프 처리 없이 출력되어 공격자가 악성 스크립트를 삽입함.",
-//     aliases: ["Cross-Site Scripting", "크로스 사이트 스크립팅"],
-//     affected_components: ["template_rendering_layer", "api_response_serialization"],
-//     security_mechanism: ["output_encoding", "content_security_policy"],
-//     domains: ["security"], state: "COMMITTED",
-//   },
-//   {
-//     name: "CSRF", concept_type: "vulnerability_root_cause",
-//     cwe_id: "CWE-352", owasp_id: "A01:2025", severity: "high",
-//     description_ko: "크로스 사이트 요청 위조. 인증된 사용자의 브라우저를 통해 공격자가 원하는 요청을 의도치 않게 전송하게 만드는 취약점.",
-//     aliases: ["Cross-Site Request Forgery", "크로스 사이트 요청 위조"],
-//     affected_components: ["authentication_filter", "session_management_layer", "api_endpoint"],
-//     security_mechanism: ["csrf_token_validation", "samesite_cookie"],
-//     domains: ["security"], state: "COMMITTED",
-//   },
-//   {
-//     name: "N+1Query", concept_type: "performance_antipattern",
-//     cwe_id: "CWE-1048", owasp_id: "", severity: "medium",
-//     description_ko: "ORM 관계 조회 시 루프마다 추가 쿼리가 N번 실행되어 DB에 과부하를 유발하는 안티패턴. select_related/prefetch_related로 해결.",
-//     aliases: ["N+1 Problem", "N+1 Query", "N+1 쿼리 문제"],
-//     affected_components: ["orm_layer", "database_query_layer", "api_list_endpoint"],
-//     security_mechanism: ["eager_loading", "batch_fetching"],
-//     domains: ["performance"], state: "COMMITTED",
-//   },
-//   {
-//     name: "BrokenAccessControl", concept_type: "vulnerability_root_cause",
-//     cwe_id: "CWE-284", owasp_id: "A01:2025", severity: "critical",
-//     description_ko: "취약한 접근 제어. 최소 권한 원칙 미준수, IDOR 등으로 인증된 사용자가 허용되지 않은 리소스에 접근.",
-//     aliases: ["Broken Access Control", "IDOR", "취약한 접근 제어"],
-//     affected_components: ["authentication_filter", "api_endpoint", "database_access_layer"],
-//     security_mechanism: ["rbac_rules", "abac_rules", "middleware_authorization"],
-//     domains: ["security"], state: "COMMITTED",
-//   },
-//   {
-//     name: "MissingIndex", concept_type: "performance_antipattern",
-//     cwe_id: "CWE-1089", owasp_id: "", severity: "medium",
-//     description_ko: "인덱스 미설정으로 인한 Full Table Scan 발생. 데이터 증가에 비례하여 응답 지연이 급격히 악화됨.",
-//     aliases: ["Missing Database Index", "인덱스 누락", "Full Table Scan"],
-//     affected_components: ["database_query_layer", "api_list_endpoint", "reporting_layer"],
-//     security_mechanism: ["composite_index", "query_plan_analysis"],
-//     domains: ["performance"], state: "COMMITTED",
-//   },
-// ];
+type ConceptItem = {
+  name: string; 
+  concept_type: string; 
+  cwe_id: string; 
+  owasp_id: string; 
+  severity: string;
+  description_ko: string; 
+  aliases: string[]; 
+  affected_components: string[];
+  security_mechanism: string[]; 
+  domains: string[]; 
+  state: string;
+};
 
-// // DRAFT 시연용 (mock 모드 fallback)
-// const DRAFT_CONCEPT = {
-//   name: "ConnPoolExhaustion", concept_type: "performance_antipattern",
-//   cwe_id: "CWE-400", owasp_id: "", severity: "high",
-//   description_ko: "커넥션 반환 실패 또는 풀 설정 미흡으로 DB 커넥션 풀이 고갈되어 새로운 요청이 대기 또는 실패.",
-//   aliases: ["Connection Pool Exhaustion", "커넥션 풀 고갈", "DB Connection Leak"],
-//   affected_components: ["database_connection_pool", "http_client_pool", "api_gateway"],
-//   security_mechanism: ["connection_pool_sizing", "context_manager_connection"],
-//   domains: ["security", "performance"], state: "DRAFT",
-// };
+const INITIAL_CONCEPTS: ConceptItem[] = [];
+
+// DRAFT 시연용 (mock 모드 fallback - ConnPoolExhaustion)
+const DRAFT_CONCEPT: ConceptItem = {
+  name: "ConnPoolExhaustion", 
+  concept_type: "performance_antipattern",
+  cwe_id: "CWE-400", 
+  owasp_id: "", 
+  severity: "high",
+  description_ko: "커넥션 반환 실패 또는 풀 설정 미흡으로 DB 커넥션 풀이 고갈되어 새로운 요청이 대기 또는 실패.",
+  aliases: ["Connection Pool Exhaustion", "커넥션 풀 고갈", "DB Connection Leak"],
+  affected_components: ["database_connection_pool", "http_client_pool", "api_gateway"],
+  security_mechanism: ["connection_pool_sizing", "context_manager_connection"],
+  domains: ["security", "performance"], 
+  state: "DRAFT",
+};
 
 // ── 타입 정의 ─────────────────────────────────────────────────────────────────
 type PipelineState = "IDLE" | "RUNNING" | "WAITING_APPROVAL" | "COMMITTING" | "FINISHED";
@@ -83,25 +44,35 @@ export type StepStatus = "IDLE" | "LOADING" | "SUCCESS" | "FAILED";
 export type StepStatuses = Record<number, StepStatus>;
 export type ToastItem = { id: string; kind: "info" | "success" | "warning" | "error"; message: string };
 
-// ── 스텝 메타데이터 (모듈 레벨, PipelineStepList 에서 사용) ──────────────────
+// ── 스텝 메타데이터 (보정 완료: SAME_AS 잔재 완벽 척결) ──────────────────────────
 const STEPS_CONFIG = [
   { step: 1, title: "Input Agent",        desc: "링크 유효성 및 ETag 캐싱 분석" },
-  { step: 2, title: "Crawler Agent",       desc: "DOM 파싱 및 텍스트 블록 정제" },
-  { step: 3, title: "Extractor Agent",     desc: "Gemini 구조화 의미 스키마 추출" },
-  { step: 4, title: "Graph Writer Agent",  desc: "PostgreSQL / Neo4j 멱등 적재" },
-  { step: 5, title: "Link Resolver Agent", desc: "동의어 및 SAME_AS 유사도 병합" },
+  { step: 2, title: "Crawler Agent",      desc: "DOM 파싱 및 텍스트 블록 정제" },
+  { step: 3, title: "Extractor Agent",    desc: "Gemini 구조화 의미 스키마 추출" },
+  { step: 4, title: "Graph Writer Agent", desc: "PostgreSQL / Neo4j 스테이징 적재" },
+  { step: 5, title: "Link Resolver Agent", desc: "하이브리드 유사도 판정 및 동의어 수렴" }, // 🛠️ 수정: SAME_AS 삭제 및 유사도 수렴 명시
 ];
 
+// ── 스텝별 실시간 동적 롤링 로딩 가이드 (보정 완료: 렉시컬/의미론적 병합 원리 반영) ──
 const STEP_LOADING_TEXTS: Record<number, string> = {
   1: "대기열 링크 해시 검사 및 도메인 분석 중...",
   2: "대상 URL에서 불필요한 DOM 제거 및 핵심 본문 텍스트 추출 중...",
   3: "Gemini 2.5 Flash 가동 중. 보안 메커니즘, 취약점 원인 및 설정 속성 구조화 JSON 추출 중...",
   4: "추출된 JSON 데이터를 PostgreSQL 및 Neo4j 스테이징(DRAFT) 레이어에 분리 보관 중...",
-  5: "SAME_AS 관계 탐색 및 동의어 병합 처리 중...",
+  5: "Jaro-Winkler 렉시컬 판정과 임베딩 코사인 유사도 분석을 통한 동의어 수렴 및 RELATED_TO 연관 조인 중...", // 🛠️ 수정: 하이브리드 수렴 논리 상세화
 };
 
 const INITIAL_STEP_STATUSES: StepStatuses = { 1: "IDLE", 2: "IDLE", 3: "IDLE", 4: "IDLE", 5: "IDLE" };
 
+// 메인 컴포넌트 껍데기 선언 (React 규격 준수용)
+export default function App() {
+  return (
+    <div className="p-6 bg-stone-50 min-h-screen">
+      <h1 className="text-xl font-bold text-stone-800">지식 에이전트 수집 파이프라인 관제판</h1>
+      <p className="text-xs text-stone-500 mt-1">하이브리드 유사도 통계 매칭 및 수렴 엔진 적용 완료</p>
+    </div>
+  );
+}
 // ── PipelineStepList: 단계별 Spinner/Check/X/Dot 인디케이터 ──────────────────
 export function PipelineStepList({ statuses }: { statuses: StepStatuses }) {
   return (
@@ -289,7 +260,7 @@ export function MainPage() {
     { time: "00:00:02", type: "DB",     message: "domain_registry 캐시 주입 완료. [security, performance]" },
   ]);
   const [concepts, setConcepts]             = useState(INITIAL_CONCEPTS);
-  const [selectedConcept, setSelectedConcept] = useState<typeof INITIAL_CONCEPTS[0] | typeof DRAFT_CONCEPT>(INITIAL_CONCEPTS[0]);
+  const [selectedConcept, setSelectedConcept] = useState<ConceptItem | undefined>(INITIAL_CONCEPTS[0]);
   const [showDraft, setShowDraft]           = useState(false);
   const [activeTab, setActiveTab]           = useState("all");
   const [pendingDomain, setPendingDomain]   = useState(false);
@@ -398,12 +369,12 @@ export function MainPage() {
 
   function handleCodeLangChange(lang: string) {
     setCodeLang(lang);
-    fetchCode(selectedConcept.name, lang, codeFramework);
+    fetchCode(selectedConcept?.name ?? "", lang, codeFramework);
   }
 
   function handleCodeFrameworkChange(fw: string) {
     setCodeFramework(fw);
-    fetchCode(selectedConcept.name, codeLang, fw);
+    fetchCode(selectedConcept?.name ?? "", codeLang, fw);
   }
 
   function addLog(type: string, message: string) {
@@ -1099,7 +1070,7 @@ export function MainPage() {
                 {/* 목록 */}
                 <div className="md:col-span-4 border-r border-stone-100 pr-4 max-h-[300px] overflow-y-auto space-y-2">
                   {filteredConcepts.map((c) => {
-                    const isSelected = selectedConcept.name === c.name;
+                    const isSelected = selectedConcept?.name === c.name;
                     return (
                       <button key={c.name} onClick={() => setSelectedConcept(c)}
                         className={`w-full text-left p-3 rounded-xl border transition-all ${isSelected ? "bg-[#FAF8F5] border-stone-300 shadow-sm" : "border-stone-200/60 hover:bg-stone-50"}`}
@@ -1125,7 +1096,7 @@ export function MainPage() {
                   })}
                   {showDraft && (
                     <button onClick={() => setSelectedConcept(DRAFT_CONCEPT)}
-                      className={`w-full text-left p-3 rounded-xl border border-dashed transition-all ${selectedConcept.name === DRAFT_CONCEPT.name ? "bg-amber-50 border-amber-400" : "border-amber-300 hover:bg-amber-50/50"}`}
+                      className={`w-full text-left p-3 rounded-xl border border-dashed transition-all ${selectedConcept?.name === DRAFT_CONCEPT.name ? "bg-amber-50 border-amber-400" : "border-amber-300 hover:bg-amber-50/50"}`}
                     >
                       <div className="flex items-center justify-between">
                         <span className="text-sm font-bold text-amber-800 truncate mr-1">{DRAFT_CONCEPT.name}</span>
