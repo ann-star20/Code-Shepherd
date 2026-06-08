@@ -1,0 +1,67 @@
+[
+  {
+    "severity": "Major",
+    "file": "(전체)",
+    "line": null,
+    "message": "테스트 라인 커버리지 20.0% < 기준 80%.",
+    "rule_id": "TEST-001",
+    "suggestion": "테스트를 추가해 커버리지를 80% 이상으로 올리세요.",
+    "_agent": "test_verification",
+    "keyword": "커버리지 미충족",
+    "sub_category": "라인·브랜치",
+    "code_context": "",
+    "rag_context": "📖 테스트 커버리지 가이드\n# 테스트 커버리지 가이드\n\n📖 테스트 커버리지 가이드\n> 짝 탐지기: **TEST-001 (커버리지 미충족)** · 분류: `커버리지 미충족` / 세부 `라인·브랜치`\n> ⚠️ 구체적인 커버리지 기준 수치(%)는 이 문서 **맨 위 메타(프론트매터)** 에 구조화 데이터로 있고, 코드가 그대로 읽어 판정합니다. 아래 산문 본문은 \"왜·어떻게\"만 다룹니다(위험 3: 정량은 구조화 메타, 정성은 문서).\n\n📖 테스트 커버리지 가이드\n## 우리 팀의 원칙\n테스트는 \"있으면 좋은 것\"이 아니라 변경의 일부입니다. 새 코드나 고친 코드에는 그 동작을 확인하는 테스트가 함께 와야 하며, 테스트 없는 변경은 리뷰에서 되돌려 보냅니다. 커버리지 숫자는 목표가 아니라 \"검증되지 않은 코드가 얼마나 들어왔는지\"를 보는 신호입니다."
+  },
+  {
+    "severity": "Minor",
+    "file": "src/posts.py",
+    "line": 4,
+    "message": "함수 'get_posts'에 대한 테스트 실행 흔적이 없습니다.",
+    "rule_id": "TEST-004",
+    "suggestion": "get_posts()에 대한 단위 테스트를 추가하세요.",
+    "_agent": "test_verification",
+    "keyword": "테스트 누락",
+    "sub_category": "Untested Public Function",
+    "code_context": "",
+    "rag_context": ""
+  },
+  {
+    "severity": "Minor",
+    "file": "src/posts.py",
+    "line": 16,
+    "message": "함수 'find_dups'에 대한 테스트 실행 흔적이 없습니다.",
+    "rule_id": "TEST-004",
+    "suggestion": "find_dups()에 대한 단위 테스트를 추가하세요.",
+    "_agent": "test_verification",
+    "keyword": "테스트 누락",
+    "sub_category": "Untested Public Function",
+    "code_context": "",
+    "rag_context": "📖 테스트 누락 가이드\n> 짝 탐지기: **TEST-004 (테스트 누락)** · 분류: `테스트 누락` / 세부 `함수명`\n\n📖 테스트 누락 가이드\n# 테스트 누락 가이드"
+  },
+  {
+    "severity": "Major",
+    "file": "src/posts.py",
+    "line": 7,
+    "message": "N+1 쿼리: 루프 안에서 DB 호출이 반복됩니다.",
+    "rule_id": "PERF-002",
+    "suggestion": "joinedload()/selectinload() 등으로 루프 밖에서 조회하세요.",
+    "_agent": "performance",
+    "keyword": "N+1 쿼리",
+    "sub_category": "Database/API Loop Call",
+    "code_context": "",
+    "rag_context": "📖 N+1 쿼리 가이드\n# N+1 쿼리 가이드\n\n📖 N+1 쿼리 가이드\n## 우리 팀의 원칙\n반복문 안에서 DB나 외부 API를 호출하는 패턴(N+1)은 우리 팀에서 리뷰 시 막습니다. 항목이 10개일 때는 멀쩡해 보여도, 운영에서 수천 개가 되면 호출이 그 수만큼 늘어 응답 지연·DB 부하의 주범이 됩니다. 목록을 다루기 전에 \"이 데이터를 한 번에 가져올 수 있는가\"를 먼저 묻습니다.\n\n📖 N+1 쿼리 가이드\n## 지적을 받으면\n먼저 그 호출이 정말 반복마다 필요한지 봅니다. 대부분은 루프 밖으로 끌어내 한 번에 조회하도록 바꿀 수 있습니다. 캐싱은 그다음 수단이며, 캐싱으로 N+1을 가리기보다 호출 자체를 줄이는 것이 우선입니다."
+  },
+  {
+    "severity": "Minor",
+    "file": "src/posts.py",
+    "line": 18,
+    "message": "O(n^2) 시간복잡도: 2중 중첩 루프가 감지되었습니다.",
+    "rule_id": "PERF-001",
+    "suggestion": "루프를 평탄화하거나 적절한 자료구조로 복잡도를 낮추세요.",
+    "_agent": "performance",
+    "keyword": "시간복잡도",
+    "sub_category": "Nested Loop",
+    "code_context": "",
+    "rag_context": "📖 시간복잡도 가이드\n> 짝 탐지기: **PERF-001 (시간복잡도)** · 분류: `시간복잡도` / 세부 `O(n^2)` 등\n> ⚠️ \"몇 중 중첩부터 지적하는가\" 같은 임계값은 이 문서 **맨 위 메타(프론트매터)** 에 구조화 데이터로 있고, 코드가 그대로 읽어 판정합니다. 아래 산문 본문은 \"왜·어떻게\"만 다룹니다(위험 3: 정량은 구조화 메타, 정성은 문서).\n\n📖 시간복잡도 가이드\n## 우리 팀의 원칙\n중첩 루프가 깊어질수록 데이터가 늘 때 처리 시간이 급격히 증가합니다(O(n²), O(n³)…). 우리 팀은 일정 깊이 이상의 중첩 루프는 리뷰에서 반드시 확인하고, 정말 필요한 경우인지·줄일 수 없는지 따져봅니다. 데이터가 적은 지금은 문제없어 보여도, 규모가 커지면 가장 먼저 느려지는 지점입니다.\n\n📖 시간복잡도 가이드\n# 시간복잡도 가이드"
+  }
+]
