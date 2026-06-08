@@ -215,10 +215,17 @@ def _convert_docx_with_python_docx(file_path: str) -> str:
             table = DocxTable(child, doc)
             rows: list[str] = []
             for i, row in enumerate(table.rows):
-                cells = [cell.text.strip() for cell in row.cells]
-                rows.append("| " + " | ".join(cells) + " |")
+                # row.cells는 병합 셀을 중복 반환한다 (_tc 기준 중복 제거)
+                seen: set[int] = set()
+                unique_cells: list[str] = []
+                for cell in row.cells:
+                    tc_id = id(cell._tc)
+                    if tc_id not in seen:
+                        seen.add(tc_id)
+                        unique_cells.append(cell.text.strip().replace("\n", " "))
+                rows.append("| " + " | ".join(unique_cells) + " |")
                 if i == 0:
-                    rows.append("| " + " | ".join(["---"] * len(cells)) + " |")
+                    rows.append("| " + " | ".join(["---"] * len(unique_cells)) + " |")
             if rows:
                 blocks.append("\n".join(rows))
 
