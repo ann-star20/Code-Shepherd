@@ -198,24 +198,24 @@ async def approve_hitl(
         if row is None:
             raise HTTPException(status_code=404, detail="대기 중인 HITL 항목 없음")
 
-        async with session.begin():
-            await session.execute(
-                text("""
-                    UPDATE hitl_queue
-                    SET status = 'approved', reviewer_id = :reviewer_id,
-                        review_note = :review_note, reviewed_at = NOW()
-                    WHERE queue_id = :queue_id
-                """),
-                {
-                    "reviewer_id": body.reviewer_id,
-                    "review_note": body.review_note,
-                    "queue_id": str(UUID(queue_id)),
-                },
-            )
-            await session.execute(
-                text("UPDATE documents SET upload_status = 'approved' WHERE doc_id = :doc_id"),
-                {"doc_id": str(row["doc_id"])},
-            )
+        await session.execute(
+            text("""
+                UPDATE hitl_queue
+                SET status = 'approved', reviewer_id = :reviewer_id,
+                    review_note = :review_note, reviewed_at = NOW()
+                WHERE queue_id = :queue_id
+            """),
+            {
+                "reviewer_id": body.reviewer_id,
+                "review_note": body.review_note,
+                "queue_id": str(UUID(queue_id)),
+            },
+        )
+        await session.execute(
+            text("UPDATE documents SET upload_status = 'approved' WHERE doc_id = :doc_id"),
+            {"doc_id": str(row["doc_id"])},
+        )
+        await session.commit()
 
     if body.auto_reprocess:
         raw_issues = row["issues"] or {}
@@ -262,24 +262,24 @@ async def reject_hitl(
 
         doc_id = str(row["doc_id"])
 
-        async with session.begin():
-            await session.execute(
-                text("""
-                    UPDATE hitl_queue
-                    SET status = 'rejected', reviewer_id = :reviewer_id,
-                        review_note = :review_note, reviewed_at = NOW()
-                    WHERE queue_id = :queue_id
-                """),
-                {
-                    "reviewer_id": body.reviewer_id,
-                    "review_note": body.review_note,
-                    "queue_id": str(UUID(queue_id)),
-                },
-            )
-            await session.execute(
-                text("UPDATE documents SET upload_status = 'rejected' WHERE doc_id = :doc_id"),
-                {"doc_id": doc_id},
-            )
+        await session.execute(
+            text("""
+                UPDATE hitl_queue
+                SET status = 'rejected', reviewer_id = :reviewer_id,
+                    review_note = :review_note, reviewed_at = NOW()
+                WHERE queue_id = :queue_id
+            """),
+            {
+                "reviewer_id": body.reviewer_id,
+                "review_note": body.review_note,
+                "queue_id": str(UUID(queue_id)),
+            },
+        )
+        await session.execute(
+            text("UPDATE documents SET upload_status = 'rejected' WHERE doc_id = :doc_id"),
+            {"doc_id": doc_id},
+        )
+        await session.commit()
 
     # 파생 GCS 파일 삭제 (originals/ 제외)
     from app.storage import get_storage

@@ -56,7 +56,7 @@ services:
     networks:
       - code-shepherd
     restart: unless-stopped
-    command: /app/.venv/bin/python -m uvicorn app.main:app --host 0.0.0.0 --port 8002
+    command: /app/.venv/bin/python -m uvicorn app.main:app --host 0.0.0.0 --port 8002 --reload
 
   m2:
     build:
