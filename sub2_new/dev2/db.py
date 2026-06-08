@@ -1,8 +1,8 @@
-import os
 import json
-from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession
-from sqlalchemy.orm import sessionmaker
+import os
 from sqlalchemy import text
+from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession, async_sessionmaker
+from sqlalchemy.orm import sessionmaker
 
 # Cloud SQL (PostgreSQL) 연결
 # 로컬 개발: Cloud SQL Auth Proxy 사용 (localhost:5432)
@@ -25,17 +25,41 @@ DATABASE_URL = os.getenv(
 _engine = None
 _session_factory = None
 
+DATABASE_URL = os.getenv(
+    "DATABASE_URL",
+    "postgresql+asyncpg://user:password@localhost:5432/dev2_db"
+)
+
+_engine = None
+_session_factory = None
+
+
+def _get_engine():
+    global _engine
+
+    if _engine is None:
+        _engine = create_async_engine(
+            DATABASE_URL,
+            pool_pre_ping=True,
+            pool_recycle=60,
+            pool_size=1,
+            max_overflow=0,
+        )
+
+    return _engine
+
 
 def _get_session_factory():
-    """asyncpg가 실제로 필요한 시점에만 엔진+세션팩토리를 초기화한다."""
-    global _engine, _session_factory
-    if _session_factory is None:
-        _engine = create_async_engine(DATABASE_URL)
-        _session_factory = sessionmaker(
-            _engine, class_=AsyncSession, expire_on_commit=False
-        )
-    return _session_factory
+    global _session_factory
 
+    if _session_factory is None:
+        _session_factory = async_sessionmaker(
+            bind=_get_engine(),
+            class_=AsyncSession,
+            expire_on_commit=False,
+        )
+
+    return _session_factory
 
 def AsyncSessionLocal():
     """
@@ -43,6 +67,13 @@ def AsyncSessionLocal():
 
     사용 패턴:
         async with AsyncSessionLocal() as s:
+
+def _safe_db_value(v, default=""):
+    if v is None:
+        return default
+    if isinstance(v, (dict, list)):
+        return json.dumps(v, ensure_ascii=False)
+    return v
             await s.execute(...)
 
     최초 호출 시 asyncpg 엔진을 lazy 초기화한다.
@@ -77,22 +108,10 @@ async def insert_scan_execution(
 async def insert_scan_issues(scan_id: int, issues: list[dict], agent: str):
     if not issues:
         return
+
     async with AsyncSessionLocal() as s:
         for i in issues:
-            await s.execute(text("""
-                INSERT INTO scan_issues
-                  (scan_id, agent, severity, rule_id, file, line, message, suggestion,
-                   similar_issues, issue_type, resolution_example, status,
-                   keyword, sub_category, concept_id, mistake_type_concept_id,
-                   confidence_score, code_snippet, name_of_function,
-                   learning_context, code_context, taxonomy)
-                VALUES
-                  (:scan_id, :agent, :severity, :rule_id, :file, :line, :message, :suggestion,
-                   :similar_issues, :issue_type, :resolution_example, :status,
-                   :keyword, :sub_category, :concept_id, :mistake_type_concept_id,
-                   :confidence_score, :code_snippet, :name_of_function,
-                   :learning_context, :code_context, :taxonomy)
-            """), {
+            params = {
                 "scan_id": scan_id,
                 "agent": agent,
                 "severity": i["severity"],
@@ -101,20 +120,122 @@ async def insert_scan_issues(scan_id: int, issues: list[dict], agent: str):
                 "line": i.get("line", 0),
                 "message": i["message"],
                 "suggestion": i.get("suggestion", ""),
-                "similar_issues": json.dumps(i.get("similar_issues", [])),
+                "similar_issues": json.dumps(i.get("similar_issues", []), ensure_ascii=False),
                 "issue_type": i.get("issue_type", ""),
                 "resolution_example": i.get("resolution_example", ""),
                 "status": i.get("status", "Open"),
                 "keyword": i.get("keyword", ""),
+                "sub_keyword": i.get("sub_keyword", ""),
+                "metric_value": i.get("metric_value", ""),
                 "sub_category": i.get("sub_category", ""),
                 "concept_id": i.get("concept_id", ""),
                 "mistake_type_concept_id": i.get("mistake_type_concept_id", ""),
                 "confidence_score": i.get("confidence_score", 0.0),
                 "code_snippet": i.get("code_snippet", ""),
-                "name_of_function": i.get("name_of_function", ""),
-                "learning_context": json.dumps(i.get("learning_context", {})),
-                "code_context": json.dumps(i.get("code_context", {})),
-                "taxonomy": json.dumps(i.get("taxonomy", {})),
+                "learning_context": json.dumps(i.get("learning_context", {}), ensure_ascii=False),
+                "code_context": json.dumps(i.get("code_context", {}), ensure_ascii=False),
+                "taxonomy": json.dumps(i.get("taxonomy", {}), ensure_ascii=False),
+            }
+
+            await s.execute(text("""
+                INSERT INTO scan_issues
+                  (scan_id, agent, severity, rule_id, file, line, message, suggestion,
+                   similar_issues, issue_type, resolution_example, status,
+                   keyword, sub_keyword, metric_value, sub_category,
+                   concept_id, mistake_type_concept_id,
+                   confidence_score, code_snippet,
+                   learning_context, code_context, taxonomy)
+                VALUES
+                  (:scan_id, :agent, :severity, :rule_id, :file, :line, :message, :suggestion,
+                   :similar_issues, :issue_type, :resolution_example, :status,
+                   :keyword, :sub_keyword, :metric_value, :sub_category,
+                   :concept_id, :mistake_type_concept_id,
+                   :confidence_score, :code_snippet,
+                   :learning_context, :code_context, :taxonomy)
+            """), params)
+
+        await s.commit()
+
+# severity 매핑: scan_issues(Critical/Major/Minor) → review_issue(critical/high/medium)
+_REVIEW_SEVERITY_MAP: dict[str, str] = {
+    "Critical": "critical",
+    "Major":    "high",
+    "Minor":    "medium",
+}
+
+
+async def _lookup_pull_request_id(pr_id: str) -> str | None:
+    """pull_requests.github_pr_number로 pull_requests.id(uuid)를 조회한다.
+    찾지 못하면 None 반환 (review_issue.pull_request_id는 nullable).
+    """
+    try:
+        pr_number = int(pr_id)
+    except (ValueError, TypeError):
+        return None
+    async with AsyncSessionLocal() as s:
+        r = await s.execute(
+            text("SELECT id FROM pull_requests WHERE github_pr_number = :n LIMIT 1"),
+            {"n": pr_number},
+        )
+        row = r.scalar()
+        return str(row) if row else None
+
+
+async def insert_review_issues(
+    issues: list[dict],
+    agent: str,
+    pr_id: str,
+    user_id: str | None,
+    tech_stack: list[str],
+) -> None:
+    """review_issue 테이블에 이슈별 행을 INSERT한다.
+
+    scan_issues와 달리 pull_request_id(uuid), programming_language, framework,
+    name_of_function 컬럼을 사용하며, severity는 critical/high/medium 체계를 따른다.
+
+    Args:
+        issues:     enriched 이슈 목록
+        agent:      'static_analysis' | 'security_scan'
+        pr_id:      GitHub PR 번호 (pull_requests 조회에 사용)
+        user_id:    개발자 UUID
+        tech_stack: 개발자 기술 스택 (예: ["python", "fastapi"])
+    """
+    if not issues:
+        return
+
+    pull_request_id = await _lookup_pull_request_id(pr_id)
+    programming_language = tech_stack[0] if tech_stack else ""
+    framework = tech_stack[1] if len(tech_stack) > 1 else ""
+
+    async with AsyncSessionLocal() as s:
+        for i in issues:
+            severity_raw = i.get("severity", "Minor")
+            severity = _REVIEW_SEVERITY_MAP.get(severity_raw, "medium")
+            await s.execute(text("""
+                INSERT INTO review_issue
+                  (pull_request_id, user_id, github_id, agent, severity,
+                   keyword, sub_category, code_context, code_snippet,
+                   suggestion, programming_language, framework,
+                   name_of_function)
+                VALUES
+                  (:pull_request_id, :user_id, :github_id, :agent, :severity,
+                   :keyword, :sub_category, :code_context, :code_snippet,
+                   :suggestion, :programming_language, :framework,
+                   :name_of_function)
+            """), {
+                "pull_request_id":      pull_request_id,
+                "user_id":              user_id,
+                "github_id":            pr_id,
+                "agent":                agent,
+                "severity":             severity,
+                "keyword":              i.get("keyword") or i.get("rule_id", ""),
+                "sub_category":         i.get("sub_category", ""),
+               "code_context":         json.dumps(i.get("code_context", {}), ensure_ascii=False),
+                "code_snippet":         i.get("code_snippet", ""),
+                "suggestion":           i.get("suggestion", ""),
+                "programming_language": programming_language,
+                "framework":            framework,
+                "name_of_function":     i.get("name_of_function", ""),
             })
         await s.commit()
 
@@ -170,7 +291,7 @@ async def fetch_scan_results_by_task(task_id: str) -> list[dict]:
                    si.message, si.suggestion, si.similar_issues, si.issue_type,
                    si.resolution_example, si.status, si.keyword, si.sub_category,
                    si.concept_id, si.mistake_type_concept_id, si.confidence_score,
-                   si.code_snippet, si.name_of_function,
+                   si.code_snippet, si.sub_keyword, si.metric_value,
                    si.learning_context, si.code_context, si.taxonomy
             FROM scan_executions se
             JOIN scan_issues si ON si.scan_id = se.id
@@ -211,7 +332,8 @@ async def fetch_scan_results_by_task(task_id: str) -> list[dict]:
             "mistake_type_concept_id": r["mistake_type_concept_id"] or "",
             "confidence_score":        r["confidence_score"] or 0.0,
             "code_snippet":            r["code_snippet"] or "",
-            "name_of_function":        r["name_of_function"] or "",
+            "sub_keyword":             r["sub_keyword"] or "",
+            "metric_value":            r["metric_value"] or "",
             "learning_context":        _jload(r["learning_context"], {}),
             "code_context":            _jload(r["code_context"], {}),
             "taxonomy":                _jload(r["taxonomy"], {}),

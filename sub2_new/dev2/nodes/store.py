@@ -9,6 +9,7 @@ Dev4 Aggregator가 소비할 final_output을 반환한다.
     → _source 기준 분리 ("static" / "security")
     → 에이전트별 AgentOutput 빌드 (Pydantic 검증 — 내부 필드 자동 제거)
     → PostgreSQL 적재 (scan_executions → scan_issues → scan_summaries)
+    → review_issue 적재 (실패 시 스킵)
     → BigQuery 적재 (analytics DW — 실패 시 로그만 남기고 스킵)
     → final_output 반환 (CLAUDE.md §5-A Output Contract)
 
@@ -33,7 +34,7 @@ CLAUDE.md 준수:
     §3     trace_id: "pr_{12hex}" 형식
     §5-A   Output Contract: AgentOutput 필드 구조
     §10-4  PostgreSQL 실패 → re-raise (핵심 기능)
-           BigQuery 실패 → 로그 + 스킵 (분석 부가 기능)
+           BigQuery/review_issue 실패 → 로그 + 스킵 (분석 부가 기능)
     §12    enriched 비어 있음 → 빈 리스트 반환 (예외 없음)
 """
 
@@ -60,7 +61,8 @@ _ISSUE_FIELDS = frozenset({
     "severity", "issue_type", "line", "file", "message", "rule_id",
     "suggestion", "resolution_example", "status", "similar_issues",
     # M4 매핑 필드 (concept_mapper가 채움)
-    "keyword", "sub_category", "concept_id", "mistake_type_concept_id",
+    "keyword", "sub_keyword", "metric_value", "sub_category",
+    "concept_id", "mistake_type_concept_id",
     "confidence_score", "code_snippet", "name_of_function", "learning_context",
     # M4 개인화 피드백용 필드 (concept_mapper가 채움)
     "code_context", "taxonomy",
@@ -273,14 +275,15 @@ def _make_trace_id(task_id: str) -> str:
 
 async def store_node(state: Dev2State) -> dict:
     """
-    LangGraph 노드: enriched 이슈를 PostgreSQL + BigQuery에 적재한다.
+    LangGraph 노드: enriched 이슈를 PostgreSQL + review_issue + BigQuery에 적재한다.
 
     흐름:
         1. enriched에서 _source 기준으로 static/security 이슈 분리
         2. 이슈 있는 에이전트별로 AgentOutput 빌드 (Pydantic 검증)
         3. PostgreSQL 적재 (_persist) — 실패 시 re-raise
-        4. BigQuery 적재 (_load_bigquery) — 실패 시 스킵
-        5. final_output 반환 (Dev4 입력)
+        4. review_issue 적재 — 실패 시 스킵
+        5. BigQuery 적재 (_load_bigquery) — 실패 시 스킵
+        6. final_output 반환 (Dev4 입력)
 
     CLAUDE.md §5-A:
         final_output = [AgentOutput.model_dump(), ...]
@@ -296,6 +299,7 @@ async def store_node(state: Dev2State) -> dict:
     task_id: str = state.get("task_id", "unknown-task")
     pr_id: str = state.get("pr_id", "")
     developer_id: str = state.get("developer_id", "")
+    tech_stack: list[str] = state.get("tech_stack", [])  # type: ignore
     action_decision: dict | None = state.get("action_decision")  # type: ignore
     trace_id = _make_trace_id(task_id)
 
@@ -341,11 +345,30 @@ async def store_node(state: Dev2State) -> dict:
             )
             raise  # CLAUDE.md §10-4: 핵심 기능 실패는 상위로 전파
 
-        # ③ BigQuery 적재 (실패 시 스킵)
+        # ③ review_issue 적재 (실패 시 스킵)
+        try:
+            from dev2.db import insert_review_issues  # noqa: PLC0415
+            await insert_review_issues(
+                issues=issues,
+                agent=agent_name,
+                pr_id=pr_id,
+                user_id=developer_id or None,
+                tech_stack=tech_stack,
+            )
+            logger.info(
+                "store_node: review_issue 적재 완료 (agent=%s, issues=%d)",
+                agent_name, len(issues),
+            )
+        except Exception as exc:
+            logger.error(
+                "store_node: review_issue 적재 실패 (agent=%s) — %s | 스킵",
+                agent_name, exc,
+            )
+
+        # ④ BigQuery 적재 (실패 시 스킵)
         try:
             _load_bigquery(output, {"task_id": task_id, "pr_id": pr_id, "developer": {"id": developer_id}})
         except Exception as exc:
-            # _load_bigquery 내부에서 이미 처리하지만, 누출 예외도 여기서 흡수
             logger.error(
                 "store_node: _load_bigquery 예외 누출 (agent=%s) — %s | 스킵",
                 agent_name, exc,
