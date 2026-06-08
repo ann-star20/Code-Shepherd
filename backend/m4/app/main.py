@@ -3,7 +3,9 @@
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
+from fastapi.middleware.cors import CORSMiddleware
 
+from app.api.routes import router as learning_router
 from shared.contracts import (
     M4CurriculumRequest,
     M4CurriculumResponse,
@@ -20,7 +22,17 @@ async def lifespan(_app: FastAPI):
 
 
 app = FastAPI(title="code-shepherd m4-curriculum-stub", version="0.1.0", lifespan=lifespan)
+# 프론트(Vite, localhost:5173)가 m4(localhost:8005)를 별도 포트로 직접 호출한다 (FRONTEND_SPEC Section 0
+# m4Api) — api-core 프록시를 거치지 않는 cross-origin 호출이라 CORS 미들웨어가 없으면 preflight에서 막힌다.
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["http://localhost:5173"],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 app.add_middleware(TraceIDMiddleware)
+app.include_router(learning_router)
 
 
 @app.get("/health")

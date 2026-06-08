@@ -27,6 +27,10 @@ htmlcov/
 # uv
 .uv/
 
+# Local DB / runtime data (예: dev3_demo.db — 리뷰 결과 런타임 저장)
+*.db
+*.sqlite3
+
 # Node / frontend
 node_modules/
 dist/
@@ -38,6 +42,9 @@ coverage/
 # Vitest / Playwright
 test-results/
 playwright-report/
+
+# Claude Code (개인 설정 — 공유 안 함)
+.claude/skills/
 
 # IDE
 .vscode/
@@ -66,3 +73,6 @@ PRD_조직지식관리_온보딩_플랫폼.md
 # TypeScript build info
 *.tsbuildinfo
 frontend/vite.config.d.ts
+
+# KMS 사내문서 (git 제외)
+backend/m4/data/kms/

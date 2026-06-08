@@ -5,6 +5,7 @@
 import { http, HttpResponse } from "msw";
 
 const BASE = "/api";
+const M3_BASE = "/m3-api";
 
 const MOCK_TEAM_ID = "11111111-1111-1111-1111-111111111111";
 const MOCK_TEAM_ID_2 = "22222222-2222-2222-2222-222222222222";
@@ -113,50 +114,34 @@ export const handlers = [
     });
   }),
 
-  http.post(`${BASE}/analyze/static`, async ({ request }) => {
-    const body = (await request.json()) as { task_id: string };
+  // m3 리뷰 결과 조회 (SESSION 5) — GET /m3-api/review/{owner}/{repo}/{pr}
+  http.get(`${M3_BASE}/review/:owner/:repo/:pr`, ({ params }) => {
     return HttpResponse.json({
-      task_id: body.task_id,
-      agent: "static_analysis",
+      owner: params.owner,
+      repo: params.repo,
+      pr_number: Number(params.pr),
+      found: true,
+      verdict: "rework",
+      comment:
+        "## 🤖 자동 리뷰 (rework)\n\n테스트 커버리지가 부족하고 N+1 쿼리가 있습니다.",
       issues: [
         {
           severity: "Major",
-          line: 12,
-          file: "src/utils/parse.py",
-          message: "순환 복잡도가 너무 높습니다 (15 > 10).",
-          rule_id: "C901",
-          suggestion: "함수를 더 작은 단위로 분리하세요.",
+          file: "src/payment.py",
+          line: 8,
+          message: "N+1 쿼리: 루프 안에서 DB 호출이 반복됩니다.",
+          rule_id: "PERF-002",
+          suggestion: "joinedload()/selectinload() 로 루프 밖에서 조회하세요.",
         },
         {
           severity: "Minor",
-          line: 3,
-          file: "src/utils/parse.py",
-          message: "사용되지 않는 import 'os'.",
-          rule_id: "F401",
-          suggestion: "import 문을 제거하세요.",
+          file: "src/payment.py",
+          line: 21,
+          message: "O(n^2) 시간복잡도: 2중 중첩 루프.",
+          rule_id: "PERF-001",
+          suggestion: "해시맵으로 복잡도를 낮추세요.",
         },
       ],
-      summary: { critical: 0, major: 1, minor: 1 },
-      execution_ms: 142,
-    });
-  }),
-  http.post(`${BASE}/analyze/security`, async ({ request }) => {
-    const body = (await request.json()) as { task_id: string };
-    return HttpResponse.json({
-      task_id: body.task_id,
-      agent: "security_scan",
-      issues: [
-        {
-          severity: "Critical",
-          line: 27,
-          file: "src/db/query.py",
-          message: "f-string으로 SQL을 조합해 SQL Injection에 취약합니다.",
-          rule_id: "B608",
-          suggestion: "파라미터 바인딩을 사용하세요.",
-        },
-      ],
-      summary: { critical: 1, major: 0, minor: 0 },
-      execution_ms: 215,
     });
   }),
 

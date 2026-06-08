@@ -4,6 +4,11 @@ import asyncio
 import sys
 import os
 from logging.config import fileConfig
+from pathlib import Path
+
+from dotenv import load_dotenv
+# 프로젝트 루트 .env 로드 (shared.config가 DB 환경변수를 읽을 수 있도록)
+load_dotenv(Path(__file__).parent.parent.parent.parent / ".env")
 
 from alembic import context
 from sqlalchemy.ext.asyncio import create_async_engine
@@ -33,7 +38,11 @@ def run_migrations_offline() -> None:
 
 
 def do_run_migrations(connection):
-    context.configure(connection=connection, target_metadata=target_metadata)
+    context.configure(
+        connection=connection,
+        target_metadata=target_metadata,
+        version_table="alembic_version_m4",  # api-core 버전 테이블과 분리
+    )
     with context.begin_transaction():
         context.run_migrations()
 
