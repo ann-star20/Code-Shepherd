@@ -347,7 +347,7 @@ export function DocumentUpload({ isVisible = true }: { isVisible?: boolean }) {
               {uploadResult.quality_score !== null && uploadResult.quality_score !== undefined && (
                 <InfoRow label="품질 점수" value={uploadResult.quality_score.toFixed(3)} />
               )}
-              {uploadResult.hitl_required && (
+              {uploadResult.hitl_required && currentStatus === "hitl_pending" && (
                 <div style={{ marginTop: 8, padding: "6px 10px", borderRadius: 6, background: "#eff6ff", border: "1px solid #bfdbfe", fontSize: 12, color: "#1e40af" }}>
                   HITL 검토 큐로 이동됨 — HITL 검토 탭에서 승인하세요
                 </div>

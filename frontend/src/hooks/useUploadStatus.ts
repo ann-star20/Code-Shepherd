@@ -10,8 +10,9 @@ export const TERMINAL_STATUSES = new Set([
   "reprocess_failed",
 ]);
 
-const POLL_INTERVAL_MS = 1000;
-const MAX_POLL_MS = 10 * 60 * 1000; // 10분
+const POLL_INTERVAL_MS      = 1000;
+const POLL_INTERVAL_HITL_MS = 10_000; // hitl_pending은 사람이 승인할 때까지 변하지 않으므로 10초
+const MAX_POLL_MS           = 10 * 60 * 1000; // 10분
 
 export function useUploadStatus(docId: string | null, pollKey: number = 0) {
   const [status, setStatus] = useState<StatusResponse | null>(null);
@@ -48,7 +49,10 @@ export function useUploadStatus(docId: string | null, pollKey: number = 0) {
         setStatus(result);
 
         if (!TERMINAL_STATUSES.has(result.status)) {
-          timerRef.current = setTimeout(poll, POLL_INTERVAL_MS);
+          const interval = result.status === "hitl_pending"
+            ? POLL_INTERVAL_HITL_MS
+            : POLL_INTERVAL_MS;
+          timerRef.current = setTimeout(poll, interval);
         }
       } catch (e) {
         if (!cancelled) {

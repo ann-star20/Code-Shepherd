@@ -63,7 +63,7 @@ export function SplitView({ markdown, pageImages, rawText }: SplitViewProps) {
           </div>
         )}
 
-        <div style={{ flex: 1, overflowY: "auto", display: "flex", justifyContent: "center", padding: 16 }}>
+        <div style={{ flex: 1, overflowY: "auto", display: "flex", justifyContent: "center", alignItems: "flex-start", padding: 16 }}>
           {pageImages.length === 0 && rawText ? (
             <pre
               data-testid="raw-text-panel"
@@ -88,7 +88,7 @@ export function SplitView({ markdown, pageImages, rawText }: SplitViewProps) {
               data-testid="pdf-page-image"
               src={currentImage.url}
               alt={`페이지 ${currentPage}`}
-              style={{ maxWidth: "100%", height: "auto", borderRadius: 4, boxShadow: "0 2px 8px rgba(0,0,0,0.12)" }}
+              style={{ maxWidth: "100%", maxHeight: "100%", width: "auto", height: "auto", objectFit: "contain", borderRadius: 4, boxShadow: "0 2px 8px rgba(0,0,0,0.12)" }}
             />
           ) : null}
         </div>

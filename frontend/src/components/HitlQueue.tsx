@@ -458,7 +458,7 @@ function ItemDetail({
           {splitLoading ? "로딩 중..." : "📄 Markdown 미리보기"}
         </button>
         {splitData !== null && (
-          <div style={{ marginTop: 8, height: 440, borderRadius: 8, overflow: "hidden", border: "1px solid #e2e8f0" }}>
+          <div style={{ marginTop: 8, height: "calc(100vh - 320px)", minHeight: 540, borderRadius: 8, overflow: "hidden", border: "1px solid #e2e8f0" }}>
             <SplitView markdown={splitData.markdown} pageImages={splitData.pageImages} />
           </div>
         )}
