@@ -271,7 +271,26 @@ POST /api/learn → 202 { scan_id, plan_ids }
 | `pending` | 로딩 스피너 |
 | `running` | 로딩 스피너 |
 | `completed` | 카드 렌더링 |
-| `failed` | `plan.error_message` 표시 |
+| `failed` | 아래 "카드 생성 실패 안내" 참조 — `plan.error_message`를 화면에 그대로 노출하지 않음 |
+
+### 카드 생성 실패 안내 (T6 — 사용자 친화 메시지 분리)
+
+`plan.error_message`는 `str(exception)` 원본(예: `"Gemini API 오류: 429 rate limit exceeded"`,
+`"connection lost"`)이 그대로 담긴 **디버깅용 텍스트**다. 기술 용어가 섞여 있어 일반 사용자에게는
+혼란스러우므로, 화면에는 카드 자리에 고정된 친절한 안내만 표시한다:
+
+```
+┌─────────────────────────────────────────┐
+│                                         │
+│   카드를 생성하는 중 문제가 발생했어요     │
+│   잠시 후 다시 시도해주세요               │
+│                                         │
+└─────────────────────────────────────────┘
+```
+
+- `plan.error_message`는 화면에 노출하지 않는다 — 원본 예외 메시지는 디버깅 목적으로만 존재
+- 개발 중 확인이 필요하면 `console.error("[learn] plan failed:", plan.error_message)` 정도로만 기록
+- 카드별로 독립적으로 표시 — 3개 중 하나만 실패해도 나머지 completed 카드는 정상 렌더링 (Section 7 "점진적 렌더링" 원칙과 동일)
 
 ### PR 없음 안내 (신규)
 

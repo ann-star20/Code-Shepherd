@@ -53,7 +53,7 @@ SDK: `google-generativeai` (Python)
 | D15 | RAG 결과 2개 미만이면 domain 제거 후 1회 재시도 (룰 기반). Phase 2에서 Curator가 교체 |
 | D16 | 카드 타입 분기(개념 설명 / 코드 수정)는 Phase 1에서 조건문. Phase 2에서 Curator 출력으로 교체 |
 | D17 | 아키텍처 문서는 이 파일에 Phase 1 / Phase 2 섹션으로 구분 |
-| D18 | 카드 깊이 개인화 — Phase 1: severity in [critical, high] OR mistake_count >= 7 이면 DEEP, 그 외 QUICK. mistake_count = review_issue 테이블에서 user_id + keyword 기준 집계 (Section 8 참조). Phase 2: Curator 동적 결정 |
+| D18 | 카드 깊이 개인화 — Phase 1: severity in [critical, high] OR mistake_count >= 3 이면 DEEP, 그 외 QUICK. mistake_count = review_issue 테이블에서 user_id + keyword 기준 집계 (Section 8 참조). Phase 2: Curator 동적 결정 |
 | D19 | 서버가 user_id로 최신 pull_request 조회 → review_issues severity top 3 자동 선택 → 카드 3개 생성 |
 | D20 | 팝업 UX — "학습하기" → "학습을 시작하겠습니까?" → 예 클릭 → POST /api/learn |
 | D21 | KMS 사내문서는 오프라인 사전 임베딩 → `chunk_embeddings` 저장 (doc_chunk 없음). `scripts/embed_kms_docs.py`로 직접 임베딩 완료 (2026-06-06). 이후 변경 없음 |
@@ -401,7 +401,7 @@ mistake_count = (
 
 depth = "deep" if (
     issue.severity in ["critical", "high"] or
-    mistake_count >= 7
+    mistake_count >= 3
 ) else "quick"
 
 # Phase 2: 이 조건문을 Curator 에이전트가 대체
@@ -561,29 +561,35 @@ backend/m4/
   - chunk_embeddings HNSW 인덱스: 이미 존재 (추가 불필요)
   - 확인: `psql \d curriculum_plan`
 
-- [ ] **T2 (P1, ~20min)** — 파이프라인 구현
+- [x] **T2 (P1, ~20min)** — 파이프라인 구현
   - learn_pipeline.py: 카드 타입 라우터 (D16) + RAG 재시도 룰 (D15) + BackgroundTasks
   - 확인: POST /api/learn → 202, status polling 작동
+  - 구현 확인: `learn_pipeline.generate_card`/`route_card_type`/`build_card` 구현 완료, `test_pipeline.py` 통과 — 체크박스 갱신 누락이었음
 
-- [ ] **T3 (P1, ~15min)** — RAGAS 평가 루프
+- [x] **T3 (P1, ~15min)** — RAGAS 평가 루프
   - ragas_eval() 반환값: `{"passed": bool, "reason": None}`
   - for attempt in range(3): → 3회 실패 → fallback_card(), llm_fallback=True
   - 확인: 3회 실패 → fallback
+  - 구현 확인: `learn_pipeline.ragas_eval` + `SKIP_RAGAS_EVAL` 플래그까지 구현, `test_ragas_all_3_fail_triggers_llm_fallback`/`test_ragas_passes_after_retry_stops_loop` 통과 — 체크박스 갱신 누락이었음
 
-- [ ] **T4 (P1, ~10min)** — JWT 인증 의존성 적용
+- [x] **T4 (P1, ~10min)** — JWT 인증 의존성 적용
   - `shared.auth.get_current_user` 의존성 활용 (별도 파일 불필요)
   - `api/routes.py` 각 엔드포인트에 `Depends(get_current_user)` 추가
   - JWT `sub` 클레임 → user_id (UUID) 추출
   - 확인: Bearer 토큰 없이 요청 시 401
+  - 구현 확인: `routes.py`의 각 엔드포인트에 `Depends(get_current_user)` 적용, `test_post_learn_without_token_returns_401` 등 401 테스트 통과 — 체크박스 갱신 누락이었음
 
-- [ ] **T5 (P1, ~5min)** — UNIQUE + ON CONFLICT 처리
+- [x] **T5 (P1, ~5min)** — UNIQUE + ON CONFLICT 처리
   - 동일 issue_id 재POST → 동일 plan_id 반환
+  - 구현 확인: `routes.py`에 ON CONFLICT DO NOTHING 처리 구현, `test_post_learn_duplicate_returns_200_with_existing_plan_ids`/`test_post_learn_race_condition_returns_200_with_winner_plan_ids` 통과 — 체크박스 갱신 누락이었음
 
-- [ ] **T6 (P1, ~10min)** — 에러 핸들링 + error_message 저장
+- [x] **T6 (P1, ~10min)** — 에러 핸들링 + error_message 저장
   - ⚠️ fallback_card() 실패 + DB write 실패 = SILENT GAP → try/except 필수
   - 실패 시 status='failed', error_message=str(e)
+  - 구현: `generate_card()`에 build_card()/fallback_card() 호출을 감싸는 try/except 추가(embed_query 타임아웃과 동일 패턴),
+    `_run_card_generation()`에 카드 생성+DB write 전체를 감싸는 catch-all try/except 추가 — 어떤 예외든 plan을 'failed'로 기록
 
-- [ ] **T7 (P1, ~10min)** — 단위 테스트 (Phase 1 P1)
+- [x] **T7 (P1, ~10min)** — 단위 테스트 (Phase 1 P1)
   ```python
   # tests/test_pipeline.py
   test_ragas_all_3_fail_triggers_llm_fallback()
@@ -601,18 +607,44 @@ backend/m4/
   test_duplicate_learn_returns_existing_plan()
   test_complete_duplicate_click_is_idempotent()
   ```
+  - 구현 메모: 위 목록 중 `test_no_pull_request_returns_404_with_message`, `test_get_pr_scan_id_returns_correct_structure`,
+    `test_duplicate_learn_returns_existing_plan`은 이름은 다르지만 `test_routes.py`의
+    `test_post_learn_no_pr_returns_404` / `test_get_pr_returns_issues_with_plans` /
+    `test_post_learn_duplicate_returns_200_with_existing_plan_ids`로 이미 동등하게 커버되어 있음을 확인.
+    실제로 빠져 있던 두 케이스 `test_depth_is_deep_when_severity_critical`(test_pipeline.py)과
+    `test_complete_duplicate_click_is_idempotent`(test_routes.py, `_mark_plan_completed` 직접 호출로 idempotent 분기 검증)를
+    추가해 27→28개 테스트로 보강 완료. 두 함수 모두 이미 올바르게 구현돼 있어 테스트 추가만으로 즉시 GREEN(회귀 방지 테스트 성격).
+
 <!-- 그래서 "pull_requests 조회 → top3 선택" 파이프라인은 T9에서 따로 만들 일 -->
-- [ ] **T9 (P1, ~20min)** — 웹페이지 팝업 모달 + top 3 자동 선택
+- [x] **T9 (P1, ~20min)** — 웹페이지 팝업 모달 + top 3 자동 선택
   - 서버: latest PR → severity top 3 선택 로직 (위 9번 코드 참조)
   - 확인: 팝업 예 클릭 → 카드 3개 표시
+  - 진행 상황: 서버(`_find_latest_pr_id`/`_find_top3_issues`)와 프론트 팝업(`LearningModal`/`LearningPage` — 모달 자동 표시 + 예/아니오 닫기)은 완료.
+    프론트 API 연동은 3개 TDD 슬라이스로 분할 진행해 모두 완료 (FRONTEND_SPEC Section 2/3/10):
+    - [x] Slice 1 — "예" 클릭 → `m4Api.post('/api/learn', {})` 호출 + 로딩 상태 표시.
+      `pages/learning/lib/m4Api.ts` 신규 생성(별도 axios 인스턴스, JWT 인터셉터, `VITE_M4_URL` 베이스).
+      `LearningPage.test.tsx`에 `vi.mock`으로 m4Api를 모킹한 RED→GREEN 테스트 추가 (전체 24/24 통과)
+    - [x] Slice 2 — `GET /api/pr/{scan_id}` 폴링 (2초 간격, 이슈별 독립 status, 모두 종료 상태가 되면 중단).
+      `pages/learning/hooks/useLearningApi.ts` 신규 생성 (재귀 `setTimeout` 방식, `renderHook`+`vi.useFakeTimers`로 검증)
+    - [x] Slice 3 — 완료 카드 렌더링 (`LearningCard`/`CodeBlock`) + 자동 `POST /api/complete`.
+      `pages/learning/components/LearningCard.tsx`/`CodeBlock.tsx` 신규 생성, `LearningPage`에서 `useLearningApi().issues`를 구독해 카드 목록 렌더링 (전체 35/35 통과)
 
-- [ ] **T10 (P2, ~10min)** — 카드 깊이 개인화 Phase 1
+- [x] **T10 (P2, ~10min)** — 카드 깊이 개인화 Phase 1
   - depth 조건문 (D18) + DEEP_CARD_PROMPT / QUICK_CARD_PROMPT 템플릿
-  - 확인: severity=high → DEEP / severity=low + mistake_count<7 → QUICK
+  - 확인: severity=high → DEEP / severity=low + mistake_count<3 → QUICK
+  - 구현 메모: `learn_pipeline.DEEP_CARD_PROMPT`/`QUICK_CARD_PROMPT` 템플릿을 분리해 depth에 따라 Builder Agent 지시문이 달라지도록 구현
+    (DEEP은 "정보량을 늘리는 게 아니라 확실히 이해되도록 기초부터 차근차근 + 비유/예시 위주"로 설계 — 반복 실수 케이스에서 "더 어렵게"가 아니라 "더 쉽게 다시 설명"하는 방향).
+    D18 mistake_count 임계값을 7 → 3으로 조정(논의 후 결정). `test_depth_is_deep_when_severity_high`,
+    `test_depth_is_quick_when_severity_low_and_mistake_count_below_threshold`, `test_depth_is_deep_when_mistake_count_reaches_threshold`,
+    `test_build_card_uses_deep_prompt_template_when_depth_is_deep`, `test_build_card_uses_quick_prompt_template_when_depth_is_quick` 추가, TDD RED→GREEN 확인 (33/33 통과)
 
 ### Phase 2 — Multi-Agent (Phase 1 완성 후)
 
-- [ ] **T11 (~30min)** — Curator 에이전트 (pipeline/curator_agent.py 신규)
+- [x] **T11 (~30min)** — Curator 에이전트 (pipeline/curator_agent.py 신규)
+  - 구현 완료: `curator_agent(profile, issue, hint=None)` — D22 계약대로 `{depth, focus, analogy, key_points, card_type, query_fields}` JSON 반환
+  - `DeveloperProfile` TypedDict(weak_categories, past_mistakes), `CURATOR_PROMPT`/`CURATOR_MODEL_NAME`(gemini-2.5-flash) 정의
+  - D26 재시도 전략 — hint="narrow_query"(low_faithfulness)/"change_framing"(low_relevancy)에 따라 프롬프트에 다른 재지시 문구 추가
+  - `tests/test_curator_agent.py` 6개 테스트 신규 (Mock 기반) — 전체 스위트 39/39 통과
 - [ ] **T12 (~15min)** — RAGAS reason 필드 활성화 + 재시도 전략 분기
 - [ ] **T13 (~15min)** — Curator 기반 RAG 필드 선택 (D15 룰 대체)
 - [ ] **T14 (~20min)** — build_card() curator_instruction 파라미터 추가 (additive)
@@ -647,9 +679,9 @@ Lane D: tests/ (T7)                                   — Lane B + C 완료 후
 | embed_query() | Gemini API timeout | T6로 처리 | error_message 저장 |
 | rag_search() | pgvector 결과 0개 | fallback | llm_fallback=True |
 | ragas_eval() | 3회 모두 실패 | fallback_card() | llm_fallback=True |
-| build_card() | gemini-2.5-flash API 오류 | T6로 처리 | error_message 저장 |
-| fallback_card() | gemini-2.5-pro API 오류 | ⚠️ GAP — SILENT | T6에서 wrap 필수 |
-| DB write | PostgreSQL 연결 끊김 | ⚠️ GAP — SILENT | T6에서 wrap 필수 |
+| build_card() | gemini-2.5-flash API 오류 | T6 처리 완료 | generate_card() try/except → status='failed' + error_message |
+| fallback_card() | gemini-2.5-pro API 오류 | T6 처리 완료 | 동일 try/except로 build_card()와 함께 wrap (마지막 안전망) |
+| DB write | PostgreSQL 연결 끊김 | T6 처리 완료 | _run_card_generation() catch-all try/except → status='failed' + error_message |
 | /api/learn 중복 | 동일 issue_id 재클릭 | D4 ON CONFLICT | 기존 plan 리다이렉트 |
 | curator_agent() (Phase 2) | gemini-2.5-flash timeout | Phase 1 방식 fallback | — |
 | Curator 재지시 루프 (Phase 2) | reason 무한 반복 | max 3 attempt 제한 | — |

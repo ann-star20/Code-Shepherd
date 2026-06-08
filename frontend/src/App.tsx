@@ -25,7 +25,9 @@ import Settings from "./pages/Settings";
 import KmsPlaceholder from "./pages/kms/Placeholder";
 import KmsManagePlaceholder from "./pages/kms/ManagePlaceholder";
 import ReviewPlaceholder from "./pages/review/Placeholder";
-import LearningPlaceholder from "./pages/learning/Placeholder";
+// T9 구현 후 LearningPage로 교체 — placeholder로 되돌리려면 아래 주석을 풀고 LearningPage import를 지우면 됨
+// import LearningPlaceholder from "./pages/learning/Placeholder";
+import LearningPage from "./pages/learning/LearningPage";
 import YoutubePlaceholder from "./pages/youtube/Placeholder";
 import ApprovalsPlaceholder from "./pages/approvals/Placeholder";
 
@@ -79,7 +81,9 @@ function AppRoutes() {
           <Route path="/kms" element={<KmsPlaceholder />} />
           <Route path="/kms/manage" element={<KmsManagePlaceholder />} />
           <Route path="/review" element={<ReviewPlaceholder />} />
-          <Route path="/learning" element={<LearningPlaceholder />} />
+          {/* T9 구현 후 LearningPage로 교체 — 되돌리려면 아래 주석을 풀고 위 줄을 지우면 됨 */}
+          {/* <Route path="/learning" element={<LearningPlaceholder />} /> */}
+          <Route path="/learning" element={<LearningPage />} />
           <Route path="/youtube" element={<YoutubePlaceholder />} />
           <Route path="/approvals" element={<ApprovalsPlaceholder />} />
         </Route>

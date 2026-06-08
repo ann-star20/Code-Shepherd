@@ -110,15 +110,22 @@ async def _run_card_generation(plan_issue_pairs: list[tuple[uuid.UUID, ReviewIss
             plan = await session.get(CurriculumPlan, plan_id)
             if plan is None:
                 continue
-            plan.status = "running"
-            await session.commit()
+            try:
+                plan.status = "running"
+                await session.commit()
 
-            generated = await generate_card(issue, adapter)
-            plan.status = generated.status
-            plan.llm_fallback = generated.llm_fallback
-            plan.error_message = generated.error_message
-            plan.card_content = generated.card_content
-            await session.commit()
+                generated = await generate_card(issue, adapter)
+                plan.status = generated.status
+                plan.llm_fallback = generated.llm_fallback
+                plan.error_message = generated.error_message
+                plan.card_content = generated.card_content
+                await session.commit()
+            except Exception as exc:
+                # generate_card() 자체의 예상 못 한 예외, 또는 결과 저장 commit() 실패(DB 연결 끊김 등) —
+                # 어느 경로로 실패하든 plan이 'running'에 영원히 멈추지 않도록 'failed'로 기록한다 (T6 catch-all 안전망)
+                plan.status = "failed"
+                plan.error_message = str(exc)
+                await session.commit()
 
     await engine.dispose()
 

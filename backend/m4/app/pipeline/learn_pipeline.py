@@ -22,6 +22,31 @@ JUDGE_MODEL_NAME = "gemini-2.5-pro"
 JUDGE_EMBEDDING_MODEL_NAME = "models/gemini-embedding-001"
 RAGAS_PASS_THRESHOLD = 0.7
 
+_CARD_PROMPT_BODY = (
+    "card_type: {card_type}\ndepth: {depth}\n"
+    "keyword: {keyword}\nseverity: {severity}\n"
+    "개념 설명 참고 자료(security_guide):\n{docs_concept}\n"
+    "코딩 컨벤션 참고 자료(coding_convention):\n{docs_example}\n"
+    "학습 추천 참고 자료(learning_resource):\n{docs_recommend}\n"
+    "리뷰 대상 코드:\n{code_snippet}\n\n"
+    "다음 키를 가진 JSON 객체만 반환해: "
+    '{{"explanation": string, "core_summary": string, "after_code": string|null, "recommendations": [string]}}'
+)
+
+# D18 — depth별로 Builder Agent에게 다른 깊이의 카드를 지시하는 템플릿 (T10)
+DEEP_CARD_PROMPT = (
+    "아래 코드 리뷰 이슈를 바탕으로 학습 카드를 JSON으로 생성해줘.\n"
+    "이 카드는 심화 학습용이다 — severity가 높거나 같은 실수를 반복한 개발자를 위한 것이다. "
+    "정보량을 늘리는 게 아니라 '이번엔 확실히 이해되게' 만드는 게 목표이므로, "
+    "기초 개념부터 차근차근 설명하고 비유와 구체적인 예시를 풍부하게 사용해줘.\n"
+    + _CARD_PROMPT_BODY
+)
+QUICK_CARD_PROMPT = (
+    "아래 코드 리뷰 이슈를 바탕으로 학습 카드를 JSON으로 생성해줘.\n"
+    "이 카드는 빠른 확인용이다 — 핵심만 간결하게 요약해서 짧은 시간 안에 확인할 수 있도록 작성해줘.\n"
+    + _CARD_PROMPT_BODY
+)
+
 
 def route_card_type(issue: ReviewIssue) -> str:
     """D16 — code_snippet 존재 여부로 카드 타입(개념 설명 / 코드 수정)을 분기한다."""
@@ -29,8 +54,8 @@ def route_card_type(issue: ReviewIssue) -> str:
 
 
 def determine_depth(issue: ReviewIssue, mistake_count: int = 0) -> str:
-    """D18 — severity가 critical/high이거나 동일 keyword 실수가 7회 이상이면 deep, 아니면 quick."""
-    return "deep" if (issue.severity in ("critical", "high") or mistake_count >= 7) else "quick"
+    """D18 — severity가 critical/high이거나 동일 keyword 실수가 3회 이상이면 deep, 아니면 quick."""
+    return "deep" if (issue.severity in ("critical", "high") or mistake_count >= 3) else "quick"
 
 
 def _format_docs(docs: list[dict] | None) -> str:
@@ -49,16 +74,16 @@ async def build_card(
     card_type: str,
 ) -> dict:
     """Builder Agent (gemini-2.5-flash) — RAG 검색 결과 + 이슈 정보를 학습 카드 JSON으로 변환한다."""
-    prompt = (
-        "아래 코드 리뷰 이슈를 바탕으로 학습 카드를 JSON으로 생성해줘.\n"
-        f"card_type: {card_type}\ndepth: {depth}\n"
-        f"keyword: {issue.keyword}\nseverity: {issue.severity}\n"
-        f"개념 설명 참고 자료(security_guide):\n{_format_docs(docs_concept)}\n"
-        f"코딩 컨벤션 참고 자료(coding_convention):\n{_format_docs(docs_example)}\n"
-        f"학습 추천 참고 자료(learning_resource):\n{_format_docs(docs_recommend)}\n"
-        f"리뷰 대상 코드:\n{issue.code_snippet or '(code_snippet 없음)'}\n\n"
-        "다음 키를 가진 JSON 객체만 반환해: "
-        '{"explanation": string, "core_summary": string, "after_code": string|null, "recommendations": [string]}'
+    template = DEEP_CARD_PROMPT if depth == "deep" else QUICK_CARD_PROMPT
+    prompt = template.format(
+        card_type=card_type,
+        depth=depth,
+        keyword=issue.keyword,
+        severity=issue.severity,
+        docs_concept=_format_docs(docs_concept),
+        docs_example=_format_docs(docs_example),
+        docs_recommend=_format_docs(docs_recommend),
+        code_snippet=issue.code_snippet or "(code_snippet 없음)",
     )
     model = genai.GenerativeModel(BUILDER_MODEL_NAME)
     # response_mime_type 미지정 시 Gemini가 JSON을 마크다운 코드펜스(```json ... ```)로 감싸 반환해 json.loads가 실패함
@@ -144,21 +169,10 @@ async def generate_card(issue: ReviewIssue, adapter: SearchAdapter) -> Curriculu
     depth = determine_depth(issue)
     card_type = route_card_type(issue)
 
-    if llm_fallback or _skip_ragas_eval():
-        # llm_fallback=True면 docs가 없어 faithfulness 측정 대상이 없음(D30) → RAGAS 스킵
-        # SKIP_RAGAS_EVAL=true면 비용 절감을 위해 평가 루프 자체를 건너뜀 (자체 cost-control 플래그)
-        card_content = await build_card(
-            issue=issue,
-            docs_concept=docs_concept,
-            docs_example=docs_example,
-            docs_recommend=docs_recommend,
-            depth=depth,
-            card_type=card_type,
-        )
-    else:
-        # docs 3개 합산해서 RAGAS contexts로 전달 (Section 6)
-        all_docs = [*(docs_concept or []), *(docs_example or []), *(docs_recommend or [])]
-        for _attempt in range(3):
+    try:
+        if llm_fallback or _skip_ragas_eval():
+            # llm_fallback=True면 docs가 없어 faithfulness 측정 대상이 없음(D30) → RAGAS 스킵
+            # SKIP_RAGAS_EVAL=true면 비용 절감을 위해 평가 루프 자체를 건너뜀 (자체 cost-control 플래그)
             card_content = await build_card(
                 issue=issue,
                 docs_concept=docs_concept,
@@ -167,13 +181,35 @@ async def generate_card(issue: ReviewIssue, adapter: SearchAdapter) -> Curriculu
                 depth=depth,
                 card_type=card_type,
             )
-            result = await ragas_eval(card_content, all_docs)
-            if result["passed"]:
-                break
         else:
-            # 3회 모두 실패 → fallback_card()로 대체, llm_fallback=True (T3)
-            card_content = await fallback_card(issue=issue, depth=depth, card_type=card_type)
-            llm_fallback = True
+            # docs 3개 합산해서 RAGAS contexts로 전달 (Section 6)
+            all_docs = [*(docs_concept or []), *(docs_example or []), *(docs_recommend or [])]
+            for _attempt in range(3):
+                card_content = await build_card(
+                    issue=issue,
+                    docs_concept=docs_concept,
+                    docs_example=docs_example,
+                    docs_recommend=docs_recommend,
+                    depth=depth,
+                    card_type=card_type,
+                )
+                result = await ragas_eval(card_content, all_docs)
+                if result["passed"]:
+                    break
+            else:
+                # 3회 모두 실패 → fallback_card()로 대체, llm_fallback=True (T3)
+                card_content = await fallback_card(issue=issue, depth=depth, card_type=card_type)
+                llm_fallback = True
+    except Exception as exc:
+        # build_card()/fallback_card() — Gemini API 오류, JSON 파싱 실패 등 (T6).
+        # fallback_card()는 RAGAS 3회 실패 후의 마지막 안전망이라 여기서도 실패하면 더 이상 대안이 없음 → status='failed'로 기록
+        return CurriculumPlan(
+            issue_id=issue.id,
+            status="failed",
+            llm_fallback=False,
+            error_message=str(exc),
+            card_content=None,
+        )
 
     # before_code: code_snippet 없으면 null (프론트에서 단일 컬럼 렌더링)
     card_content["before_code"] = issue.code_snippet or None
