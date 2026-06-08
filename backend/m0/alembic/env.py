@@ -14,6 +14,9 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), "../.."))
 from shared.config import get_settings
 from shared.db import Base
 
+# m0 ORM 모델 — Alembic이 테이블을 감지할 수 있도록 import 필수
+import app.models  # noqa: F401
+
 config = context.config
 
 if config.config_file_name is not None:

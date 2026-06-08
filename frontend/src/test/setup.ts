@@ -2,6 +2,9 @@ import "@testing-library/jest-dom";
 import { afterAll, afterEach, beforeAll } from "vitest";
 import { server } from "./msw/server";
 
+// jsdom does not implement scrollIntoView
+window.HTMLElement.prototype.scrollIntoView = () => {};
+
 // Node 25+ 는 실험적 전역 localStorage 스텁(clear() 없음)을 노출해 jsdom 의 것을 가린다.
 // → 테스트가 localStorage.clear is not a function 으로 깨진다.
 // jsdom 호환 in-memory Storage 를 강제 주입한다(구버전 Node 에서도 안전한 no-op 수준).
