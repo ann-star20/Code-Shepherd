@@ -1,8 +1,8 @@
 import json
 import os
+import ssl
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession, async_sessionmaker
-from sqlalchemy.orm import sessionmaker
 
 # Cloud SQL (PostgreSQL) 연결
 # 로컬 개발: Cloud SQL Auth Proxy 사용 (localhost:5432)
@@ -25,48 +25,41 @@ DATABASE_URL = os.getenv(
 _engine = None
 _session_factory = None
 
-DATABASE_URL = os.getenv(
-    "DATABASE_URL",
-    "postgresql+asyncpg://user:password@localhost:5432/dev2_db"
-)
-
-_engine = None
-_session_factory = None
-
 
 def _get_engine():
     global _engine
-
     if _engine is None:
+        # asyncpg는 sslmode를 지원하지 않으므로 localhost가 아닌 경우 connect_args로 SSL 활성화
+        # Cloud SQL은 자체 인증서를 사용하므로 verify_mode=CERT_NONE으로 설정
+        is_remote = "localhost" not in DATABASE_URL and "127.0.0.1" not in DATABASE_URL
+        if is_remote:
+            ssl_ctx = ssl.create_default_context()
+            ssl_ctx.check_hostname = False
+            ssl_ctx.verify_mode = ssl.CERT_NONE
+            connect_args = {"ssl": ssl_ctx}
+        else:
+            connect_args = {}
         _engine = create_async_engine(
             DATABASE_URL,
             pool_pre_ping=True,
             pool_recycle=60,
             pool_size=1,
             max_overflow=0,
+            connect_args=connect_args,
         )
-
     return _engine
 
 
 def _get_session_factory():
     global _session_factory
-
     if _session_factory is None:
         _session_factory = async_sessionmaker(
             bind=_get_engine(),
             class_=AsyncSession,
             expire_on_commit=False,
         )
-
     return _session_factory
 
-def AsyncSessionLocal():
-    """
-    AsyncSession 컨텍스트 매니저를 반환한다.
-
-    사용 패턴:
-        async with AsyncSessionLocal() as s:
 
 def _safe_db_value(v, default=""):
     if v is None:
@@ -74,6 +67,14 @@ def _safe_db_value(v, default=""):
     if isinstance(v, (dict, list)):
         return json.dumps(v, ensure_ascii=False)
     return v
+
+
+def AsyncSessionLocal():
+    """
+    AsyncSession 컨텍스트 매니저를 반환한다.
+
+    사용 패턴:
+        async with AsyncSessionLocal() as s:
             await s.execute(...)
 
     최초 호출 시 asyncpg 엔진을 lazy 초기화한다.
@@ -120,7 +121,7 @@ async def insert_scan_issues(scan_id: int, issues: list[dict], agent: str):
                 "line": i.get("line", 0),
                 "message": i["message"],
                 "suggestion": i.get("suggestion", ""),
-                "similar_issues": json.dumps(i.get("similar_issues", []), ensure_ascii=False),
+                "similar_issues": _safe_db_value(i.get("similar_issues"), "[]"),
                 "issue_type": i.get("issue_type", ""),
                 "resolution_example": i.get("resolution_example", ""),
                 "status": i.get("status", "Open"),
@@ -132,9 +133,9 @@ async def insert_scan_issues(scan_id: int, issues: list[dict], agent: str):
                 "mistake_type_concept_id": i.get("mistake_type_concept_id", ""),
                 "confidence_score": i.get("confidence_score", 0.0),
                 "code_snippet": i.get("code_snippet", ""),
-                "learning_context": json.dumps(i.get("learning_context", {}), ensure_ascii=False),
-                "code_context": json.dumps(i.get("code_context", {}), ensure_ascii=False),
-                "taxonomy": json.dumps(i.get("taxonomy", {}), ensure_ascii=False),
+                "learning_context": _safe_db_value(i.get("learning_context"), "{}"),
+                "code_context": _safe_db_value(i.get("code_context"), "{}"),
+                "taxonomy": _safe_db_value(i.get("taxonomy"), "{}"),
             }
 
             await s.execute(text("""
@@ -155,6 +156,7 @@ async def insert_scan_issues(scan_id: int, issues: list[dict], agent: str):
             """), params)
 
         await s.commit()
+
 
 # severity 매핑: scan_issues(Critical/Major/Minor) → review_issue(critical/high/medium)
 _REVIEW_SEVERITY_MAP: dict[str, str] = {
@@ -230,7 +232,7 @@ async def insert_review_issues(
                 "severity":             severity,
                 "keyword":              i.get("keyword") or i.get("rule_id", ""),
                 "sub_category":         i.get("sub_category", ""),
-               "code_context":         json.dumps(i.get("code_context", {}), ensure_ascii=False),
+                "code_context":         _safe_db_value(i.get("code_context"), ""),
                 "code_snippet":         i.get("code_snippet", ""),
                 "suggestion":           i.get("suggestion", ""),
                 "programming_language": programming_language,

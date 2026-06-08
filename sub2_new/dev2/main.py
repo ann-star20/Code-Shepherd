@@ -26,6 +26,12 @@ Swagger 문서:
 """
 
 import logging
+import os
+
+from dotenv import load_dotenv
+
+# .env 로드 — DATABASE_URL 등 환경변수를 db.py가 읽기 전에 설정
+load_dotenv(os.path.join(os.path.dirname(__file__), ".env"))
 
 from fastapi import FastAPI
 

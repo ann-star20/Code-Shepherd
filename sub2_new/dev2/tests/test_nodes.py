@@ -645,3 +645,94 @@ async def test_store_trace_id_format():
     assert len(hex_part) == 12, f"hex 부분이 12자여야 함: {hex_part}"
     # 16진수 문자만 포함 (하이픈 제거 후)
     int(hex_part, 16)  # 파싱 실패 시 ValueError
+
+
+# ── review_issue 적재 테스트 ────────────────────────────────────────────────
+
+@pytest.mark.asyncio
+async def test_store_node_calls_insert_review_issues():
+    """store_node가 review_issue 적재를 호출하는지 확인"""
+    from dev2.nodes.store import store_node
+
+    issues = [
+        {
+            "severity": "Critical", "line": 10, "file": "auth.py",
+            "message": "SQL 인젝션", "rule_id": "ASEC-001",
+            "suggestion": "파라미터 바인딩", "similar_issues": [],
+            "keyword": "sql_injection", "name_of_function": "login",
+            "_source": "security",
+        },
+    ]
+    state = {
+        **SAMPLE_STATE,
+        "payload": PAYLOAD,
+        "enriched": issues,
+        "final_output": [],
+        "tech_stack": ["python", "fastapi"],
+    }
+
+    mock_insert_review = AsyncMock()
+
+    with patch("dev2.nodes.store._persist", new_callable=AsyncMock), \
+         patch("dev2.nodes.store._load_bigquery"), \
+         patch("dev2.db.insert_review_issues", mock_insert_review):
+        result = await store_node(state)
+
+    mock_insert_review.assert_called_once()
+    call_kwargs = mock_insert_review.call_args
+    assert call_kwargs.kwargs["agent"] == "security_scan"
+    assert call_kwargs.kwargs["pr_id"] == "1"
+    assert call_kwargs.kwargs["tech_stack"] == ["python", "fastapi"]
+    assert len(result["final_output"]) == 1
+
+
+@pytest.mark.asyncio
+async def test_store_node_review_issue_failure_skipped():
+    """review_issue 적재 실패 → 스킵, final_output은 정상 반환"""
+    from dev2.nodes.store import store_node
+
+    issues = [
+        {
+            "severity": "Minor", "line": 5, "file": "app.py",
+            "message": "코드 스멜", "rule_id": "ASA-007",
+            "suggestion": "환경변수 사용", "similar_issues": [],
+            "_source": "static",
+        },
+    ]
+    state = {
+        **SAMPLE_STATE,
+        "payload": PAYLOAD,
+        "enriched": issues,
+        "final_output": [],
+    }
+
+    with patch("dev2.nodes.store._persist", new_callable=AsyncMock), \
+         patch("dev2.nodes.store._load_bigquery"), \
+         patch("dev2.db.insert_review_issues", AsyncMock(side_effect=RuntimeError("DB 오류"))):
+        result = await store_node(state)
+
+    # review_issue 실패해도 final_output 정상 반환
+    assert len(result["final_output"]) == 1
+    assert result["final_output"][0]["agent"] == "static_analysis"
+
+
+@pytest.mark.asyncio
+async def test_insert_review_issues_severity_mapping():
+    """insert_review_issues severity 매핑: Critical→critical, Major→high, Minor→medium"""
+    from dev2.db import _REVIEW_SEVERITY_MAP
+
+    assert _REVIEW_SEVERITY_MAP["Critical"] == "critical"
+    assert _REVIEW_SEVERITY_MAP["Major"] == "high"
+    assert _REVIEW_SEVERITY_MAP["Minor"] == "medium"
+
+
+@pytest.mark.asyncio
+async def test_lookup_pull_request_id_invalid_pr_id():
+    """pr_id가 숫자가 아닌 경우 None 반환 (DB 조회 없이)"""
+    from dev2.db import _lookup_pull_request_id
+
+    result = await _lookup_pull_request_id("not-a-number")
+    assert result is None
+
+    result = await _lookup_pull_request_id("")
+    assert result is None

@@ -6,10 +6,14 @@ run_case.py — 단일 eval 케이스로 Dev2 에이전트 실행
     python run_case.py                                         # mixed_case_01 기본값
     python run_case.py ../pj3_data/datasets/JH_PJ3/m2_mixed_case/mixed_case_02
 """
+import sys
 import asyncio
+
+if sys.platform.startswith("win"):
+    asyncio.set_event_loop_policy(asyncio.WindowsSelectorEventLoopPolicy())
+
 import json
 import pathlib
-import sys
 import uuid
 from dotenv import load_dotenv
 
