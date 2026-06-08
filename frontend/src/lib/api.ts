@@ -80,3 +80,44 @@ export const invitationsApi = {
   accept: (id: string) => apiClient.post(`/invitations/${id}/accept`),
   decline: (id: string) => apiClient.post(`/invitations/${id}/decline`),
 };
+
+// ── m2: 정적 분석 · 보안 스캔 ────────────────────────────────────────────────
+// 계약: backend/_shared/shared/contracts.py (M2AnalyzeRequest / M2AnalyzeResponse)
+
+export type IssueSeverity = "Critical" | "Major" | "Minor";
+
+export interface IssueItem {
+  severity: IssueSeverity;
+  line: number | null;
+  file: string | null;
+  message: string;
+  rule_id: string | null;
+  suggestion: string | null;
+}
+
+export interface IssueSummary {
+  critical: number;
+  major: number;
+  minor: number;
+}
+
+export interface M2AnalyzeResponse {
+  task_id: string;
+  agent: "static_analysis" | "security_scan";
+  issues: IssueItem[];
+  summary: IssueSummary;
+  execution_ms: number;
+}
+
+export interface M2AnalyzeRequest {
+  task_id: string;
+  pr_id: string;
+  pr_diff: string;
+}
+
+export const analyzeApi = {
+  static: (payload: M2AnalyzeRequest) =>
+    apiClient.post<M2AnalyzeResponse>("/analyze/static", payload),
+  security: (payload: M2AnalyzeRequest) =>
+    apiClient.post<M2AnalyzeResponse>("/analyze/security", payload),
+};

@@ -113,6 +113,53 @@ export const handlers = [
     });
   }),
 
+  http.post(`${BASE}/analyze/static`, async ({ request }) => {
+    const body = (await request.json()) as { task_id: string };
+    return HttpResponse.json({
+      task_id: body.task_id,
+      agent: "static_analysis",
+      issues: [
+        {
+          severity: "Major",
+          line: 12,
+          file: "src/utils/parse.py",
+          message: "순환 복잡도가 너무 높습니다 (15 > 10).",
+          rule_id: "C901",
+          suggestion: "함수를 더 작은 단위로 분리하세요.",
+        },
+        {
+          severity: "Minor",
+          line: 3,
+          file: "src/utils/parse.py",
+          message: "사용되지 않는 import 'os'.",
+          rule_id: "F401",
+          suggestion: "import 문을 제거하세요.",
+        },
+      ],
+      summary: { critical: 0, major: 1, minor: 1 },
+      execution_ms: 142,
+    });
+  }),
+  http.post(`${BASE}/analyze/security`, async ({ request }) => {
+    const body = (await request.json()) as { task_id: string };
+    return HttpResponse.json({
+      task_id: body.task_id,
+      agent: "security_scan",
+      issues: [
+        {
+          severity: "Critical",
+          line: 27,
+          file: "src/db/query.py",
+          message: "f-string으로 SQL을 조합해 SQL Injection에 취약합니다.",
+          rule_id: "B608",
+          suggestion: "파라미터 바인딩을 사용하세요.",
+        },
+      ],
+      summary: { critical: 1, major: 0, minor: 0 },
+      execution_ms: 215,
+    });
+  }),
+
   http.get(`${BASE}/users`, ({ request }) => {
     const url = new URL(request.url);
     const search = url.searchParams.get("search") ?? "";
