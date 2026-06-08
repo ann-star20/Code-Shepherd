@@ -137,3 +137,46 @@ describe("LearningPage — 학습 카드 렌더링 (T9 Slice 3)", () => {
     expect(screen.queryByText("학습 카드를 생성하고 있어요...")).not.toBeInTheDocument();
   });
 });
+
+describe("LearningPage — 학습 시작 실패 안내 (FRONTEND_SPEC Section 8)", () => {
+  afterEach(() => {
+    vi.mocked(m4Api.post).mockClear();
+    vi.mocked(m4Api.get).mockClear();
+  });
+
+  it("POST /api/learn이 404를 반환하면 'PR 없음' 안내를 표시하고 로딩 문구를 내린다", async () => {
+    vi.mocked(m4Api.post).mockRejectedValueOnce({ isAxiosError: true, response: { status: 404 } });
+    const user = userEvent.setup();
+    render(<LearningPage />);
+
+    await user.click(screen.getByRole("button", { name: "예" }));
+
+    expect(await screen.findByText(/아직 등록된 PR이 없습니다/)).toBeInTheDocument();
+    expect(screen.getByText(/PR을 제출하면 자동으로 코드 리뷰가 진행되고/)).toBeInTheDocument();
+    expect(screen.queryByText("학습 카드를 생성하고 있어요...")).not.toBeInTheDocument();
+  });
+
+  it("POST /api/learn이 404 외 에러(네트워크 등)로 실패하면 일반 오류 안내를 표시하고 로딩 문구를 내린다", async () => {
+    vi.mocked(m4Api.post).mockRejectedValueOnce(new Error("Network Error"));
+    const user = userEvent.setup();
+    render(<LearningPage />);
+
+    await user.click(screen.getByRole("button", { name: "예" }));
+
+    expect(await screen.findByText("학습 카드를 불러오는 중 문제가 발생했어요")).toBeInTheDocument();
+    expect(screen.getByText("잠시 후 다시 시도해주세요")).toBeInTheDocument();
+    expect(screen.queryByText("학습 카드를 생성하고 있어요...")).not.toBeInTheDocument();
+  });
+});
+
+describe("LearningPage — 학습 보류 안내 (아니오 클릭 후 빈 화면, FRONTEND_SPEC Section 1)", () => {
+  it("아니오 클릭 시 모달이 닫히고 빈 화면 대신 학습 보류 안내 문구를 표시한다", async () => {
+    const user = userEvent.setup();
+    render(<LearningPage />);
+
+    await user.click(screen.getByRole("button", { name: "아니오" }));
+
+    expect(screen.getByText("학습은 준비되셨을 때 시작해도 괜찮아요")).toBeInTheDocument();
+    expect(screen.getByText("페이지를 새로고침하면 언제든 다시 안내가 떠요")).toBeInTheDocument();
+  });
+});

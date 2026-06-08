@@ -343,3 +343,23 @@ async def test_run_card_generation_marks_plan_failed_on_db_write_exception():
 
     assert plan.status == "failed"
     assert plan.error_message == "connection lost"
+
+
+# ---------------------------------------------------------------------------
+# CORS — 프론트(Vite, http://localhost:5173)에서 m4(http://localhost:8005)로 직접
+# 호출하는 구조 (FRONTEND_SPEC Section 0의 m4Api). 별도 포트 간 호출이라 브라우저가
+# preflight(OPTIONS)를 보내며, Access-Control-Allow-Origin이 없으면 CORS 에러로 막힌다.
+# ---------------------------------------------------------------------------
+
+
+async def test_cors_preflight_allows_vite_dev_origin(client):
+    response = await client.options(
+        "/api/learn",
+        headers={
+            "Origin": "http://localhost:5173",
+            "Access-Control-Request-Method": "POST",
+            "Access-Control-Request-Headers": "authorization,content-type",
+        },
+    )
+
+    assert response.headers.get("access-control-allow-origin") == "http://localhost:5173"

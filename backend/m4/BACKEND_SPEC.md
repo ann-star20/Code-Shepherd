@@ -628,6 +628,14 @@ backend/m4/
       `pages/learning/hooks/useLearningApi.ts` 신규 생성 (재귀 `setTimeout` 방식, `renderHook`+`vi.useFakeTimers`로 검증)
     - [x] Slice 3 — 완료 카드 렌더링 (`LearningCard`/`CodeBlock`) + 자동 `POST /api/complete`.
       `pages/learning/components/LearningCard.tsx`/`CodeBlock.tsx` 신규 생성, `LearningPage`에서 `useLearningApi().issues`를 구독해 카드 목록 렌더링 (전체 35/35 통과)
+    - [x] Slice 4 — `POST /api/learn` 실패 시 안내 화면 (FRONTEND_SPEC Section 8 "PR 없음 안내"/"그 외 에러" 보강).
+      기존엔 `handleConfirm`에 try/catch가 없어 실패 시 "학습 카드를 생성하고 있어요..."에 멈춰있던 것을 수정 —
+      404(PR 없음)면 "아직 등록된 PR이 없습니다" 안내, 그 외(network/500 등)면 "학습 카드를 불러오는 중 문제가
+      발생했어요 / 잠시 후 다시 시도해주세요" 일반 오류 안내를 표시 (전체 37/37 통과)
+  - [x] CORS — `app/main.py`에 `CORSMiddleware` 추가 (FRONTEND_SPEC Section 0: m4Api가 api-core 프록시를
+    거치지 않고 `localhost:5173` → `localhost:8005`로 직접 cross-origin 호출하는데, 미들웨어가 없어
+    preflight(OPTIONS)가 405로 막혀 브라우저에서 `net::ERR_FAILED` 발생하던 것을 수정.
+    `allow_origins=["http://localhost:5173"]`로 허용 (백엔드 전체 40/40 통과)
 
 - [x] **T10 (P2, ~10min)** — 카드 깊이 개인화 Phase 1
   - depth 조건문 (D18) + DEEP_CARD_PROMPT / QUICK_CARD_PROMPT 템플릿
