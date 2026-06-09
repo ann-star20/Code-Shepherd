@@ -17,6 +17,9 @@ export default defineConfig({
   server: {
     host: "0.0.0.0",
     port: 5173,
+    // Windows 호스트 → Docker 컨테이너 간 파일 변경(inotify)이 전달되지 않아
+    // HMR이 동작하지 않으므로 폴링 기반 감시를 사용한다.
+    watch: { usePolling: true, interval: 300 },
     proxy: {
       "/api": {
         // 로컬 풀스택은 VITE_PROXY_TARGET=http://localhost:8000 로 덮어쓴다(기본은 compose 호스트).

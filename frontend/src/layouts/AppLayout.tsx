@@ -15,6 +15,7 @@ import {
   Home,
   LayoutDashboard,
   LogOut,
+  ShieldAlert,
   Plus,
   Search,
   Settings,
@@ -48,6 +49,13 @@ const COMMON_NAV: NavItem[] = [
     icon: <GitPullRequest size={16} />,
     requiresTeam: true,
     testId: "nav-item-review",
+  },
+  {
+    label: "정적 분석 · 보안",
+    path: "/security",
+    icon: <ShieldAlert size={16} />,
+    requiresTeam: true,
+    testId: "nav-item-security",
   },
   {
     label: "커리큘럼 추천",
