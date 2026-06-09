@@ -69,6 +69,13 @@ logs/
 # Local docs (not for remote)
 prompt.md
 PRD_조직지식관리_온보딩_플랫폼.md
+Project_REPORT.md
+
+# 성능 평가 문서 (검증 완료 후 별도 PR)
+backend/m0/tests/eval/
+
+# 발표 자료
+presentation/
 
 # TypeScript build info
 *.tsbuildinfo
