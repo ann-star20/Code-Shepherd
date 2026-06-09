@@ -73,7 +73,7 @@ async def upload_document(base_url: str, file_path: Path) -> str:
             response = await client.post(
                 f"{base_url}/kms/upload",
                 files={"file": (file_path.name, f, _mime_type(file_path))},
-                data={"source": "eval"},
+                data={"source": "upload"},
             )
         response.raise_for_status()
         return response.json()["doc_id"]
@@ -109,20 +109,42 @@ async def poll_until_done(
 
 
 async def fetch_metadata(base_url: str, doc_id: str) -> dict:
-    """
-    GET /kms/docs/{doc_id}/metadata 로 title/category/tags를 반환한다.
-    entities는 Neo4j에만 저장되므로 {} 반환.
-    """
+    """GET /kms/docs/{doc_id}/metadata + /entities + /details 로 메타데이터를 반환한다."""
     async with httpx.AsyncClient(timeout=30.0) as client:
-        response = await client.get(f"{base_url}/kms/docs/{doc_id}/metadata")
-        response.raise_for_status()
-        data = response.json()
+        meta_resp = await client.get(f"{base_url}/kms/docs/{doc_id}/metadata")
+        meta_resp.raise_for_status()
+        data = meta_resp.json()
+
+        entities: list[dict] = []
+        try:
+            ent_resp = await client.get(f"{base_url}/kms/docs/{doc_id}/entities")
+            if ent_resp.status_code == 200:
+                entities = ent_resp.json().get("entities") or []
+        except Exception as e:
+            logger.warning("entities 조회 실패 doc_id=%s: %s", doc_id, e)
+
+        quality_score: float = 0.0
+        try:
+            det_resp = await client.get(f"{base_url}/kms/docs/{doc_id}/details")
+            if det_resp.status_code == 200:
+                quality_score = float(det_resp.json().get("quality_score") or 0.0)
+        except Exception as e:
+            logger.warning("details 조회 실패 doc_id=%s: %s", doc_id, e)
+
+    # entities를 {type: [name, ...]} 형식으로 변환 (golden_dataset.json / run_eval.py 호환)
+    entities_by_type: dict[str, list[str]] = {}
+    for e in entities:
+        if not e.get("name"):
+            continue
+        etype = e.get("type") or "other"
+        entities_by_type.setdefault(etype, []).append(e["name"])
 
     return {
         "title": data.get("title"),
         "category": data.get("category"),
         "tags": data.get("tags") or [],
-        "entities": {},  # Neo4j 전용 — PostgreSQL API로 접근 불가
+        "entities": entities_by_type,
+        "quality_score": quality_score,
     }
 
 
@@ -202,14 +224,14 @@ async def run(
                 base_url, doc_id, poll_interval, max_retries
             )
             status = status_data.get("status", "unknown")
-            quality_score = float(status_data.get("quality_score") or 0.0)
-            logger.info("  처리 완료 → status=%s, quality_score=%.2f", status, quality_score)
+            logger.info("  처리 완료 → status=%s", status)
 
-            # 3. 메타데이터 수집
+            # 3. 메타데이터 수집 (quality_score도 /details에서 가져옴)
             meta = await fetch_metadata(base_url, doc_id)
+            quality_score = meta.get("quality_score", 0.0)
             logger.info(
-                "  메타데이터 → title=%s, category=%s, tags=%d개",
-                meta["title"], meta["category"], len(meta["tags"]),
+                "  메타데이터 → title=%s, category=%s, tags=%d개, quality_score=%.2f",
+                meta["title"], meta["category"], len(meta["tags"]), quality_score,
             )
 
             results.append(build_output_entry(

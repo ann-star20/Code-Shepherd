@@ -235,9 +235,14 @@ def _fallback_metadata() -> "DocumentMetadata":
     }
 
 
-def _extract_h1_title(markdown: str) -> str | None:
-    """markdown에서 첫 번째 H1(# 제목)을 추출한다. 없으면 None."""
-    for line in markdown.splitlines():
+def _extract_h1_title(markdown: str, max_lines: int = 10) -> str | None:
+    """markdown에서 첫 번째 H1(# 제목)을 추출한다.
+
+    max_lines 이내에 H1이 없으면 None을 반환한다.
+    DOCX/PDF 변환 마크다운은 문서 제목이 일반 텍스트로 오고 챕터 헤딩이 H1으로
+    나오는 경우가 있어서, 초반부에서만 H1을 탐색한다.
+    """
+    for line in markdown.splitlines()[:max_lines]:
         stripped = line.strip()
         if stripped.startswith("# ") or stripped == "#":
             title = stripped.lstrip("#").strip()
