@@ -13,7 +13,8 @@ import hashlib
 import math
 import re
 
-DIM = 768
+DIM = 1024
+# DIM = 768
 
 
 def _tokenize(text: str) -> list[str]:

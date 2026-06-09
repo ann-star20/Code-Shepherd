@@ -5,7 +5,7 @@ psycopg2: 상태/로그 기록 (동기), asyncpg: 데이터 적재 (비동기).
 
 환경 플래그:
   USE_REAL_LLM=true         Gemini API 호출. false(기본) → llm_response.json MockClient
-  USE_REAL_EMBEDDING=true   실 임베딩 API. false(기본) → MockEmbeddingService (768-dim BoW)
+  USE_REAL_EMBEDDING=true   실 임베딩 API. false(기본) → MockEmbeddingService (1024/768-dim BoW)
 """
 
 import asyncio
@@ -130,14 +130,14 @@ async def _save_infer_scores(
     results: list,
     db_pool: object,
 ) -> None:
-    """staging_concepts에 infer_action/infer_score/target_concept_name 업데이트.
+    """staging_concepts에 infer_action/infer_confidence/target_concept_name 업데이트.
 
     mock/production 모드 모두 동일 로직. 환경 플래그에 무관하다.
     """
     for concept, result in zip(concepts, results):
         await db_pool.execute(
             """UPDATE staging_concepts
-               SET infer_action = $1, infer_score = $2, target_concept_name = $3
+               SET infer_action = $1, infer_confidence = $2, target_concept_name = $3
                WHERE session_id = $4::uuid
                AND concept_json->>'concept_name' = $5""",
             result.action.value,
@@ -149,11 +149,10 @@ async def _save_infer_scores(
 
 
 async def _do_extract(session_id: str, doc_id: str, chunks: list[str]) -> None:
-    from app.infrastructure.llm.factory import create_llm_client
+    from app.infrastructure.llm.factory import create_llm_client, create_embedding_client, create_embedding_client
     from app.infrastructure.database.domain_repo import get_registered_domains
     from app.usecases.write_staging_draft import write_staging_draft
     from app.infrastructure.graph.hybrid_resolver import compute_resolve_score
-    from app.infrastructure.llm.mock_embedding import MockEmbeddingService
 
     # USE_REAL_LLM=true → GeminiClient, false(기본) → MockClient (llm_response.json)
     llm_mode = "production" if _USE_REAL_LLM else "development"
@@ -162,7 +161,14 @@ async def _do_extract(session_id: str, doc_id: str, chunks: list[str]) -> None:
         api_key=os.getenv("GEMINI_API_KEY", ""),
         model=os.getenv("GEMINI_MODEL", "gemini-2.5-flash"),
     )
-    embedding_svc = MockEmbeddingService()
+    
+    # USE_REAL_EMBEDDING=true → GeminiEmbeddingService, false(기본) → MockEmbeddingService
+    embedding_mode = "production" if _USE_REAL_EMBEDDING else "development"
+    embedding_svc = create_embedding_client(
+        embedding_mode,
+        api_key=os.getenv("GEMINI_API_KEY", ""),
+        model=os.getenv("EMBEDDING_MODEL", "text-embedding-004"),
+    )
 
     pool = await asyncpg.create_pool(_pg_async_dsn(), min_size=1, max_size=2, ssl=False)
     try:
@@ -231,17 +237,15 @@ async def _do_write_graph(session_id: str) -> dict[str, int]:
     from app.infrastructure.graph.neo4j_service import GraphWriterService
     from app.adapters.db.neo4j_repo import Neo4jConceptRepo
     from app.infrastructure.graph.hybrid_resolver import MergeAction, ResolveResult
+    from app.infrastructure.llm.factory import create_embedding_client
 
-    if _USE_REAL_EMBEDDING:
-        from app.infrastructure.llm.factory import create_llm_client
-        # 실 임베딩 클라이언트가 별도 팩토리로 분리되면 교체 가능
-        # 현재는 MockEmbeddingService를 폴백으로 사용
-        logger.warning("[gw] USE_REAL_EMBEDDING=true이지만 실 임베딩 팩토리 미구현 — MockEmbeddingService 폴백")
-        from app.infrastructure.llm.mock_embedding import MockEmbeddingService
-        embedding_svc = MockEmbeddingService()
-    else:
-        from app.infrastructure.llm.mock_embedding import MockEmbeddingService
-        embedding_svc = MockEmbeddingService()
+    # USE_REAL_EMBEDDING=true → GeminiEmbeddingService, false(기본) → MockEmbeddingService
+    embedding_mode = "production" if _USE_REAL_EMBEDDING else "development"
+    embedding_svc = create_embedding_client(
+        embedding_mode,
+        api_key=os.getenv("GEMINI_API_KEY", ""),
+        model=os.getenv("EMBEDDING_MODEL", "text-embedding-004"),
+    )
 
     neo4j_uri  = os.getenv("NEO4J_URI", "bolt://127.0.0.1:7688")
     neo4j_auth = (os.getenv("NEO4J_USER", "neo4j"), os.getenv("NEO4J_PASSWORD", "pass1234!"))
@@ -254,7 +258,7 @@ async def _do_write_graph(session_id: str) -> dict[str, int]:
         writer = GraphWriterService(pool, driver, repo, embedding_svc)
 
         rows = await pool.fetch(
-            "SELECT id, concept_json, infer_action, infer_score, target_concept_name "
+            "SELECT id, concept_json, infer_action, infer_confidence, target_concept_name "
             "FROM staging_concepts "
             "WHERE session_id=$1::uuid AND state='APPROVED'",
             session_id,
@@ -272,7 +276,7 @@ async def _do_write_graph(session_id: str) -> dict[str, int]:
                     precomputed = ResolveResult(
                         action=MergeAction(infer_action_str),
                         target=row["target_concept_name"],
-                        score=float(row["infer_score"] or 0.0),
+                        score=float(row["infer_confidence"] or 0.0),
                         incoming_name=concept.concept_name,
                     )
                     write_result = await writer.write_with_precomputed(concept, precomputed)

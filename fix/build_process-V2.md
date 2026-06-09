@@ -30,10 +30,8 @@
 
 ## 5. 프론트엔드 비동기 UX 가드 및 렌더링 계약
 * 무거운 로그 콘솔을 소거하고 파이프라인 단계(1~5)별 **스피너 ➔ 체크(✓) 비동기 전환** 및 실시간 `subText` 롤링을 적용합니다.
-* `security_mechanism`의 `code_examples` 배열이 빈 배열(`length === 0`)일 경우 무한 '로딩 중' 스켈레톤을 탈출하고 "코드 예제 미등록" 안내 텍스트를 즉각 표출하는 예외 가드를 인스펙터 패널에 적용합니다.
+* `mechanism`의 `code_examples` 배열이 빈 배열(`length === 0`)일 경우 무한 '로딩 중' 스켈레톤을 탈출하고 "코드 예제 미등록" 안내 텍스트를 즉각 표출하는 예외 가드를 인스펙터 패널에 적용합니다.
 
 ## 6. 스키마 누락 필드 및 RootCause 전개 규칙 보완
 * PostgreSQL `concepts` 테이블에 `is_deprecated BOOLEAN DEFAULT false`와 `root_cause TEXT` 컬럼이 반드시 포함되게 해주세요.
 * Neo4j 적재 시 `root_cause`를 Concept 노드의 속성으로 넣지 마세요. PRD에 명시된 대로 별도의 `(:RootCause)` 노드를 MERGE하고 `[:CAUSED_BY]` 엣지로 조인해야 합니다
-
-위의 지침을 100% 인지하셨다면, 즉시 `usecases/run_pipeline.py`(Link Resolver 포함), `infrastructure/graph/neo4j_service.py`, `infrastructure/llm/mock_client.py` 소스코드를 순서대로 거침없이 출력해 주세요!

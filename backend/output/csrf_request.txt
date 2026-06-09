@@ -25,7 +25,7 @@
   "aliases"  →  Link Resolver가 aliases 교집합으로 (c1)-[:SAME_AS]-(c2) 생성
       → 공식 명칭·약어·별칭 모두 포함 (SAME_AS 탐색 정확도 결정)
 
-  "security_mechanism"  →  MERGE (m:SecurityMechanism {name: each})
+  "mechanism"  →  MERGE (m:SecurityMechanism {name: each})
       (c)-[:MITIGATED_BY]->(m)
       → 재사용 가능한 표준 명칭 (예: "CSRFToken", "SameSiteCookie", "RateLimit")
 
@@ -55,10 +55,10 @@
   "description_ko": str  — 한국어 설명 (1~3문장)
 
 선택:
-  "concept_type": "vulnerability_root_cause"|"security_mechanism"|"attack_vector"|"compliance_control"
+  "concept_type": "vulnerability_root_cause"|"mechanism"|"attack_vector"|"compliance_control"
   "cwe_id": str,  "owasp_id": str
   "aliases": list[str]
-  "security_mechanism": list[str]
+  "mechanism": list[str]
   "affected_components": list[str]
   "config_properties": list[{"key": str, "value": str}]
   "root_cause": str

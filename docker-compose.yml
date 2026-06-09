@@ -43,6 +43,7 @@ services:
       interval: 5s
       timeout: 5s
       retries: 10
+    
 
   redis:
     image: redis:7-alpine
@@ -76,6 +77,8 @@ services:
       CELERY_RESULT_BACKEND: redis://redis:6379/1
       APP_MODE: ${APP_MODE:-development}
       GEMINI_API_KEY: ${GEMINI_API_KEY:-}
+    env_file:
+      - .env
     depends_on:
       postgres:
         condition: service_healthy
@@ -102,6 +105,8 @@ services:
       CELERY_RESULT_BACKEND: redis://redis:6379/1
       APP_MODE: ${APP_MODE:-mock}
       GEMINI_API_KEY: ${GEMINI_API_KEY:-}
+    env_file:
+      - .env
     depends_on:
       postgres:
         condition: service_healthy

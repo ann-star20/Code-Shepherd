@@ -64,7 +64,7 @@ async def _event_stream(
     - documents.state: 변이 감지 시 event: step_update 발행
     - COMMITTED/FAILED 상태 도달 시 스트림 종료
     """
-    last_ts: Optional[str] = None
+    last_ts: Optional[object] = None
     last_state: Optional[str] = None
     heartbeat_tick = 0
 
@@ -94,7 +94,7 @@ async def _event_stream(
             for row in rows:
                 msg = f"[{row['agent']}] {row['message']}"
                 yield _format_sse({"type": "log", "message": msg})
-                last_ts = str(row["created_at"])
+                last_ts = row["created_at"]
 
             # ── 문서 상태 변이 감지 ────────────────────────────────────────
             doc_row = await conn.fetchrow(

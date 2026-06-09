@@ -29,3 +29,20 @@ docker compose down -v && docker compose up
 
 # 초기화용 JSON 데이터로 기존 데이터를 덮어쓰기
 docker compose exec backend python scripts/seed_postgres.py && docker compose exec backend python scripts/seed_neo4j.py
+
+
+# DB 리셋 (원하는 경우)
+docker compose exec postgres psql -U postgres -c "UPDATE documents SET state='PENDING' WHERE doc_id='EXT_https---docs-nestjs-com-security-csrf_4a05f756'"
+<!-- docker compose exec postgres psql -U postgres -c "UPDATE documents SET state='PENDING' WHERE doc_id='EXT_https---docs-djangoproject-com-en-6-0-topics-security_32450f22'" -->
+https://docs.nestjs.com/security/csrf
+
+
+# 1. Neo4j 볼륨 내 오염된 데이터 및 인덱스 잔재 영구 격리 삭제 후 재가동
+docker compose down -v
+docker compose up -d --build
+
+# 2. 인프라가 안정화될 때까지 5초 대기 후 마이그레이션 스크립트 재실행
+sleep 5
+docker compose exec backend python scripts/seed_postgres.py && docker compose exec backend python scripts/seed_neo4j.py
+
+ docker-compose logs -f -t

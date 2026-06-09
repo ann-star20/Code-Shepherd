@@ -2,13 +2,11 @@
 
 태스크별로 필요한 PRD 파일만 로드한다.
 PRD 전체를 한 번에 로드하지 않는다.
--  4-레이어 지식 그래프 수렴 자동화 파이프라인 전사 빌드 세션 : fix/build_process.md
 | 태스크 유형 | 로드할 파일 |
 |------------|------------|
-| 도메인 모델·유즈케이스 | PRD-domain-V2.md |
-| DB 스키마·Cypher | PRD-schema-V2.md |
-| 테스트 작성 | PRD-qa.md |
-| 인프라·Docker | PRD-infra-V2.md |
+| 도메인 모델·유즈케이스 | PRD-domain-V3.md |
+| DB 스키마·Cypher | PRD-schema-V3.md |
+| 인프라·Docker | PRD-infra-V3.md |
 | 폴더·아키텍처 확인 | PRD-arch.md |
 
 ## 8. 개발 순서 (Development Phases)
