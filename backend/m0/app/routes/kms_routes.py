@@ -211,6 +211,10 @@ async def upload_document(
     background_tasks: BackgroundTasks,
     file: UploadFile = File(...),
     source: str = Form(default="upload"),
+    department_id: str | None = Form(default=None),
+    user_id: str | None = Form(default=None),
+    permission_level: str = Form(default="public"),
+    visibility: str = Form(default="all"),
 ) -> UploadResponse:
     """
     문서를 업로드하고 KMS 파이프라인을 실행한다.
@@ -276,7 +280,13 @@ async def upload_document(
         tmp.write(content)
         tmp_path = tmp.name
 
-    initial_state = _build_initial_state(doc_id, source, tmp_path, ext, filename)
+    initial_state = _build_initial_state(
+        doc_id, source, tmp_path, ext, filename,
+        department_id=department_id,
+        user_id=user_id,
+        permission_level=permission_level,
+        visibility=visibility,
+    )
     background_tasks.add_task(_run_pipeline_background, initial_state)
 
     return UploadResponse(
@@ -294,6 +304,10 @@ def _build_initial_state(
     tmp_path: str,
     ext: str,
     filename: str,
+    department_id: str | None = None,
+    user_id: str | None = None,
+    permission_level: str = "public",
+    visibility: str = "all",
 ) -> DocPipelineState:
     return {
         "doc_id": doc_id,
@@ -333,6 +347,10 @@ def _build_initial_state(
         "status": "processing",
         "error": None,
         "current_stage": "init",
+        "department_id": department_id,
+        "user_id": user_id,
+        "permission_level": permission_level,
+        "visibility": visibility,
     }
 
 

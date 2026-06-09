@@ -130,6 +130,12 @@ class DocPipelineState(TypedDict):
     neo4j_stored: Optional[bool]        # None=미실행, True=성공, False=실패(stored_partial)
     storage_paths: Optional[StoragePaths]
 
+    # RBAC 권한 메타데이터 (업로드 시 선택적으로 전달 — 없으면 Stage 6에서 기본값 적용)
+    department_id: Optional[str]
+    user_id: Optional[str]
+    permission_level: Optional[str]     # 'public' | 'team' | 'private'
+    visibility: Optional[str]           # 'all' | 'department' | 'owner'
+
     # 파이프라인 제어
     status: str                         # "processing|validated|stored|stored_partial|failed|hitl_pending"
     error: Optional[str]

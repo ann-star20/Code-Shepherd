@@ -161,13 +161,15 @@ async def _save_document(
                 file_path, markdown_path, storage_synced,
                 neo4j_synced, upload_status, created_at,
                 parser_used, doc_complexity, parsing_time_ms, original_filename,
-                quality_score
+                quality_score,
+                department_id, user_id, permission_level, visibility
             )
             VALUES (
                 :doc_id, :title, :source, :category, :file_type,
                 :file_path, :markdown_path, TRUE, FALSE, 'processing', NOW(),
                 :parser_used, :doc_complexity, :parsing_time_ms, :original_filename,
-                :quality_score
+                :quality_score,
+                :department_id, :user_id, :permission_level, :visibility
             )
             ON CONFLICT (doc_id) DO UPDATE SET
                 title             = EXCLUDED.title,
@@ -182,7 +184,11 @@ async def _save_document(
                 doc_complexity    = COALESCE(EXCLUDED.doc_complexity, documents.doc_complexity),
                 parsing_time_ms   = COALESCE(EXCLUDED.parsing_time_ms, documents.parsing_time_ms),
                 original_filename = COALESCE(EXCLUDED.original_filename, documents.original_filename),
-                quality_score     = COALESCE(EXCLUDED.quality_score, documents.quality_score)
+                quality_score     = COALESCE(EXCLUDED.quality_score, documents.quality_score),
+                department_id     = COALESCE(EXCLUDED.department_id, documents.department_id),
+                user_id           = COALESCE(EXCLUDED.user_id, documents.user_id),
+                permission_level  = EXCLUDED.permission_level,
+                visibility        = EXCLUDED.visibility
         """),
         {
             "doc_id": str(state["doc_id"]),
@@ -197,6 +203,10 @@ async def _save_document(
             "parsing_time_ms": state.get("parsing_time_ms"),
             "original_filename": state.get("original_filename"),
             "quality_score": state.get("quality_score"),
+            "department_id": state.get("department_id"),
+            "user_id": state.get("user_id"),
+            "permission_level": state.get("permission_level") or "public",
+            "visibility": state.get("visibility") or "all",
         },
     )
 
@@ -205,6 +215,8 @@ async def _save_chunks(
     session: AsyncSession,
     chunks: list[dict],
     doc_id: str,
+    department_id: str | None = None,
+    permission_level: str = "public",
 ) -> None:
     if not chunks:
         return
@@ -219,6 +231,8 @@ async def _save_chunks(
             "page_number": chunk.get("page_number"),
             "section_header": chunk.get("section_header"),
             "chunk_index": chunk.get("chunk_index"),
+            "department_id": department_id,
+            "permission_level": permission_level,
         }
         for chunk in chunks
     ]
@@ -226,10 +240,12 @@ async def _save_chunks(
         text("""
             INSERT INTO chunks
                 (chunk_id, doc_id, parent_chunk_id, chunk_type, content,
-                 token_count, page_number, section_header, chunk_index)
+                 token_count, page_number, section_header, chunk_index,
+                 department_id, permission_level)
             VALUES
                 (:chunk_id, :doc_id, :parent_chunk_id, :chunk_type, :content,
-                 :token_count, :page_number, :section_header, :chunk_index)
+                 :token_count, :page_number, :section_header, :chunk_index,
+                 :department_id, :permission_level)
             ON CONFLICT (chunk_id) DO NOTHING
         """),
         rows,
@@ -494,7 +510,11 @@ async def stage6_store(
         async with db_session_factory() as session:
             async with session.begin():
                 await _save_document(session, state, markdown_path, original_path)
-                await _save_chunks(session, chunks, doc_id)
+                await _save_chunks(
+                    session, chunks, doc_id,
+                    department_id=state.get("department_id"),
+                    permission_level=state.get("permission_level") or "public",
+                )
                 await _insert_embedding_rows(session, embedding_rows, metadata, embed_model, doc_id=doc_id)
     except Exception as e:
         logger.error(f"PostgreSQL 저장 실패: {e}", extra={"doc_id": doc_id})
