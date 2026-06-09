@@ -160,12 +160,14 @@ async def _save_document(
                 doc_id, title, source, category, file_type,
                 file_path, markdown_path, storage_synced,
                 neo4j_synced, upload_status, created_at,
-                parser_used, doc_complexity, parsing_time_ms, original_filename
+                parser_used, doc_complexity, parsing_time_ms, original_filename,
+                quality_score
             )
             VALUES (
                 :doc_id, :title, :source, :category, :file_type,
                 :file_path, :markdown_path, TRUE, FALSE, 'processing', NOW(),
-                :parser_used, :doc_complexity, :parsing_time_ms, :original_filename
+                :parser_used, :doc_complexity, :parsing_time_ms, :original_filename,
+                :quality_score
             )
             ON CONFLICT (doc_id) DO UPDATE SET
                 title             = EXCLUDED.title,
@@ -179,7 +181,8 @@ async def _save_document(
                 parser_used       = COALESCE(EXCLUDED.parser_used, documents.parser_used),
                 doc_complexity    = COALESCE(EXCLUDED.doc_complexity, documents.doc_complexity),
                 parsing_time_ms   = COALESCE(EXCLUDED.parsing_time_ms, documents.parsing_time_ms),
-                original_filename = COALESCE(EXCLUDED.original_filename, documents.original_filename)
+                original_filename = COALESCE(EXCLUDED.original_filename, documents.original_filename),
+                quality_score     = COALESCE(EXCLUDED.quality_score, documents.quality_score)
         """),
         {
             "doc_id": str(state["doc_id"]),
@@ -193,6 +196,7 @@ async def _save_document(
             "doc_complexity": state.get("doc_complexity"),
             "parsing_time_ms": state.get("parsing_time_ms"),
             "original_filename": state.get("original_filename"),
+            "quality_score": state.get("quality_score"),
         },
     )
 

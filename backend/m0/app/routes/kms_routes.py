@@ -163,6 +163,18 @@ class KmsStatsResponse(BaseModel):
     stage_stats: list[StageStatItem]
 
 
+class EntityItem(BaseModel):
+    name: str
+    type: str | None = None
+    description: str | None = None
+
+
+class DocEntitiesResponse(BaseModel):
+    doc_id: str
+    entities: list[EntityItem]
+    total: int
+
+
 # ---------------------------------------------------------------------------
 # 의존성 — main.py lifespan에서 주입
 # ---------------------------------------------------------------------------
@@ -348,14 +360,15 @@ async def _update_document_status(
 ) -> None:
     session_factory = _get_session_factory()
     async with session_factory() as session:
-        if state and any(state.get(k) for k in ("parser_used", "doc_complexity", "parsing_time_ms")):
+        if state and any(state.get(k) for k in ("parser_used", "doc_complexity", "parsing_time_ms", "quality_score")):
             await session.execute(
                 text("""
                     UPDATE documents
                     SET upload_status   = :status,
                         parser_used     = COALESCE(:parser_used, parser_used),
                         doc_complexity  = COALESCE(:doc_complexity, doc_complexity),
-                        parsing_time_ms = COALESCE(:parsing_time_ms, parsing_time_ms)
+                        parsing_time_ms = COALESCE(:parsing_time_ms, parsing_time_ms),
+                        quality_score   = COALESCE(:quality_score, quality_score)
                     WHERE doc_id = :doc_id
                 """),
                 {
@@ -363,6 +376,7 @@ async def _update_document_status(
                     "parser_used": state.get("parser_used"),
                     "doc_complexity": state.get("doc_complexity"),
                     "parsing_time_ms": state.get("parsing_time_ms"),
+                    "quality_score": state.get("quality_score"),
                     "doc_id": doc_id,
                 },
             )
@@ -682,7 +696,7 @@ async def get_doc_details(doc_id: str) -> DocDetailsResponse:
         doc_result = await session.execute(
             text("""
                 SELECT title, file_type, upload_status, created_at,
-                       parser_used, doc_complexity, parsing_time_ms
+                       parser_used, quality_score, doc_complexity, parsing_time_ms
                 FROM documents WHERE doc_id = :doc_id
             """),
             {"doc_id": doc_id},
@@ -751,7 +765,7 @@ async def get_doc_details(doc_id: str) -> DocDetailsResponse:
         status=doc_row["upload_status"],
         created_at=doc_row["created_at"].isoformat() if doc_row["created_at"] else None,
         parser_used=doc_row["parser_used"],
-        quality_score=None,
+        quality_score=doc_row["quality_score"],
         doc_complexity=doc_row["doc_complexity"],
         parsing_time_ms=doc_row["parsing_time_ms"],
         agent_traces=traces,
@@ -809,6 +823,58 @@ async def get_kms_stats() -> KmsStatsResponse:
         success_rate=rate,
         stage_stats=stage_stats,
     )
+
+
+_NEO4J_URI = os.getenv("NEO4J_URI", "bolt://localhost:7687")
+_NEO4J_USER = os.getenv("NEO4J_USER", "neo4j")
+_NEO4J_PASSWORD = os.getenv("NEO4J_PASSWORD", "password")
+
+_CYPHER_DOC_ENTITIES = """\
+MATCH (d:Document {doc_id: $doc_id})-[:COVERS]->(e:Entity)
+RETURN e.name AS name, e.type AS type, e.description AS description"""
+
+
+async def _run_neo4j_cypher(cypher: str, params: dict | None = None) -> list[dict]:
+    try:
+        from neo4j import AsyncGraphDatabase
+    except ImportError:
+        logger.warning("neo4j 패키지 미설치 — Neo4j 조회 건너뜁니다.")
+        return []
+
+    driver = AsyncGraphDatabase.driver(_NEO4J_URI, auth=(_NEO4J_USER, _NEO4J_PASSWORD))
+    try:
+        async with driver.session() as session:
+            result = await session.run(cypher, parameters=params or {})
+            return [dict(record) async for record in result]
+    finally:
+        await driver.close()
+
+
+@router.get("/docs/{doc_id}/entities", response_model=DocEntitiesResponse)
+async def get_doc_entities(doc_id: str) -> DocEntitiesResponse:
+    """Stage 6에서 Neo4j에 저장된 문서 엔티티 목록을 반환한다."""
+    try:
+        UUID(doc_id)
+    except ValueError:
+        raise HTTPException(status_code=422, detail=f"유효하지 않은 doc_id 형식: {doc_id}")
+
+    try:
+        records = await _run_neo4j_cypher(_CYPHER_DOC_ENTITIES, {"doc_id": doc_id})
+    except Exception as e:
+        logger.warning(f"Neo4j 엔티티 조회 실패 doc_id={doc_id}: {e}")
+        records = []
+
+    entities = [
+        EntityItem(
+            name=r["name"],
+            type=r.get("type"),
+            description=r.get("description"),
+        )
+        for r in records
+        if r.get("name")
+    ]
+
+    return DocEntitiesResponse(doc_id=doc_id, entities=entities, total=len(entities))
 
 
 async def _embed_query(query_text: str) -> list[float]:
