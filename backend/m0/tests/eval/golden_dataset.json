@@ -1,0 +1,256 @@
+{
+  "version": "1.0",
+  "created_at": "2025-06-08",
+  "description": "KMS 파이프라인 평가용 Golden Dataset — 15개 문서의 기대 메타데이터",
+  "evaluation_criteria": {
+    "title_match": "exact 또는 normalized (공백/대소문자 무시)",
+    "category_match": "exact (VALID_CATEGORIES 목록 기준)",
+    "tags_recall": "정답 태그 중 파이프라인이 추출한 비율 (목표: ≥ 0.7)",
+    "tags_precision": "파이프라인 추출 태그 중 정답인 비율 (목표: ≥ 0.5)",
+    "entities_recall": "정답 엔티티 중 추출된 비율 (목표: ≥ 0.6)"
+  },
+  "documents": [
+    {
+      "id": "md_01",
+      "file": "documents/md/md_01_tech_intro.md",
+      "file_type": "md",
+      "expected": {
+        "title": "대규모 언어 모델(LLM) 기술 개요",
+        "category": "AI_ML",
+        "tags": ["LLM", "트랜스포머", "Attention", "RLHF", "GPT", "Claude", "Gemini", "자연어처리", "NLP", "사전학습"],
+        "entities": {
+          "technology": ["Self-Attention", "Multi-Head Attention", "RLHF", "PPO", "트랜스포머"],
+          "product": ["GPT-4", "Claude 3 Opus", "Gemini Ultra", "LLaMA 3", "GitHub Copilot"],
+          "concept": ["환각", "컨텍스트 길이", "양자화", "지식 증류"]
+        },
+        "summary_keywords": ["파라미터", "next token prediction", "temperature", "HHH"]
+      }
+    },
+    {
+      "id": "md_02",
+      "file": "documents/md/md_02_onboarding_guide.md",
+      "file_type": "md",
+      "expected": {
+        "title": "신입 개발자 온보딩 가이드",
+        "category": "HR_EDUCATION",
+        "tags": ["온보딩", "개발환경", "Git", "Docker", "코드컨벤션", "신입개발자", "환경설정"],
+        "entities": {
+          "tool": ["Homebrew", "nvm", "pyenv", "VS Code", "ESLint", "Prettier", "GitLens", "Docker"],
+          "concept": ["브랜치 전략", "커밋 메시지", "PR", "코드 리뷰"],
+          "role": ["팀장", "DevOps", "HR"]
+        },
+        "summary_keywords": ["환경변수", ".env", "feature/*", "good first issue"]
+      }
+    },
+    {
+      "id": "md_03",
+      "file": "documents/md/md_03_api_reference.md",
+      "file_type": "md",
+      "expected": {
+        "title": "REST API 레퍼런스",
+        "category": "DEVELOPMENT",
+        "tags": ["API", "REST", "JWT", "인증", "문서관리", "검색", "웹훅", "페이지네이션"],
+        "entities": {
+          "technology": ["JWT", "Bearer Token", "HMAC-SHA256", "multipart/form-data"],
+          "endpoint": ["/documents", "/search", "/auth/token"],
+          "concept": ["Rate Limiting", "웹훅", "페이지네이션"]
+        },
+        "summary_keywords": ["202 Accepted", "429", "top_k", "vector similarity"]
+      }
+    },
+    {
+      "id": "md_04",
+      "file": "documents/md/md_04_security_policy.md",
+      "file_type": "md",
+      "expected": {
+        "title": "정보보안 정책",
+        "category": "SECURITY_COMPLIANCE",
+        "tags": ["보안정책", "접근통제", "MFA", "암호화", "개인정보", "ISMS-P", "사고대응"],
+        "entities": {
+          "standard": ["ISMS-P", "AES-256-GCM", "TLS 1.3", "HMAC-SHA256"],
+          "tool": ["Qualys", "Tenable", "SonarQube", "Snyk", "Cloudflare"],
+          "concept": ["최소 권한 원칙", "MFA", "WAF", "DDoS", "CSIRT"]
+        },
+        "summary_keywords": ["bcrypt", "mTLS", "CVE", "72시간", "개인정보보호위원회"]
+      }
+    },
+    {
+      "id": "md_05",
+      "file": "documents/md/md_05_project_retrospective.md",
+      "file_type": "md",
+      "expected": {
+        "title": "Q1 2025 프로젝트 회고 — KMS 플랫폼 개발",
+        "category": "PROJECT_MANAGEMENT",
+        "tags": ["회고", "KPT", "KMS", "TDD", "스프린트", "프로젝트관리", "애자일"],
+        "entities": {
+          "methodology": ["TDD", "Contract First", "KPT", "Daily Standup", "ADR"],
+          "tool": ["Docker", "OpenAPI"],
+          "metric": ["테스트 커버리지 82%", "Precision@5 0.87", "평균 38초"]
+        },
+        "summary_keywords": ["일정 준수율", "버그 재오픈율", "Range condition", "비동기 처리"]
+      }
+    },
+    {
+      "id": "md_06",
+      "file": "documents/md/md_06_rag_system_design.md",
+      "file_type": "md",
+      "expected": {
+        "title": "RAG 시스템 설계 문서",
+        "category": "AI_ML",
+        "tags": ["RAG", "벡터검색", "하이브리드검색", "임베딩", "pgvector", "BM25", "리랭킹", "HyDE"],
+        "entities": {
+          "technology": ["pgvector", "BM25", "HNSW", "RRF", "HyDE", "Cross-Encoder", "asyncio"],
+          "concept": ["Parent-Child 청킹", "시맨틱 검색", "컨텍스트 윈도우", "Retrieval Recall"],
+          "model": ["bge-m3", "Claude Sonnet 4.6", "Gemini 2.5 Flash"]
+        },
+        "summary_keywords": ["Reciprocal Rank Fusion", "Semantic Gap", "LRU", "Redis"]
+      }
+    },
+    {
+      "id": "md_07",
+      "file": "documents/md/md_07_ml_ops_guide.md",
+      "file_type": "md",
+      "expected": {
+        "title": "MLOps 운영 가이드",
+        "category": "AI_ML",
+        "tags": ["MLOps", "MLflow", "모델배포", "카나리배포", "모델모니터링", "Feature Store", "데이터드리프트"],
+        "entities": {
+          "tool": ["MLflow", "Feast", "DVC", "Evidently", "Argo Workflows", "Argo Rollouts", "SageMaker"],
+          "technology": ["Kubernetes", "HNSW", "Differential Privacy"],
+          "concept": ["카나리 배포", "데이터 드리프트", "모델 레지스트리", "Feature Store"]
+        },
+        "summary_keywords": ["Staging", "Production", "Archived", "OOM", "GPU 활용률"]
+      }
+    },
+    {
+      "id": "md_08",
+      "file": "documents/md/md_08_incident_report.md",
+      "file_type": "md",
+      "expected": {
+        "title": "장애 보고서 — 검색 서비스 응답 지연",
+        "category": "OPERATION",
+        "tags": ["장애보고서", "인시던트", "pgvector", "HNSW인덱스", "P1", "포스트모텀"],
+        "entities": {
+          "technology": ["pgvector", "HNSW", "PostgreSQL", "seq scan", "alembic"],
+          "tool": ["PagerDuty", "Grafana", "Prometheus"],
+          "concept": ["P95 응답 시간", "CONCURRENTLY", "Blameless 문화", "SLA"]
+        },
+        "summary_keywords": ["INC-2025-0423", "2시간 16분", "5배", "인덱스 누락"]
+      }
+    },
+    {
+      "id": "md_09",
+      "file": "documents/md/md_09_data_governance.md",
+      "file_type": "md",
+      "expected": {
+        "title": "데이터 거버넌스 정책",
+        "category": "SECURITY_COMPLIANCE",
+        "tags": ["데이터거버넌스", "개인정보", "데이터카탈로그", "데이터품질", "데이터계보", "컴플라이언스"],
+        "entities": {
+          "role": ["CDO", "데이터 스튜어드", "CPO", "CISO"],
+          "tool": ["Apache Atlas", "Great Expectations", "Feast"],
+          "standard": ["개인정보보호법", "ISMS-P", "신용정보법"],
+          "concept": ["차분 프라이버시", "가명처리", "데이터 계보", "DGC"]
+        },
+        "summary_keywords": ["PII", "Completeness", "Timeliness", "Lineage", "90일"]
+      }
+    },
+    {
+      "id": "md_10",
+      "file": "documents/md/md_10_code_review_guide.md",
+      "file_type": "md",
+      "expected": {
+        "title": "코드 리뷰 가이드라인",
+        "category": "DEVELOPMENT",
+        "tags": ["코드리뷰", "PR", "개발문화", "Conventional Comments", "품질관리", "보안리뷰"],
+        "entities": {
+          "concept": ["Conventional Comments", "SRP", "DRY", "N+1 쿼리", "race condition"],
+          "methodology": ["Hotfix", "blocking", "nit", "suggestion"],
+          "process": ["리뷰 응답 시간", "PR 크기 제한", "체크리스트"]
+        },
+        "summary_keywords": ["400줄", "[blocking]", "[nit]", "SQL Injection", "XSS"]
+      }
+    },
+    {
+      "id": "pdf_01",
+      "file": "documents/pdf/pdf_01_text.pdf",
+      "file_type": "pdf",
+      "expected": {
+        "title": "학생에서 개발자로: DB, 보안부터 AI까지, 정답보다 합리적인 선택을 배우다",
+        "category": "HR_EDUCATION",
+        "tags": ["개발자", "커리어", "DB", "보안", "AI", "취업", "성장", "기술선택"],
+        "entities": {
+          "concept": ["정답보다 합리적인 선택", "기술 스택", "커리어 전환"],
+          "technology": ["DB", "보안", "AI"],
+          "organization": ["카카오"]
+        },
+        "note": "kakao tech 블로그 — 학생 개발자 커리어 성장 관련 텍스트 중심 PDF"
+      }
+    },
+    {
+      "id": "pdf_02",
+      "file": "documents/pdf/pdf_02_table.pdf",
+      "file_type": "pdf",
+      "expected": {
+        "title": "업무 효율성 향상을 위한 인사혁신처 인공지능(AI) 활용 가이드",
+        "category": "AI_ML",
+        "tags": ["AI", "인공지능", "생성형AI", "프롬프트엔지니어링", "ChatGPT", "Claude", "활용가이드", "환각", "자연어처리"],
+        "entities": {
+          "technology": ["ChatGPT", "Claude", "GPT-4o", "Sora", "DALL-E", "Midjourney", "Bixby", "Siri"],
+          "concept": ["환각", "Hallucination", "프롬프트 엔지니어링", "생성형 AI", "자율주행", "자연어 처리"],
+          "organization": ["인사혁신처", "OpenAI", "Anthropic", "Google", "Microsoft"]
+        },
+        "note": "인사혁신처 발간 AI 활용 가이드 — 생성형AI 개념, 프롬프트 작성, ChatGPT vs Claude 비교 포함"
+      }
+    },
+    {
+      "id": "pdf_03",
+      "file": "documents/pdf/pdf_03_complex.pdf",
+      "file_type": "pdf",
+      "expected": {
+        "title": "좋은 검색을 판단하는 지표, SQM",
+        "category": "AI_ML",
+        "tags": ["SQM", "검색품질", "검색지표", "사용자의도", "세션만족도", "검색엔진", "네이버", "오프라인평가"],
+        "entities": {
+          "technology": ["SQM"],
+          "concept": ["검색품질지표", "세션만족도", "사용자 의도", "탐색 의도", "오프라인 평가"],
+          "organization": ["네이버"]
+        },
+        "note": "네이버 검색 품질 지표 SQM 발표 자료 — 이미지/표 복합 구조 PDF"
+      }
+    },
+    {
+      "id": "docx_02",
+      "file": "documents/docx/docx_02_policy.docx",
+      "file_type": "docx",
+      "expected": {
+        "title": "재혁회사 취업규칙",
+        "category": "HR_EDUCATION",
+        "tags": ["취업규칙", "근로조건", "휴가", "복무", "임금", "징계", "퇴직", "HR", "채용"],
+        "entities": {
+          "concept": ["수습 기간", "연차휴가", "연장근로", "재택근무", "성과 평가", "병가"],
+          "role": ["관리자", "팀장", "파트장", "구성원"],
+          "process": ["채용 절차", "경조휴가", "휴직", "임금 지급"]
+        },
+        "note": "RAG 챗봇 시연용 취업규칙 샘플 문서 — HR 정책 전반 포함"
+      }
+    },
+    {
+      "id": "pptx_01",
+      "file": "documents/pptx/pptx_01_presentation.pptx",
+      "file_type": "pptx",
+      "expected": {
+        "title": "AI가 이해하는 조직 지식 플랫폼 — Knowledge Management System",
+        "category": "AI_ML",
+        "tags": ["KMS", "LangGraph", "AI Agent", "지식관리", "RAG", "파이프라인", "벡터DB", "아키텍처", "멀티스토리지"],
+        "entities": {
+          "technology": ["LangGraph", "StateGraph", "pgVector", "Neo4j", "GCS", "bge-m3"],
+          "concept": ["KMS", "AI Agent", "지식 저장소", "비정형 문서", "Parent-Child 청킹"],
+          "service": ["Code Review Agent", "Curriculum Agent"],
+          "organization": ["Team Code Shepherd", "LG헬로비전 DX School"]
+        },
+        "note": "3차 프로젝트 최종 발표 자료 — KMS 플랫폼 전체 아키텍처 및 파이프라인 설명"
+      }
+    }
+  ]
+}
