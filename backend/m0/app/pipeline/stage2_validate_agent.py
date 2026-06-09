@@ -33,7 +33,14 @@ from app.pipeline.stage1_document_parser_agent import (
 )
 
 QUALITY_THRESHOLD = float(os.getenv("MARKDOWN_QUALITY_THRESHOLD", "0.8"))
+_QUALITY_THRESHOLD_PDF = float(os.getenv("MARKDOWN_QUALITY_THRESHOLD_PDF", "0.65"))
 STAGE2_MAX_FIX_ATTEMPTS = int(os.getenv("STAGE2_MAX_FIX_ATTEMPTS", "2"))
+
+
+def _get_quality_threshold(file_type: str) -> float:
+    if file_type == "pdf":
+        return _QUALITY_THRESHOLD_PDF
+    return QUALITY_THRESHOLD
 
 _SYSTEM_PROMPT = """\
 당신은 문서 변환 품질 검수 에이전트입니다.
@@ -120,6 +127,8 @@ async def stage2_validate(state: "DocPipelineState") -> dict:
     """
     markdown = state.get("raw_markdown") or ""
     doc_id = state["doc_id"]
+    file_type = state.get("file_type", "")
+    threshold = _get_quality_threshold(file_type)
 
     if not markdown:
         logger.warning("Stage 2: raw_markdown이 비어있음", extra={"doc_id": doc_id})
@@ -136,7 +145,7 @@ async def stage2_validate(state: "DocPipelineState") -> dict:
     last_score, last_issues = 0.0, []
 
     for attempt in range(max_attempts + 1):
-        score, issues, hitl, data = await _evaluate_quality(markdown, doc_id)
+        score, issues, hitl, data = await _evaluate_quality(markdown, doc_id, threshold)
         last_score, last_issues = score, issues
 
         if not hitl:
@@ -257,7 +266,9 @@ async def _apply_targeted_fix(markdown: str, issues: list[str], data: dict) -> s
     return await _gemini_format_correct(markdown)
 
 
-async def _evaluate_quality(markdown: str, doc_id: str) -> tuple[float, list[str], bool, dict]:
+async def _evaluate_quality(
+    markdown: str, doc_id: str, threshold: float = QUALITY_THRESHOLD
+) -> tuple[float, list[str], bool, dict]:
     """
     Gemini로 Markdown 품질 점수를 평가한다.
     반환: (score, issues, hitl_required, data)
@@ -292,9 +303,9 @@ async def _evaluate_quality(markdown: str, doc_id: str) -> tuple[float, list[str
     score: float = float(data.get("score", 0.0))
     issues: list[str] = data.get("issues", [])
 
-    # 구조 손실이 감지되거나 점수 미달이면 HITL
+    # 구조 손실은 issues에 기록만 함 — HITL 결정은 score 기준만 사용
     structure_loss = data.get("structure_loss", False) or data.get("table_loss", False)
-    hitl_required = score < QUALITY_THRESHOLD or structure_loss
+    hitl_required = score < threshold
 
     if structure_loss:
         issues.insert(0, "표/이미지 구조 손실 감지")
