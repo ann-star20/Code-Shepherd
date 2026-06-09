@@ -192,6 +192,20 @@ class Neo4jConceptRepo:
                         labels=new_labels,
                     )
 
+    # ─── MERGE 수렴 후 Mechanism 보강 ────────────────────────────────────────
+
+    async def merge_mechanisms(
+        self,
+        concept: ConceptExtractionSchema,
+        master_name: str,
+    ) -> None:
+        """MERGE 분기: 기존 master 노드에 신규 Mechanism/CodeExample만 추가.
+
+        Concept 노드 재생성·속성 덮어쓰기 없이 Layer 3/4만 병합한다.
+        """
+        async with self._driver.session() as session:
+            await session.execute_write(_write_mechanisms_only_tx, concept, master_name)
+
     # ─── 연쇄 삭제 ────────────────────────────────────────────────────────────
 
     async def delete_concept(self, name: str) -> None:
@@ -430,13 +444,14 @@ async def _write_concept_tx(
         )
 
     # ── Layer 3: Mechanism → MITIGATED_BY / Layer 4: CodeExample → HAS_EXAMPLE
+    # MATCH (c) 선행 후 MERGE (m) / MERGE (c)-[]->(m) 패턴 사용:
+    # WITH...MATCH 역순 패턴은 MATCH가 0행 반환 시 관계 생성이 누락됨.
     for mech in concept.mechanisms:
         await tx.run(
             """
+            MATCH (c:Concept {name: $concept_name})
             MERGE (m:Mechanism {name: $mech_name})
             ON CREATE SET m.created_at = timestamp()
-            WITH m
-            MATCH (c:Concept {name: $concept_name})
             MERGE (c)-[:MITIGATED_BY]->(m)
             """,
             mech_name=mech.mechanism_name,
@@ -452,6 +467,7 @@ async def _write_concept_tx(
             )
             await tx.run(
                 """
+                MATCH (m:Mechanism {name: $mech_name})
                 MERGE (ce:CodeExample {unq_id: $unq_id})
                 ON CREATE SET
                     ce.lang              = $lang,
@@ -461,11 +477,6 @@ async def _write_concept_tx(
                     ce.code              = $code,
                     ce.description       = $description,
                     ce.created_at        = timestamp()
-                ON MATCH SET
-                    ce.code        = $code,
-                    ce.description = $description
-                WITH ce
-                MATCH (m:Mechanism {name: $mech_name})
                 MERGE (m)-[:HAS_EXAMPLE]->(ce)
                 """,
                 unq_id=unq_id,
@@ -480,8 +491,11 @@ async def _write_concept_tx(
 
     # ── Layer 3: Property → TUNED_BY ─────────────────────────────────────────
     for prop in concept.properties:
+        if not prop.key:
+            continue
         await tx.run(
             """
+            MATCH (c:Concept {name: $concept_name})
             MERGE (p:Property {unq_key: $unq_key})
             ON CREATE SET
                 p.value      = $value,
@@ -489,8 +503,6 @@ async def _write_concept_tx(
                 p.created_at = timestamp()
             ON MATCH SET
                 p.value = $value
-            WITH p
-            MATCH (c:Concept {name: $concept_name})
             MERGE (c)-[:TUNED_BY]->(p)
             """,
             unq_key=prop.key,
@@ -504,10 +516,9 @@ async def _write_concept_tx(
         rc_name = _to_snake(concept.root_cause)
         await tx.run(
             """
+            MATCH (c:Concept {name: $concept_name})
             MERGE (r:RootCause {name: $rc_name})
             ON CREATE SET r.created_at = timestamp()
-            WITH r
-            MATCH (c:Concept {name: $concept_name})
             MERGE (c)-[:CAUSED_BY]->(r)
             """,
             rc_name=rc_name,
@@ -519,10 +530,9 @@ async def _write_concept_tx(
         comp_name = _to_snake(comp)
         await tx.run(
             """
+            MATCH (c:Concept {name: $concept_name})
             MERGE (x:Component {name: $comp_name})
             ON CREATE SET x.created_at = timestamp()
-            WITH x
-            MATCH (c:Concept {name: $concept_name})
             MERGE (c)-[:AFFECTS]->(x)
             """,
             comp_name=comp_name,
@@ -540,6 +550,60 @@ async def _write_concept_tx(
             doc_id=concept.doc_id,
             name=master_name,
         )
+
+
+async def _write_mechanisms_only_tx(
+    tx: AsyncManagedTransaction,
+    concept: ConceptExtractionSchema,
+    master_name: str,
+) -> None:
+    """Concept 노드 생성 없이 Mechanism/CodeExample 만 master 노드에 MERGE.
+
+    MERGE 수렴 분기에서 target 노드에 신규 코드 예제를 병합할 때 호출된다.
+    unq_id 기준 ON CREATE SET: 동일 버전 조합이 이미 있으면 건너뜀.
+    """
+    for mech in concept.mechanisms:
+        await tx.run(
+            """
+            MATCH (c:Concept {name: $concept_name})
+            MERGE (m:Mechanism {name: $mech_name})
+            ON CREATE SET m.created_at = timestamp()
+            MERGE (c)-[:MITIGATED_BY]->(m)
+            """,
+            mech_name=mech.mechanism_name,
+            concept_name=master_name,
+        )
+
+        for ex in mech.code_examples:
+            if not ex.code:
+                continue
+            unq_id = (
+                f"{mech.mechanism_name}_{ex.lang}_{ex.lang_version}"
+                f"_{ex.framework}_{ex.framework_version}"
+            )
+            await tx.run(
+                """
+                MATCH (m:Mechanism {name: $mech_name})
+                MERGE (ce:CodeExample {unq_id: $unq_id})
+                ON CREATE SET
+                    ce.lang              = $lang,
+                    ce.lang_version      = $lang_version,
+                    ce.framework         = $framework,
+                    ce.framework_version = $fw_ver,
+                    ce.code              = $code,
+                    ce.description       = $description,
+                    ce.created_at        = timestamp()
+                MERGE (m)-[:HAS_EXAMPLE]->(ce)
+                """,
+                unq_id=unq_id,
+                lang=ex.lang,
+                lang_version=ex.lang_version,
+                framework=ex.framework,
+                fw_ver=ex.framework_version,
+                code=ex.code,
+                description=ex.description,
+                mech_name=mech.mechanism_name,
+            )
 
 
 async def _delete_concept_tx(tx: AsyncManagedTransaction, name: str) -> None:

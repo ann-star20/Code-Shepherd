@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useState } from "react";
 import type { GraphNode, GraphEdge } from "@/types/graph";
+import type { StagingRecord } from "@/services/stagingService";
 import { graphService } from "@/services/graphService";
 import { stagingService } from "@/services/stagingService";
 import { mergeVirtualGraph } from "@/utils/mergeVirtualGraph";
@@ -20,7 +21,9 @@ export function useGraphMerge(sessionId: string | null): GraphMergeState {
     setIsLoading(true);
     try {
       const { nodes: confirmed, edges: confirmedEdges } = await graphService.getTopology();
-      const draft = sessionId ? await stagingService.getDraft(sessionId) : [];
+      const draft: StagingRecord[] = sessionId
+        ? await stagingService.getDraft(sessionId)
+        : [];
       const merged = mergeVirtualGraph(confirmed, draft);
       setNodes(merged.nodes);
       setEdges([...confirmedEdges, ...merged.edges]);

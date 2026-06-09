@@ -1,7 +1,11 @@
-"""Celery 파이프라인 태스크 — Phase 2 실제 구현 연결.
+"""Celery 파이프라인 태스크 — Phase 2 + 3-Factor 하이브리드 수렴 연동.
 
 각 단계는 asyncio.run()으로 async 구현체를 호출한다.
 psycopg2: 상태/로그 기록 (동기), asyncpg: 데이터 적재 (비동기).
+
+환경 플래그:
+  USE_REAL_LLM=true         Gemini API 호출. false(기본) → llm_response.json MockClient
+  USE_REAL_EMBEDDING=true   실 임베딩 API. false(기본) → MockEmbeddingService (768-dim BoW)
 """
 
 import asyncio
@@ -15,6 +19,10 @@ import psycopg2
 from app.worker.celery_app import celery_app
 
 logger = logging.getLogger(__name__)
+
+# ── 환경 플래그 ───────────────────────────────────────────────────────────────
+_USE_REAL_LLM       = os.getenv("USE_REAL_LLM", "false").lower() == "true"
+_USE_REAL_EMBEDDING = os.getenv("USE_REAL_EMBEDDING", "false").lower() == "true"
 
 
 # ── DB 헬퍼 ───────────────────────────────────────────────────────────────────
@@ -96,10 +104,15 @@ async def _do_crawl(url: str) -> tuple:
 
 @celery_app.task(name="pipeline.extractor", bind=True, max_retries=3)
 def extract_task(self, session_id: str, doc_id: str, chunks: list[str]):
-    """LLM 추출 → staging_concepts DRAFT / DOMAIN_PENDING 적재."""
+    """LLM 추출 → staging_concepts DRAFT / DOMAIN_PENDING 적재.
+
+    USE_REAL_LLM=false (기본): MockClient → llm_response.json (또는 내장 _MOCK_CONCEPTS)
+    USE_REAL_LLM=true:         GeminiClient 실 API 호출
+    """
     conn = _pg_conn()
     try:
-        _log(conn, doc_id, session_id, "Extractor", "INFO", f"LLM 추출 시작 — {len(chunks)} 청크")
+        _log(conn, doc_id, session_id, "Extractor", "INFO",
+             f"LLM 추출 시작 — {len(chunks)} 청크 (real_llm={_USE_REAL_LLM})")
         asyncio.run(_do_extract(session_id, doc_id, chunks))
         _set_state(conn, doc_id, "EXTRACTED")
         _log(conn, doc_id, session_id, "Extractor", "INFO", "추출 완료 — staging 적재 완료")
@@ -111,17 +124,45 @@ def extract_task(self, session_id: str, doc_id: str, chunks: list[str]):
         conn.close()
 
 
+async def _save_infer_scores(
+    session_id: str,
+    concepts: list,
+    results: list,
+    db_pool: object,
+) -> None:
+    """staging_concepts에 infer_action/infer_score/target_concept_name 업데이트.
+
+    mock/production 모드 모두 동일 로직. 환경 플래그에 무관하다.
+    """
+    for concept, result in zip(concepts, results):
+        await db_pool.execute(
+            """UPDATE staging_concepts
+               SET infer_action = $1, infer_score = $2, target_concept_name = $3
+               WHERE session_id = $4::uuid
+               AND concept_json->>'concept_name' = $5""",
+            result.action.value,
+            result.score,
+            result.target,
+            session_id,
+            concept.concept_name,
+        )
+
+
 async def _do_extract(session_id: str, doc_id: str, chunks: list[str]) -> None:
     from app.infrastructure.llm.factory import create_llm_client
     from app.infrastructure.database.domain_repo import get_registered_domains
     from app.usecases.write_staging_draft import write_staging_draft
+    from app.infrastructure.graph.hybrid_resolver import compute_resolve_score
+    from app.infrastructure.llm.mock_embedding import MockEmbeddingService
 
-    app_mode = os.getenv("APP_MODE", "development")
+    # USE_REAL_LLM=true → GeminiClient, false(기본) → MockClient (llm_response.json)
+    llm_mode = "production" if _USE_REAL_LLM else "development"
     client = create_llm_client(
-        app_mode,
+        llm_mode,
         api_key=os.getenv("GEMINI_API_KEY", ""),
         model=os.getenv("GEMINI_MODEL", "gemini-2.5-flash"),
     )
+    embedding_svc = MockEmbeddingService()
 
     pool = await asyncpg.create_pool(_pg_async_dsn(), min_size=1, max_size=2, ssl=False)
     try:
@@ -129,26 +170,48 @@ async def _do_extract(session_id: str, doc_id: str, chunks: list[str]) -> None:
             registered = await get_registered_domains(db_conn)
             all_concepts = []
             for i, chunk in enumerate(chunks):
-                if i > 0:
+                if i > 0 and _USE_REAL_LLM:
                     await asyncio.sleep(4)  # 무료 티어 20 req/min → 청크 간 4초 간격
                 concepts = await client.extract_concepts(chunk, doc_id, {})
                 all_concepts.extend(concepts)
             await write_staging_draft(session_id, doc_id, all_concepts, db_conn, registered)
+
+        # 3-Factor 하이브리드 점수 선행 계산 → staging 영속화
+        # compute_resolve_score는 PG/Neo4j 사이드이펙트 없이 점수만 반환한다.
+        resolve_results = []
+        for concept in all_concepts:
+            result = await compute_resolve_score(concept, pool, embedding_svc)
+            resolve_results.append(result)
+        await _save_infer_scores(session_id, all_concepts, resolve_results, pool)
     finally:
         await pool.close()
 
 
-# ── 3단계: Graph Writer ───────────────────────────────────────────────────────
+# ── 3단계: Graph Writer + 3-Factor 하이브리드 수렴 통합 ───────────────────────
+#
+# 구형 write_concept_node() + resolve_links_task(SAME_AS) 완전 폐기.
+# GraphWriterService.write() 가 hybrid_resolve → 분기 처리를 원자적으로 수행한다.
+#
+#   MERGE      (score ≥ 0.88)      : Centroid Shifting + PG name_vector UPDATE + Neo4j aliases 갱신
+#   RELATED_TO (0.72 ≤ score < 0.88): 신규 4-레이어 노드 생성 + [:RELATED_TO] 엣지 가교
+#   NEW        (score < 0.72)       : 완전 독립 4-레이어 노드 신규 생성
+# ---------------------------------------------------------------------------
 
 @celery_app.task(name="pipeline.graph_writer", bind=True, max_retries=3)
 def write_graph_task(self, session_id: str, doc_id: str):
-    """APPROVED staging → Neo4j MERGE + APOC addLabels → COMMITTED."""
+    """APPROVED staging → GraphWriterService(hybrid_resolve) → COMMITTED.
+
+    USE_REAL_EMBEDDING=false(기본): MockEmbeddingService (768-dim BoW)
+    USE_REAL_EMBEDDING=true:        실 임베딩 API
+    """
     conn = _pg_conn()
     try:
-        _log(conn, doc_id, session_id, "Writer", "INFO", "그래프 적재 시작")
-        asyncio.run(_do_write_graph(session_id))
-        _log(conn, doc_id, session_id, "Writer", "INFO", "그래프 적재 완료")
-        resolve_links_task.delay(session_id=session_id, doc_id=doc_id)
+        _log(conn, doc_id, session_id, "Writer", "INFO",
+             f"3-Factor 하이브리드 수렴 적재 시작 (real_emb={_USE_REAL_EMBEDDING})")
+        summary = asyncio.run(_do_write_graph(session_id))
+        _set_state(conn, doc_id, "COMMITTED")
+        _log(conn, doc_id, session_id, "Writer", "INFO",
+             f"파이프라인 완료 — COMMITTED {summary}")
     except Exception as exc:
         _log(conn, doc_id, session_id, "Writer", "ERROR", str(exc))
         _set_state(conn, doc_id, "FAILED")
@@ -157,95 +220,81 @@ def write_graph_task(self, session_id: str, doc_id: str):
         conn.close()
 
 
-async def _do_write_graph(session_id: str) -> None:
+async def _do_write_graph(session_id: str) -> dict[str, int]:
+    """APPROVED staging_concepts → GraphWriterService.write() → hybrid_resolve 분기 처리.
+
+    모든 APPROVED 개념을 처리 후 staging_concepts.state → COMMITTED 전이.
+    Returns: {"MERGE": n, "RELATED_TO": n, "NEW": n}
+    """
     from neo4j import AsyncGraphDatabase
     from app.domain.models import ConceptExtractionSchema
-    from app.infrastructure.graph.graph_writer import write_concept_node
+    from app.infrastructure.graph.neo4j_service import GraphWriterService
+    from app.adapters.db.neo4j_repo import Neo4jConceptRepo
+    from app.infrastructure.graph.hybrid_resolver import MergeAction, ResolveResult
 
-    neo4j_uri = os.getenv("NEO4J_URI", "bolt://127.0.0.1:7688")
+    if _USE_REAL_EMBEDDING:
+        from app.infrastructure.llm.factory import create_llm_client
+        # 실 임베딩 클라이언트가 별도 팩토리로 분리되면 교체 가능
+        # 현재는 MockEmbeddingService를 폴백으로 사용
+        logger.warning("[gw] USE_REAL_EMBEDDING=true이지만 실 임베딩 팩토리 미구현 — MockEmbeddingService 폴백")
+        from app.infrastructure.llm.mock_embedding import MockEmbeddingService
+        embedding_svc = MockEmbeddingService()
+    else:
+        from app.infrastructure.llm.mock_embedding import MockEmbeddingService
+        embedding_svc = MockEmbeddingService()
+
+    neo4j_uri  = os.getenv("NEO4J_URI", "bolt://127.0.0.1:7688")
     neo4j_auth = (os.getenv("NEO4J_USER", "neo4j"), os.getenv("NEO4J_PASSWORD", "pass1234!"))
     driver = AsyncGraphDatabase.driver(neo4j_uri, auth=neo4j_auth)
 
     pool = await asyncpg.create_pool(_pg_async_dsn(), min_size=1, max_size=2, ssl=False)
+    summary: dict[str, int] = {a.value: 0 for a in MergeAction}
     try:
-        async with pool.acquire() as db_conn:
-            rows = await db_conn.fetch(
-                "SELECT id, concept_json FROM staging_concepts "
-                "WHERE session_id=$1::uuid AND state='APPROVED'",
-                session_id,
-            )
+        repo   = Neo4jConceptRepo(driver)
+        writer = GraphWriterService(pool, driver, repo, embedding_svc)
 
-            # Phase 1: Neo4j MERGE — 모두 성공해야 PG 업데이트 진행
-            # 실패 시 예외가 전파되어 PG는 APPROVED 상태로 유지됨
-            committed_ids: list = []
-            for row in rows:
-                raw = row["concept_json"]
-                data = json.loads(raw) if isinstance(raw, str) else dict(raw)
-                concept = ConceptExtractionSchema(**data)
-                await write_concept_node(concept, driver)
-                committed_ids.append(row["id"])
+        rows = await pool.fetch(
+            "SELECT id, concept_json, infer_action, infer_score, target_concept_name "
+            "FROM staging_concepts "
+            "WHERE session_id=$1::uuid AND state='APPROVED'",
+            session_id,
+        )
 
-            # Phase 2: 전체 Neo4j 적재 성공 확인 후 PG COMMITTED 일괄 업데이트
-            for row_id in committed_ids:
-                await db_conn.execute(
-                    "UPDATE staging_concepts SET state='COMMITTED', committed_at=now() "
-                    "WHERE id=$1",
-                    row_id,
-                )
-    finally:
-        await pool.close()
-        await driver.close()
-
-
-# ── 4단계: Link Resolver ──────────────────────────────────────────────────────
-
-@celery_app.task(name="pipeline.link_resolver", bind=True, max_retries=3)
-def resolve_links_task(self, session_id: str, doc_id: str):
-    """session의 COMMITTED concepts에 대해 aliases 기반 SAME_AS 관계 탐색."""
-    conn = _pg_conn()
-    try:
-        _log(conn, doc_id, session_id, "Resolver", "INFO", "링크 리졸버 시작")
-        same_as_total, _ = asyncio.run(_do_resolve_links(session_id))
-        _set_state(conn, doc_id, "COMMITTED")
-        _log(conn, doc_id, session_id, "Resolver", "INFO",
-             f"파이프라인 완료 — COMMITTED, SAME_AS 관계 {same_as_total}건")
-    except Exception as exc:
-        _log(conn, doc_id, session_id, "Resolver", "ERROR", str(exc))
-        raise self.retry(exc=exc, countdown=120)
-    finally:
-        conn.close()
-
-
-async def _do_resolve_links(session_id: str) -> tuple[int, int]:
-    """session_id의 COMMITTED staging rows에서 concept_name 추출 → resolve_links 호출."""
-    from neo4j import AsyncGraphDatabase
-    from app.infrastructure.graph.link_resolver import resolve_links
-
-    neo4j_uri = os.getenv("NEO4J_URI", "bolt://127.0.0.1:7688")
-    neo4j_auth = (os.getenv("NEO4J_USER", "neo4j"), os.getenv("NEO4J_PASSWORD", "pass1234!"))
-    driver = AsyncGraphDatabase.driver(neo4j_uri, auth=neo4j_auth)
-
-    pool = await asyncpg.create_pool(_pg_async_dsn(), min_size=1, max_size=2, ssl=False)
-    same_as_total = 0
-    try:
-        async with pool.acquire() as db_conn:
-            rows = await db_conn.fetch(
-                "SELECT concept_json FROM staging_concepts "
-                "WHERE session_id=$1::uuid AND state='COMMITTED'",
-                session_id,
-            )
         for row in rows:
-            raw = row["concept_json"]
+            raw  = row["concept_json"]
             data = json.loads(raw) if isinstance(raw, str) else dict(raw)
-            concept_name = data.get("concept_name", "")
-            if concept_name:
-                cnt, _ = await resolve_links(concept_name, driver)
-                same_as_total += cnt
+            concept = ConceptExtractionSchema(**data)
+
+            try:
+                infer_action_str = row["infer_action"]
+                if infer_action_str:
+                    # staging에 사전 계산된 점수 존재 → 재스코어링 생략
+                    precomputed = ResolveResult(
+                        action=MergeAction(infer_action_str),
+                        target=row["target_concept_name"],
+                        score=float(row["infer_score"] or 0.0),
+                        incoming_name=concept.concept_name,
+                    )
+                    write_result = await writer.write_with_precomputed(concept, precomputed)
+                else:
+                    # fallback: 점수 없으면 재계산 (하위 호환)
+                    write_result = await writer.write(concept)
+                summary[write_result.resolve.action.value] += 1
+            except Exception as exc:
+                logger.warning("[gw] '%s' 처리 실패 (skip+continue): %s",
+                               concept.concept_name, exc)
+                continue
+
+            await pool.execute(
+                "UPDATE staging_concepts SET state='COMMITTED', committed_at=now() "
+                "WHERE id=$1",
+                row["id"],
+            )
     finally:
         await pool.close()
         await driver.close()
 
-    return same_as_total, 0
+    return summary
 
 
 # ── 통합 엔트리포인트 ─────────────────────────────────────────────────────────

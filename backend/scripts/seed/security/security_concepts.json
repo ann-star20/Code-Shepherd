@@ -7,10 +7,10 @@
     "severity": "high",
     "domains": ["security"],
     "description_ko": "크로스 사이트 스크립팅(XSS)은 공격자가 악성 스크립트를 신뢰된 웹 페이지에 주입하여 피해자의 브라우저에서 실행시키는 공격. 세션 탈취, 리다이렉션, 피싱 등을 유발한다.",
-    "aliases": ["Cross-Site Scripting", "XSS Attack", "CrossSiteScripting", "CrossSiteScriptingAttack", "크로스 사이트 스크립팅"],
+    "aliases": ["Cross-Site Scripting", "XSS Attack", "CrossSiteScripting", "CrossSiteScriptingAttack", "XssVulnerability", "CrossSiteScriptingVulnerability", "크로스 사이트 스크립팅"],
     "root_cause": "unsanitized_user_input_in_html_context",
     "affected_components": ["template_rendering_layer", "api_response_serialization"],
-    "security_mechanism": [
+    "mechanism": [
       {
         "mechanism_name": "output_encoding",
         "code_examples": [
@@ -51,10 +51,10 @@
     "severity": "critical",
     "domains": ["security"],
     "description_ko": "SQL 인젝션은 공격자가 악의적인 SQL 구문을 입력값에 삽입하여 데이터베이스를 조작하는 공격. 데이터 유출, 삭제, 권한 상승을 유발한다.",
-    "aliases": ["SQL Injection", "SQLInjection", "SqlInjection", "SQLi Attack", "SQL 인젝션"],
+    "aliases": ["SQL Injection", "SQLInjection", "SqlInjection", "SQLi Attack", "SqlInjectionVulnerability", "SqlInjectionAttack", "SQL 인젝션"],
     "root_cause": "unsanitized_user_input_in_sql_query",
     "affected_components": ["database_query_layer", "orm_layer"],
-    "security_mechanism": [
+    "mechanism": [
       {
         "mechanism_name": "parameterized_query",
         "code_examples": [
@@ -92,10 +92,10 @@
     "severity": "high",
     "domains": ["security"],
     "description_ko": "크로스 사이트 요청 위조(CSRF)는 인증된 사용자의 브라우저를 통해 공격자가 원하는 요청을 서버에 강제로 전송하는 공격. 계정 설정 변경, 결제 등을 피해자 모르게 실행한다.",
-    "aliases": ["Cross-Site Request Forgery", "XSRF", "Sea Surf", "CrossSiteRequestForgery", "CSRFAttack", "CrossSiteRequestForgeryAttack", "크로스 사이트 요청 위조"],
+    "aliases": ["Cross-Site Request Forgery", "XSRF", "Sea Surf", "CrossSiteRequestForgery", "CSRFAttack", "CrossSiteRequestForgeryAttack", "CrossSiteRequestForgeryVulnerability", "크로스 사이트 요청 위조", "CSRF Attack"],
     "root_cause": "missing_request_origin_verification",
     "affected_components": ["form_submission_handler", "state_changing_api", "session_management"],
-    "security_mechanism": [
+    "mechanism": [
       {
         "mechanism_name": "csrf_token_validation",
         "code_examples": [
@@ -136,10 +136,10 @@
     "severity": "high",
     "domains": ["security"],
     "description_ko": "서버 사이드 요청 위조(SSRF)는 서버가 공격자가 지정한 내부 또는 외부 리소스로 요청을 전송하도록 유도하는 공격. 내부망 스캔, 클라우드 메타데이터 탈취에 악용된다.",
-    "aliases": ["Server-Side Request Forgery", "ServerSideRequestForgery", "SSRFAttack", "서버 사이드 요청 위조"],
+    "aliases": ["Server-Side Request Forgery", "ServerSideRequestForgery", "SSRFAttack", "ServerSideRequestForgeryAttack", "ServerSideRequestForgeryVulnerability", "SsrfVulnerability", "서버 사이드 요청 위조"],
     "root_cause": "unvalidated_user_supplied_url_in_server_request",
     "affected_components": ["http_client_layer", "webhook_handler", "url_fetch_service"],
-    "security_mechanism": [
+    "mechanism": [
       {
         "mechanism_name": "allowlist_url_validation",
         "code_examples": [
@@ -164,10 +164,10 @@
     "severity": "high",
     "domains": ["security"],
     "description_ko": "경로 순회 공격은 '../' 시퀀스를 사용하여 허용된 디렉토리 밖의 파일에 접근하는 공격. 설정 파일, 시스템 파일 노출로 이어진다.",
-    "aliases": ["Directory Traversal", "DirectoryTraversal", "PathTraversalAttack", "DotDotSlash", "경로 순회 공격", "../ Attack"],
+    "aliases": ["Directory Traversal", "DirectoryTraversal", "PathTraversalAttack", "PathTraversalVulnerability", "DirectoryTraversalAttack", "DirectoryTraversalVulnerability", "DotDotSlash", "경로 순회 공격", "../ Attack"],
     "root_cause": "unvalidated_file_path_from_user_input",
     "affected_components": ["file_download_endpoint", "static_file_server"],
-    "security_mechanism": [
+    "mechanism": [
       {
         "mechanism_name": "canonical_path_validation",
         "code_examples": [
@@ -192,10 +192,10 @@
     "severity": "critical",
     "domains": ["security"],
     "description_ko": "명령어 인젝션은 사용자 입력이 OS 명령어로 직접 실행될 때 발생하는 취약점. 서버 시스템의 완전한 장악이 가능하다.",
-    "aliases": ["OS Command Injection", "Shell Injection", "OsCommandInjection", "ShellInjection", "CommandInjectionAttack", "명령어 인젝션"],
+    "aliases": ["OS Command Injection", "Shell Injection", "OsCommandInjection", "ShellInjection", "CommandInjectionAttack", "CommandInjectionVulnerability", "OsCommandInjectionAttack", "ShellInjectionAttack", "명령어 인젝션"],
     "root_cause": "shell_true_with_unsanitized_user_input",
     "affected_components": ["subprocess_caller", "system_command_api"],
-    "security_mechanism": [
+    "mechanism": [
       {
         "mechanism_name": "subprocess_args_list",
         "code_examples": [
@@ -220,10 +220,10 @@
     "severity": "critical",
     "domains": ["security"],
     "description_ko": "불안전한 역직렬화는 신뢰할 수 없는 데이터를 객체로 복원할 때 발생하는 취약점. 임의 코드 실행(RCE)으로 이어질 수 있다.",
-    "aliases": ["Unsafe Deserialization", "UnsafeDeserialization", "InsecureDeserializationAttack", "불안전한 역직렬화"],
+    "aliases": ["Unsafe Deserialization", "UnsafeDeserialization", "InsecureDeserializationAttack", "InsecureDeserializationVulnerability", "UnsafeDeserializationAttack", "UnsafeDeserializationVulnerability", "불안전한 역직렬화"],
     "root_cause": "deserialization_of_untrusted_data",
     "affected_components": ["api_request_body_parser", "cache_layer", "message_queue_consumer"],
-    "security_mechanism": [
+    "mechanism": [
       {
         "mechanism_name": "safe_serialization_format",
         "code_examples": [
@@ -248,10 +248,10 @@
     "severity": "critical",
     "domains": ["security"],
     "description_ko": "하드코딩된 자격증명은 소스코드에 비밀키, 비밀번호, API 키가 평문으로 포함된 취약점. Git 저장소 노출 시 즉각적인 보안 침해로 이어진다.",
-    "aliases": ["Hardcoded Credentials", "Hardcoded Password", "HardcodedCredentials", "HardcodedPassword", "HardcodedSecret", "SecretInSourceCode", "하드코딩된 비밀번호"],
+    "aliases": ["Hardcoded Credentials", "Hardcoded Password", "HardcodedCredentials", "HardcodedPassword", "HardcodedSecret", "HardcodedSecretVulnerability", "HardcodedApiKey", "HardcodedToken", "SecretInSourceCode", "SecretsInCode", "하드코딩된 비밀번호"],
     "root_cause": "secret_stored_in_source_code",
     "affected_components": ["configuration_file", "source_code_repository"],
-    "security_mechanism": [
+    "mechanism": [
       {
         "mechanism_name": "environment_variable_injection",
         "code_examples": [
@@ -278,10 +278,10 @@
     "severity": "critical",
     "domains": ["security"],
     "description_ko": "취약한 인증은 세션 관리, 자격증명 검증, 비밀번호 정책의 결함으로 계정 탈취를 가능하게 하는 취약점.",
-    "aliases": ["Authentication Bypass", "BrokenAuthentication", "AuthenticationBypass", "WeakAuthentication", "취약한 인증"],
+    "aliases": ["Authentication Bypass", "BrokenAuthentication", "AuthenticationBypass", "WeakAuthentication", "BrokenAuthenticationVulnerability", "WeakAuthenticationVulnerability", "AuthenticationBypassVulnerability", "취약한 인증"],
     "root_cause": "weak_session_or_credential_management",
     "affected_components": ["login_endpoint", "session_storage", "password_reset_flow"],
-    "security_mechanism": [
+    "mechanism": [
       {
         "mechanism_name": "secure_password_hashing",
         "code_examples": [
@@ -309,10 +309,10 @@
     "severity": "high",
     "domains": ["security"],
     "description_ko": "XML 외부 엔티티(XXE) 공격은 외부 엔티티 참조를 지원하는 XML 파서를 이용하여 서버 파일 읽기, SSRF, 포트 스캔을 수행하는 취약점.",
-    "aliases": ["XML External Entity", "XmlExternalEntity", "XXEAttack", "XmlExternalEntityAttack", "XML 외부 엔티티 공격"],
+    "aliases": ["XML External Entity", "XmlExternalEntity", "XXEAttack", "XmlExternalEntityAttack", "XxeVulnerability", "XxeAttack", "XxeInjection", "XmlExternalEntityVulnerability", "XML 외부 엔티티 공격"],
     "root_cause": "xml_parser_external_entity_enabled",
     "affected_components": ["xml_parser", "soap_endpoint", "file_upload_handler"],
-    "security_mechanism": [
+    "mechanism": [
       {
         "mechanism_name": "disable_external_entities",
         "code_examples": [
@@ -337,10 +337,10 @@
     "severity": "critical",
     "domains": ["security"],
     "description_ko": "취약한 접근 제어는 최소 권한 원칙 미준수, IDOR, 권한 검증 누락 등으로 인증된 사용자가 허용되지 않은 리소스에 접근할 수 있는 취약점. OWASP Top 10 2021/2025 1위.",
-    "aliases": ["Broken Access Control", "IDOR", "BrokenAccessControl", "InsecureDirectObjectReference", "취약한 접근 제어", "Insecure Direct Object Reference"],
+    "aliases": ["Broken Access Control", "IDOR", "BrokenAccessControl", "InsecureDirectObjectReference", "BrokenAccessControlVulnerability", "InsecureDirectObjectReferenceVulnerability", "IdorVulnerability", "AccessControlVulnerability", "취약한 접근 제어", "Insecure Direct Object Reference"],
     "root_cause": "missing_authorization_check_on_resource",
     "affected_components": ["authentication_filter", "api_endpoint", "database_access_layer"],
-    "security_mechanism": [
+    "mechanism": [
       {
         "mechanism_name": "rbac_rules",
         "code_examples": [
@@ -383,6 +383,49 @@
     ],
     "config_properties": [
       {"key": "login_url", "value": "/login/", "type": "security"}
+    ]
+  },
+  {
+    "concept_name": "Clickjacking",
+    "concept_type": "vulnerability_root_cause",
+    "cwe_id": "CWE-451",
+    "owasp_id": "A05:2025",
+    "severity": "medium",
+    "domains": ["security"],
+    "description_ko": "투명한 iframe을 웹 페이지 위에 덮어씌워 사용자가 의도치 않은 버튼이나 링크를 클릭하도록 속이는 UI 교정 공격. 계정 설정 변경, 소셜 미디어 공유 등 원하지 않는 행위를 유발한다.",
+    "aliases": ["UI Redressing", "UIRedressing", "ClickjackingAttack", "ClickjackingVulnerability", "UiRedressingAttack", "UiRedressingVulnerability", "클릭재킹"],
+    "root_cause": "transparent_iframe_overlay_without_frame_protection",
+    "affected_components": ["browser_rendering_layer", "iframe_sandbox_policy"],
+    "mechanism": [
+      {
+        "mechanism_name": "x_frame_options_header",
+        "code_examples": [
+          {
+            "lang": "python",
+            "lang_version": ">=3.10",
+            "framework": "django",
+            "framework_version": ">=4.0",
+            "code": "# settings.py\nX_FRAME_OPTIONS = 'DENY'  # 또는 'SAMEORIGIN'",
+            "description": "X-Frame-Options 헤더로 iframe 내 페이지 로드를 전면 차단"
+          }
+        ]
+      },
+      {
+        "mechanism_name": "csp_frame_ancestors",
+        "code_examples": [
+          {
+            "lang": "python",
+            "lang_version": ">=3.10",
+            "framework": "fastapi",
+            "framework_version": ">=0.100",
+            "code": "from fastapi.responses import Response\n\n@app.middleware('http')\nasync def add_csp(request, call_next):\n    response = await call_next(request)\n    response.headers['Content-Security-Policy'] = \"frame-ancestors 'none'\"\n    return response",
+            "description": "CSP frame-ancestors 지시어로 iframe 삽입 출처를 정밀 제어"
+          }
+        ]
+      }
+    ],
+    "config_properties": [
+      {"key": "x_frame_options", "value": "DENY", "type": "security"}
     ]
   }
 ]

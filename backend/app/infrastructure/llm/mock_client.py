@@ -1,7 +1,7 @@
 """MockClient — 4-레이어 지식 그래프 수렴 설계 사양을 100% 만족하는 DEV/mock 모드 클라이언트.
 
 개편 스펙 준수 사항:
-  1. security_mechanism 내부에 code_examples 중첩 계층화 (Layer 3 -> Layer 4 귀속 무결성)
+  1. mechanism 내부에 code_examples 중첩 계층화 (Layer 3 -> Layer 4 귀속 무결성)
   2. config_properties 내부에 "type": "security" 필드 필수 바인딩
   3. affected_components, root_cause 최적화 소문자 스네이크케이스 선행 정규화
 """
@@ -19,209 +19,155 @@ _JSON_PATH = pathlib.Path(__file__).parents[3] / "llm_response.json"
 
 logger = logging.getLogger(__name__)
 
-# ── 4-레이어 수렴형 표준 준수 Mock 데이터셋 ──────────────────────────────────
+# ── 하이브리드 리졸버 TDD 3-시나리오 창(槍) Mock 데이터셋 ─────────────────────
+#
+# 시나리오 A (MERGE):  CrossSiteRequestForgery → CSRF 시드에 흡수되어야 함
+#   - aliases에 "Cross-Site Request Forgery" 정확 일치 → JW = 1.0
+#   - 동일 키워드 풀(csrf, cross, site, request, forgery) → CosineName > 0.85
+#   - 유사 한국어 설명 → CosineDesc 높음 → 총점 > 0.88 (MERGE 분기)
+#
+# 시나리오 B (RELATED_TO):  SSRF — "Request Forgery" 문맥 공유, 다른 기전
+#   - "Server-Side Request Forgery" 철자 유사 → JW 보통
+#   - 프로덕션 환경(실제 임베딩 모델)에서는 0.72~0.88 범위로 RELATED_TO 분기
+#   - 개발/테스트: 점수 제어는 test_hybrid_resolver.py의 FakePgPool 픽스처로 검증
+#
+# 시나리오 C (NEW):  Clickjacking — 완전히 독립된 도메인, 기존 노드와 무관
+#   - "UI Redressing" / "click" / "jacking" → CSRF/XSS와 공유 토큰 없음 → 총점 < 0.72 (NEW)
 _MOCK_CONCEPTS: list[dict] = [
+    # ── 시나리오 A: MERGE 대상 ─────────────────────────────────────────────────
+    # 이름은 파스칼케이스 풀네임이지만, aliases에 "Cross-Site Request Forgery" 정확 일치가 있어
+    # JaroWinkler = 1.0, CosineName > 0.85 → 총점 > 0.88 → 기존 CSRF 마스터 노드에 MERGE.
+    # 검증 포인트: CSRF 시드 노드의 aliases에 "CSRF Attack"(신규 동의어)이 추가되어야 함.
     {
-        "concept_name": "CSRFAttack",
-        "domains": ["security"],
-        "concept_type": "vulnerability_root_cause",
-        "cwe_id": "CWE-352",
-        "owasp_id": "A01:2025",
-        "severity": "high",
-        "description_ko": "크로스 사이트 요청 위조 — 인증된 사용자의 브라우저 세션 권한을 신뢰하는 점을 악용하여, 공격자가 의도치 않은 상태 변경 요청을 강제로 전송하게 만드는 취약점.",
-        "aliases": ["CSRF", "XSRF", "Sea Surf", "Cross-Site Request Forgery"],
-        "root_cause": "missing_request_origin_verification",
-        "affected_components": ["form_submission_handler", "state_changing_api", "session_management"],
-        "security_mechanism": [
-          {
-            "mechanism_name": "csrf_token_protection",
-            "code_examples": [
-              {
-                "lang": "html",
-                "lang_version": "*",
-                "framework": "django",
-                "framework_version": ">=4.0",
-                "code": "\n<form action='https://bank.com/transfer' method='post'>\n  <input name='amount' value='1000'>\n</form>",
-                "description": "사용자 모르게 백그라운드에서 전송되는 CSRF 공격용 가짜 폼 스니펫"
-              }
-            ]
-          }
-        ],
-        "config_properties": []
-    },
-    {
-        "concept_name": "CsrfViewMiddleware",
-        "domains": ["security"],
-        "concept_type": "security_mechanism",
-        "cwe_id": "CWE-352",
-        "owasp_id": "A01:2025",
-        "severity": "high",
-        "description_ko": "Django의 CSRF 보호 핵심 미들웨어 — 인입되는 모든 상태 변경 목적의 쓰기(POST, PUT, DELETE) 요청에 대해 토큰 무결성 서명 유효성 검증을 수행합니다.",
-        "aliases": ["django.middleware.csrf.CsrfViewMiddleware", "CSRF 미들웨어"],
-        "root_cause": "unvalidated_http_request_pipeline",
-        "affected_components": ["middleware_configuration", "http_request_pipeline"],
-        "security_mechanism": [
-          {
-            "mechanism_name": "csrf_token_validation",
-            "code_examples": [
-              {
-                "lang": "python",
-                "lang_version": ">=3.10",
-                "framework": "django",
-                "framework_version": ">=4.0",
-                "code": "MIDDLEWARE = [\n    ...\n    'django.middleware.csrf.CsrfViewMiddleware',\n    ...\n]",
-                "description": "Django settings.py 보안 미들웨어 기본 활성화 레이아웃"
-              }
-            ]
-          }
-        ],
-        "config_properties": [
-            {"key": "csrf_cookie_secure", "value": "True", "type": "security"},
-            {"key": "csrf_cookie_httponly", "value": "False", "type": "security"},
-            {"key": "csrf_cookie_samesite", "value": "Lax", "type": "security"},
-            {"key": "csrf_trusted_origins", "value": "['https://example.com']", "type": "security"}
-        ]
-    },
-    {
-        "concept_name": "CsrfTokenTag",
-        "domains": ["security"],
-        "concept_type": "security_mechanism",
-        "cwe_id": "CWE-352",
-        "severity": "medium",
-        "description_ko": "Django 템플릿 엔진 태그 — 내부 서명 처리된 유효한 난수 토큰값을 HTML 내부에 hidden 타입의 input 필드로 자동 전송 레이어화 처리를 보장합니다.",
-        "aliases": ["csrf_token", "{% csrf_token %}", "csrf_token template tag"],
-        "root_cause": "missing_hidden_token_in_form_payload",
-        "affected_components": ["django_template_engine", "html_form_payload"],
-        "security_mechanism": [
-          {
-            "mechanism_name": "csrf_token_embed",
-            "code_examples": [
-              {
-                "lang": "html",
-                "lang_version": "*",
-                "framework": "django",
-                "framework_version": ">=4.0",
-                "code": "<form method='post'>\n  {% csrf_token %}\n  {{ form.as_p }}\n  <button type='submit'>Submit</button>\n</form>",
-                "description": "Django 내부 템플릿 폼 제출 시 유효 토큰 바인딩 표준 선언식"
-              }
-            ]
-          }
-        ],
-        "config_properties": []
-    },
-    {
-        "concept_name": "CsrfExempt",
-        "domains": ["security"],
-        "concept_type": "vulnerability_root_cause",
-        "cwe_id": "CWE-352",
-        "severity": "high",
-        "description_ko": "특정 뷰 엔드포인트의 CSRF 유효성 검증 레이어를 명시적으로 비활성화하는 데코레이터. API 토큰이나 세션 보호 가드가 부재할 시 심각한 우회 취약점으로 직결됩니다.",
-        "aliases": ["@csrf_exempt", "csrf_exempt decorator"],
-        "root_cause": "bypass_csrf_verification_without_alternative_auth",
-        "affected_components": ["django_view_layer", "rest_api_endpoint"],
-        "security_mechanism": [
-          {
-            "mechanism_name": "alternative_token_auth",
-            "code_examples": [
-              {
-                "lang": "python",
-                "lang_version": ">=3.10",
-                "framework": "django",
-                "framework_version": ">=4.0",
-                "code": "from django.views.decorators.csrf import csrf_exempt\n\n@csrf_exempt\ndef my_view(request):\n    # 대체 인증 수단(예: JWT/Bearer Header)이 반드시 사전에 선행되어야 함\n    return HttpResponse('OK')",
-                "description": "데코레이터를 통한 미들웨어 검증 강제 우회 설정 명세"
-              }
-            ]
-          }
-        ],
-        "config_properties": []
-    },
-    {
-        "concept_name": "AjaxCSRFHeader",
-        "domains": ["security"],
-        "concept_type": "security_mechanism",
-        "cwe_id": "CWE-352",
-        "severity": "medium",
-        "description_ko": "비동기 AJAX(Fetch/Axios) 요청 발생 시, 브라우저 클라이언트 사이드 스크립트 단에서 쿠키에 내장된 토큰값을 읽어 X-CSRFToken HTTP 헤더에 수동으로 탑재하여 가동하는 보안 기전.",
-        "aliases": ["X-CSRFToken", "AJAX CSRF", "fetch CSRF"],
-        "root_cause": "stateless_ajax_request_missing_cookie_context",
-        "affected_components": ["javascript_fetch_api", "axios_client_layer", "xml_http_request"],
-        "security_mechanism": [
-          {
-            "mechanism_name": "csrf_token_header_injection",
-            "code_examples": [
-              {
-                "lang": "javascript",
-                "lang_version": "ES6+",
-                "framework": "vanilla_js",
-                "framework_version": "*",
-                "code": "function getCookie(name) {\n  const value = `; ${document.cookie}`;\n  const parts = value.split(`; ${name}=`);\n  if (parts.length === 2) return parts.pop().split(';').shift();\n}\n\nfetch('/api/data/', {\n  method: 'POST',\n  headers: { 'X-CSRFToken': getCookie('csrftoken') },\n  body: JSON.stringify(data)\n});",
-                "description": "클라이언트 자바스크립트 단의 쿠키 파싱 후 HTTP 커스텀 헤더 주입 로직"
-              }
-            ]
-          }
-        ],
-        "config_properties": []
-    },
-    {
-        # ── MERGE 미끼 ── concept_name은 다르지만 cwe_id=CWE-352 로 기존 CSRF 노드로
-        # 흡수되어야 한다. aliases 룩업 실패 → CWE 기반 fallback merge 경로를 검증.
         "concept_name": "CrossSiteRequestForgery",
-        "domains": ["security"],
         "concept_type": "vulnerability_root_cause",
         "cwe_id": "CWE-352",
         "owasp_id": "A01:2025",
         "severity": "high",
-        "description_ko": "LLM이 파스칼케이스 풀네임으로 뱉어낸 CSRF 변형 — 이름 기준 exact-match 방어선을 통과하더라도 CWE-352 식별자로 기존 CSRF 마스터 노드에 병합되어야 한다.",
-        "aliases": ["CSRF", "Cross-Site Request Forgery", "XSRF"],
+        "domains": ["security"],
+        "description_ko": "크로스 사이트 요청 위조 — 인증된 사용자의 브라우저 세션 권한을 신뢰하는 점을 악용하여, 공격자가 의도치 않은 상태 변경 요청을 강제로 전송하게 만드는 취약점.",
+        "aliases": ["CSRF", "Cross-Site Request Forgery", "XSRF", "CSRF Attack"],
         "root_cause": "missing_request_origin_verification",
         "affected_components": ["form_submission_handler", "state_changing_api"],
-        "security_mechanism": [
-          {
-            "mechanism_name": "csrf_token_validation",
-            "code_examples": [
-              {
-                "lang": "python",
-                "lang_version": ">=3.10",
-                "framework": "django",
-                "framework_version": ">=4.0",
-                "code": "# settings.py\nMIDDLEWARE = ['django.middleware.csrf.CsrfViewMiddleware']",
-                "description": "CSRF 미끼 노드 — CWE 기반 머지 경로 검증용"
-              }
-            ]
-          }
+        "mechanism": [
+            {
+                "mechanism_name": "double_submit_cookie",
+                "code_examples": [
+                    {
+                        "lang": "python",
+                        "lang_version": ">=3.10",
+                        "framework": "fastapi",
+                        "framework_version": ">=0.100",
+                        "code": "# Double Submit Cookie 패턴\nfrom fastapi import Cookie, Header, HTTPException\n\ndef verify_csrf(csrf_token: str = Cookie(...), x_csrf_token: str = Header(...)):\n    if csrf_token != x_csrf_token:\n        raise HTTPException(status_code=403, detail='CSRF 토큰 불일치')",
+                        "description": "쿠키와 커스텀 헤더의 동일한 토큰값 검증으로 CSRF 방어"
+                    }
+                ]
+            },
+            {
+                "mechanism_name": "requires_csrf_token_decorator",
+                "code_examples": [
+                    {
+                        "lang": "python",
+                        "lang_version": "2.7",
+                        "framework": "Django",
+                        "framework_version": "1.11",
+                        "code": "from django.shortcuts import render\nfrom django.views.decorators.csrf import requires_csrf_token\n\n@requires_csrf_token\ndef my_view(request):\n    # Django 1.11 / Python 2.7 환경\n    context = {'data': 'secure_content'}\n    return render(request, 'template.html', context)",
+                        "description": "Django 1.11에서 데코레이터를 사용하여 CSRF 토큰 처리를 보장하는 방식"
+                    },
+                    {
+                        "lang": "javascript",
+                        "lang_version": "ES6",
+                        "framework": "Express",
+                        "framework_version": "4.17",
+                        "code": "const express = require('express');\nconst csrf = require('csurf');\nconst cookieParser = require('cookie-parser');\n\nconst app = express();\nconst csrfProtection = csrf({ cookie: true });\n\napp.use(cookieParser());\n\napp.get('/protected', csrfProtection, (req, res) => {\n    // CSRF 토큰을 템플릿에 주입\n    res.render('template', { csrfToken: req.csrfToken() });\n});",
+                        "description": "Express에서 csurf 미들웨어를 사용하여 토큰 기반의 CSRF 보호를 적용하는 방식"
+                    }
+                ]
+            }
+
+        ],
+        
+        "config_properties": []
+    },
+
+    # ── 시나리오 B: RELATED_TO 대상 ──────────────────────────────────────────────
+    # "Server-Side Request Forgery" — CSRF와 "Request Forgery" 문맥을 공유하나
+    # 공격 벡터/방어 기전이 다름. 실제 임베딩 모델 사용 시 총점 0.72~0.88 범위.
+    # 테스트에서는 FakePgPool로 벡터를 제어해 정확한 RELATED_TO 분기를 검증한다.
+    {
+        "concept_name": "SSRF",
+        "concept_type": "vulnerability_root_cause",
+        "cwe_id": "CWE-918",
+        "owasp_id": "A10:2025",
+        "severity": "high",
+        "domains": ["security"],
+        "description_ko": "서버 사이드 요청 위조(SSRF)는 서버가 공격자가 지정한 내부 또는 외부 리소스로 HTTP 요청을 보내도록 유도하는 취약점. 내부망 스캔, 클라우드 메타데이터 탈취에 악용된다.",
+        "aliases": ["Server-Side Request Forgery", "ServerSideRequestForgery", "SSRFAttack"],
+        "root_cause": "unvalidated_user_supplied_url_in_server_request",
+        "affected_components": ["http_client_layer", "webhook_handler", "url_fetch_service"],
+        "mechanism": [
+            {
+                "mechanism_name": "allowlist_url_validation",
+                "code_examples": [
+                    {
+                        "lang": "python",
+                        "lang_version": ">=3.10",
+                        "framework": "fastapi",
+                        "framework_version": ">=0.100",
+                        "code": "from urllib.parse import urlparse\n\nALLOWED_HOSTS = {'api.example.com', 'cdn.example.com'}\n\ndef safe_fetch(url: str) -> bytes:\n    host = urlparse(url).hostname\n    if host not in ALLOWED_HOSTS:\n        raise ValueError(f'Blocked: {host}')\n    import httpx\n    return httpx.get(url, timeout=5).content",
+                        "description": "허용 도메인 목록(allowlist) 검증으로 임의 URL 요청 차단"
+                    }
+                ]
+            }
         ],
         "config_properties": []
     },
+
+    # ── 시나리오 C: NEW 신규 마스터 노드 ─────────────────────────────────────────
+    # "Clickjacking / UI Redressing" — click, jacking, ui, redressing 토큰은
+    # CSRF/XSS/SQLi 등 기존 시드와 완전히 다름. 총점 < 0.72 → 독립 신규 노드 생성.
     {
-        "concept_name": "SameSiteCookie",
-        "domains": ["security"],
-        "concept_type": "security_mechanism",
-        "cwe_id": "CWE-1275",
+        "concept_name": "Clickjacking",
+        "concept_type": "vulnerability_root_cause",
+        "cwe_id": "CWE-451",
+        "owasp_id": "A05:2025",
         "severity": "medium",
-        "description_ko": "브라우저 단의 기본 HTTP 쿠키 전송 가드레일인 SameSite 속성을 활용하여, 제3자 사이트에서 발생하는 모든 크로스 사이트 콘텍스트 내 세션 쿠키 탈취 요청을 엔진 레벨에서 원천 필터링합니다.",
-        "aliases": ["SameSite", "SameSite=Lax", "SameSite=Strict"],
-        "root_cause": "lax_cookie_cross_origin_transmission",
-        "affected_components": ["http_cookie_engine", "session_cookie_layer", "csrf_cookie_layer"],
-        "security_mechanism": [
-          {
-            "mechanism_name": "browser_csrf_defense",
-            "code_examples": [
-              {
-                "lang": "python",
-                "lang_version": ">=3.10",
-                "framework": "django",
-                "framework_version": ">=4.0",
-                "code": "# settings.py\nCSRF_COOKIE_SAMESITE = 'Strict'\nSESSION_COOKIE_SAMESITE = 'Lax'",
-                "description": "쿠키 배출 제어 및 SameSite 플래그 브라우저 강제 주입 설정"
-              }
-            ]
-          }
+        "domains": ["security"],
+        "description_ko": "투명한 iframe을 웹 페이지 위에 덮어씌워 사용자가 의도치 않은 버튼이나 링크를 클릭하도록 속이는 UI 교정 공격. 계정 설정 변경, 소셜 미디어 공유 등 원하지 않는 행위를 유발한다.",
+        "aliases": ["UI Redressing", "UIRedressing", "ClickjackingAttack", "클릭재킹"],
+        "root_cause": "transparent_iframe_overlay_without_frame_protection",
+        "affected_components": ["browser_rendering_layer", "iframe_sandbox_policy"],
+        "mechanism": [
+            {
+                "mechanism_name": "x_frame_options_header",
+                "code_examples": [
+                    {
+                        "lang": "python",
+                        "lang_version": ">=3.10",
+                        "framework": "django",
+                        "framework_version": ">=4.0",
+                        "code": "# settings.py\nX_FRAME_OPTIONS = 'DENY'  # 또는 'SAMEORIGIN'",
+                        "description": "X-Frame-Options 헤더로 iframe 내 페이지 로드를 전면 차단"
+                    }
+                ]
+            },
+            {
+                "mechanism_name": "csp_frame_ancestors",
+                "code_examples": [
+                    {
+                        "lang": "python",
+                        "lang_version": ">=3.10",
+                        "framework": "fastapi",
+                        "framework_version": ">=0.100",
+                        "code": "from fastapi.responses import Response\n\n@app.middleware('http')\nasync def add_csp(request, call_next):\n    response = await call_next(request)\n    response.headers['Content-Security-Policy'] = \"frame-ancestors 'none'\"\n    return response",
+                        "description": "CSP frame-ancestors 지시어로 iframe 삽입 출처를 정밀 제어"
+                    }
+                ]
+            }
         ],
         "config_properties": [
-            {"key": "csrf_cookie_samesite", "value": "Strict", "type": "security"},
-            {"key": "session_cookie_samesite", "value": "Lax", "type": "security"}
-          ]
+            {"key": "x_frame_options", "value": "DENY", "type": "security"}
+        ]
     }
 ]
 

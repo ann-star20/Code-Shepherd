@@ -7,7 +7,7 @@
     "severity": "medium",
     "domains": ["performance"],
     "description_ko": "N+1 쿼리 문제는 루프 내에서 관련 객체를 개별 쿼리로 지연 로딩(Lazy Loading)하여 DB 쿼리가 N+1회 실행되는 성능 안티패턴. 데이터 건수가 늘수록 응답 시간이 선형 증가한다.",
-    "aliases": ["N+1 Query Problem", "NPlusOneQuery", "NPlusOneQueryProblem", "NPlus1Query", "NPlus1QueryProblem", "LazyLoadingLoop", "N+1 쿼리 문제", "Lazy Loading Loop"],
+    "aliases": ["N+1 Query Problem", "NPlusOneQuery", "NPlusOneQueryProblem", "NPlus1Query", "NPlus1QueryProblem", "NPlusOneQueryAntipattern", "NPlus1QueryAntipattern", "LazyLoadingLoop", "LazyLoadingLoopAntipattern", "LazyLoadingAntipattern", "LazyLoadingProblem", "N+1 쿼리 문제", "Lazy Loading Loop"],
     "root_cause": "lazy_loading_in_iteration_loop",
     "affected_components": ["orm_layer", "database_query_layer", "api_list_endpoint"],
     "security_mechanism": [
@@ -56,7 +56,7 @@
     "severity": "medium",
     "domains": ["performance"],
     "description_ko": "누락된 인덱스는 WHERE·ORDER BY·JOIN 절 컬럼에 인덱스가 없어 테이블 풀스캔(Full Scan)이 반복 발생하는 성능 안티패턴. 데이터 증가에 따라 응답 시간이 급격히 악화된다.",
-    "aliases": ["Missing Database Index", "Full Table Scan", "MissingDatabaseIndex", "MissingIndexAntipattern", "FullTableScan", "SequentialScan", "SeqScan", "누락된 인덱스", "Seq Scan"],
+    "aliases": ["Missing Database Index", "Full Table Scan", "MissingDatabaseIndex", "MissingIndexAntipattern", "MissingDatabaseIndexAntipattern", "FullTableScan", "FullTableScanAntipattern", "SequentialScan", "SeqScan", "DatabaseIndexMissing", "누락된 인덱스", "Seq Scan"],
     "root_cause": "unindexed_frequently_filtered_column",
     "affected_components": ["database_query_layer", "api_list_endpoint", "reporting_layer"],
     "security_mechanism": [
@@ -105,7 +105,7 @@
     "severity": "high",
     "domains": ["performance", "security"],
     "description_ko": "커넥션 풀 고갈은 DB·외부 서비스 커넥션이 반납되지 않거나 동시 요청이 풀 크기를 초과할 때 전체 시스템이 응답 불능에 빠지는 안티패턴. DoS와 동일한 결과를 초래한다.",
-    "aliases": ["Connection Pool Exhaustion", "DB Connection Leak", "ConnectionPoolExhaustion", "DbConnectionLeak", "ConnectionLeak", "PoolExhaustion", "ConnectionPoolLeakAntipattern", "커넥션 풀 고갈"],
+    "aliases": ["Connection Pool Exhaustion", "DB Connection Leak", "ConnectionPoolExhaustion", "DbConnectionLeak", "ConnectionLeak", "PoolExhaustion", "ConnectionPoolLeakAntipattern", "ConnectionPoolExhaustionAntipattern", "DbConnectionLeakAntipattern", "ConnectionLeakAntipattern", "커넥션 풀 고갈"],
     "root_cause": "connection_not_returned_to_pool_or_pool_undersized",
     "affected_components": ["database_connection_pool", "http_client_pool", "api_gateway"],
     "security_mechanism": [
@@ -150,7 +150,7 @@
     "severity": "high",
     "domains": ["performance", "security"],
     "description_ko": "메모리 누수는 더 이상 사용하지 않는 메모리를 해제하지 않아 힙이 지속 증가하는 안티패턴. 장기 운영 시 OOM 크래시 또는 DoS로 이어진다.",
-    "aliases": ["Memory Leak", "Heap Growth", "MemoryLeakAntipattern", "HeapGrowth", "OutOfMemory", "OomCrash", "OomError", "메모리 누수", "OOM"],
+    "aliases": ["Memory Leak", "Heap Growth", "MemoryLeakAntipattern", "HeapGrowth", "HeapGrowthAntipattern", "OutOfMemory", "OutOfMemoryError", "OomCrash", "OomError", "메모리 누수", "OOM"],
     "root_cause": "object_reference_retained_preventing_gc",
     "affected_components": ["long_running_worker", "cache_layer", "event_listener_registry"],
     "security_mechanism": [

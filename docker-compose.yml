@@ -60,6 +60,8 @@ services:
     build: ./backend
     ports:
       - "8000:8000"
+    volumes:
+      - ./backend:/app
     environment:
       DB_HOST: postgres
       DB_PORT: "5432"
@@ -72,7 +74,7 @@ services:
       REDIS_URL: redis://redis:6379/0
       CELERY_BROKER_URL: redis://redis:6379/0
       CELERY_RESULT_BACKEND: redis://redis:6379/1
-      APP_MODE: ${APP_MODE:-mock}
+      APP_MODE: ${APP_MODE:-development}
       GEMINI_API_KEY: ${GEMINI_API_KEY:-}
     depends_on:
       postgres:
@@ -82,9 +84,7 @@ services:
       redis:
         condition: service_healthy
     command: >
-      sh -c "python scripts/seed_postgres.py &&
-             python scripts/seed_neo4j.py &&
-             uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload"
+      sh -c "uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload"
 
   celery_worker:
     build: ./backend

@@ -1,16 +1,6 @@
 """PostgreSQL 시드 스크립트 — 완전 멱등성 UPSERT 기반 초기화.
 
-실행:
-    cd backend
-    python scripts/seed_postgres.py
-
-환경변수 (우선순위: DATABASE_URL > 개별 변수):
-    DATABASE_URL   postgresql://user:pass@host:port/dbname
-    DB_HOST        localhost
-    DB_PORT        5432
-    DB_NAME        postgres
-    DB_USER        postgres
-    DB_PASSWORD    postgres
+APP_MODE=development 시 MockEmbeddingService로 name_vector / desc_vector를 자동 충전한다.
 """
 
 from __future__ import annotations
@@ -25,11 +15,18 @@ import asyncpg
 
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
-# ── 경로 상수 ─────────────────────────────────────────────────────────────────
+from app.infrastructure.llm.mock_embedding import MockEmbeddingService  # noqa: E402
 
+_APP_MODE = os.getenv("APP_MODE", "development")
+_embedder = MockEmbeddingService() if _APP_MODE != "production" else None
+
+
+def _vec_str(vec: list[float]) -> str:
+    return "[" + ",".join(f"{v:.6f}" for v in vec) + "]"
+
+# ── 경로 상수 명세화
 SCRIPTS_DIR    = Path(__file__).parent
-SCHEMA_SQL     = SCRIPTS_DIR / "seed" / "security" / "schema.sql"
-MIGRATION_SQL  = SCRIPTS_DIR / "seed" / "migration_v2.sql"
+SCHEMA_SQL     = SCRIPTS_DIR / "seed" / "schema.sql"
 SEC_JSON       = SCRIPTS_DIR / "seed" / "security" / "security_concepts.json"
 PERF_JSON      = SCRIPTS_DIR / "seed" / "performance" / "performance_concepts.json"
 
@@ -53,14 +50,7 @@ async def _apply_schema(conn: asyncpg.Connection) -> None:
         body = "\n".join(lines).strip()
         if body:
             await conn.execute(body)
-    print(f"  [schema] {SCHEMA_SQL.name} 적용 완료")
-
-
-async def _apply_migration(conn: asyncpg.Connection) -> None:
-    """migration_v2.sql — 기존 DB 컬럼 보강 (멱등성)."""
-    sql = MIGRATION_SQL.read_text(encoding="utf-8")
-    await conn.execute(sql)
-    print(f"  [migration] {MIGRATION_SQL.name} 적용 완료")
+    print(f"  [Schema] {SCHEMA_SQL.name} 통합본 원자적 적용 완료")
 
 
 async def _upsert_concepts(conn: asyncpg.Connection, concepts: list[dict]) -> int:
@@ -70,12 +60,24 @@ async def _upsert_concepts(conn: asyncpg.Connection, concepts: list[dict]) -> in
         if severity == "info":
             severity = "low"
         owasp = c.get("owasp_id") or c.get("owasp_category")
+
+        name_vec_str: str | None = None
+        desc_vec_str: str | None = None
+        if _embedder is not None:
+            aliases: list[str] = c.get("aliases", [])
+            name_corpus = " ".join([c["concept_name"]] + aliases)
+            name_vec_str = _vec_str(_embedder.embed(name_corpus))
+            desc_ko = c.get("description_ko", "")
+            desc_vec_str = _vec_str(_embedder.embed(desc_ko)) if desc_ko else None
+
         await conn.execute(
             """
             INSERT INTO concepts
                 (concept_name, domains, concept_type, cwe_id, owasp_id,
-                 severity, description_ko, aliases)
-            VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+                 severity, description_ko, root_cause, aliases,
+                 name_vector, desc_vector)
+            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9,
+                    $10::vector, $11::vector)
             ON CONFLICT (concept_name) DO UPDATE
             SET
                 domains        = (SELECT array(
@@ -86,6 +88,9 @@ async def _upsert_concepts(conn: asyncpg.Connection, concepts: list[dict]) -> in
                                   )),
                 severity       = EXCLUDED.severity,
                 description_ko = EXCLUDED.description_ko,
+                root_cause     = EXCLUDED.root_cause,
+                name_vector    = COALESCE(EXCLUDED.name_vector, concepts.name_vector),
+                desc_vector    = COALESCE(EXCLUDED.desc_vector, concepts.desc_vector),
                 updated_at     = now()
             """,
             c["concept_name"],
@@ -95,7 +100,10 @@ async def _upsert_concepts(conn: asyncpg.Connection, concepts: list[dict]) -> in
             owasp,
             severity,
             c.get("description_ko", ""),
+            c.get("root_cause", ""),
             c.get("aliases", []),
+            name_vec_str,
+            desc_vec_str,
         )
         inserted += 1
     return inserted
@@ -103,27 +111,24 @@ async def _upsert_concepts(conn: asyncpg.Connection, concepts: list[dict]) -> in
 
 async def main() -> None:
     dsn = _dsn()
-    print(f"[seed_postgres] 연결: {dsn.split('@')[-1]}")
+    print(f"[seed_postgres] 엔티티 클린 통합 시드 기동: {dsn.split('@')[-1]}")
 
     conn = await asyncpg.connect(dsn)
     try:
-        print("[1/4] 스키마 DDL 적용...")
+        print("[1/3] 통합 스키마 DDL 레이어 빌드...")
         await _apply_schema(conn)
 
-        print("[2/4] 스키마 마이그레이션 적용 (v2)...")
-        await _apply_migration(conn)
-
-        print("[3/4] 보안 도메인 개념 UPSERT...")
+        print("[2/3] 보안 도메인 수렴 개념 마스터 시드 적재 (Aliases 확장 탑재)...")
         sec_data: list[dict] = json.loads(SEC_JSON.read_text(encoding="utf-8"))
         n_sec = await _upsert_concepts(conn, sec_data)
         print(f"  → {n_sec}건")
 
-        print("[4/4] 성능 도메인 개념 UPSERT...")
+        print("[3/3] 성능 도메인 안티패턴 개념 마스터 시드 적재...")
         perf_data: list[dict] = json.loads(PERF_JSON.read_text(encoding="utf-8"))
         n_perf = await _upsert_concepts(conn, perf_data)
         print(f"  → {n_perf}건")
 
-        print(f"\n[완료] 총 {n_sec + n_perf}건 — 멱등성 보장")
+        print(f"\n[완료] 총 {n_sec + n_perf}건 통합 적재 수렴 — 구조 무결성 보장")
     finally:
         await conn.close()
 

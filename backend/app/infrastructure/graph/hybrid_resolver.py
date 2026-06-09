@@ -161,11 +161,30 @@ async def hybrid_resolve(
 ) -> ResolveResult:
     """3-Factor 하이브리드 점수로 유입 개념의 귀속 액션을 결정한다.
 
+    0. (선처리) PG aliases 배열 정확 히트 → 벡터 계산 없이 확정 MERGE
     1. 유입 개념의 name_vec, desc_vec 임베딩
     2. PostgreSQL 기존 마스터 노드 전체 스캔
     3. 각 후보와 하이브리드 점수 계산 → 최고점 후보 선정
     4. 점수 기반 분기 실행 (MERGE / RELATED_TO / NEW)
     """
+    # 0. concept_name이 기존 노드의 aliases 배열에 정확히 존재하면 확정 MERGE
+    #    MockEmbeddingService(BoW) 환경에서 cosine 점수가 낮아 임계치 미달하는 경우를
+    #    벡터 계산 이전에 차단한다.
+    alias_hit = await pg_pool.fetchrow(
+        "SELECT concept_name FROM concepts "
+        "WHERE $1 = ANY(aliases) "
+        "AND (is_deprecated IS NOT TRUE OR is_deprecated IS NULL) "
+        "LIMIT 1",
+        incoming.concept_name,
+    )
+    if alias_hit:
+        target      = alias_hit["concept_name"]
+        in_name_vec = embedding_svc.embed(
+            ", ".join([incoming.concept_name] + incoming.aliases)
+        )
+        await _do_merge(incoming, target, in_name_vec, pg_pool, neo4j_driver, embedding_svc)
+        return ResolveResult(MergeAction.MERGE, target, 1.0, incoming.concept_name)
+
     in_name_text = ", ".join([incoming.concept_name] + incoming.aliases)
     in_desc_text = incoming.description_ko or incoming.concept_name
     in_name_vec  = embedding_svc.embed(in_name_text)
@@ -265,3 +284,60 @@ async def _do_related_to(
             a=incoming_name,
             b=target_name,
         )
+
+
+async def compute_resolve_score(
+    incoming: ConceptExtractionSchema,
+    pg_pool: asyncpg.Pool,
+    embedding_svc: EmbeddingProtocol,
+) -> ResolveResult:
+    """3-Factor 점수와 액션을 반환 — PG/Neo4j에 아무것도 쓰지 않는다 (순수 계산).
+
+    _do_extract에서 staging 저장 직후 호출하여 infer_action/infer_score를 결정한다.
+    실제 MERGE Centroid Shifting과 Neo4j [:RELATED_TO] 엣지는 write_graph_task에서 수행.
+
+    0. (선처리) PG aliases 배열 정확 히트 → score=1.0 확정 MERGE 반환 (벡터 계산 생략)
+    """
+    # 0. concept_name이 기존 노드의 aliases에 정확히 포함되면 확정 MERGE (score=1.0)
+    alias_hit = await pg_pool.fetchrow(
+        "SELECT concept_name FROM concepts "
+        "WHERE $1 = ANY(aliases) "
+        "AND (is_deprecated IS NOT TRUE OR is_deprecated IS NULL) "
+        "LIMIT 1",
+        incoming.concept_name,
+    )
+    if alias_hit:
+        return ResolveResult(MergeAction.MERGE, alias_hit["concept_name"], 1.0, incoming.concept_name)
+
+    in_name_text = ", ".join([incoming.concept_name] + incoming.aliases)
+    in_desc_text = incoming.description_ko or incoming.concept_name
+    in_name_vec  = embedding_svc.embed(in_name_text)
+    in_desc_vec  = embedding_svc.embed(in_desc_text)
+    in_pool      = [incoming.concept_name] + incoming.aliases
+
+    rows = await pg_pool.fetch(
+        "SELECT concept_name, aliases, name_vector, desc_vector "
+        "FROM concepts WHERE is_deprecated IS NOT TRUE"
+    )
+
+    best_score: float = 0.0
+    best_target: str | None = None
+
+    for row in rows:
+        ex_pool   = [row["concept_name"]] + list(row["aliases"] or [])
+        jw        = max_jaro_winkler(in_pool, ex_pool)
+        ex_name_v = _parse_vec(row["name_vector"])
+        ex_desc_v = _parse_vec(row["desc_vector"])
+        name_cos  = _cosine(in_name_vec, ex_name_v) if ex_name_v else 0.0
+        desc_cos  = _cosine(in_desc_vec, ex_desc_v) if ex_desc_v else 0.0
+        score     = compute_hybrid_score(jw, name_cos, desc_cos)
+
+        if score > best_score:
+            best_score  = score
+            best_target = row["concept_name"]
+
+    if best_score >= MERGE_THRESHOLD and best_target:
+        return ResolveResult(MergeAction.MERGE, best_target, best_score, incoming.concept_name)
+    if best_score >= RELATED_THRESHOLD and best_target:
+        return ResolveResult(MergeAction.RELATED_TO, best_target, best_score, incoming.concept_name)
+    return ResolveResult(MergeAction.NEW, None, best_score, incoming.concept_name)

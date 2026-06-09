@@ -1,5 +1,5 @@
 export type ConceptDomain = "security" | "performance" | "both";
-export type NodeStatus = "DRAFT" | "APPROVED" | "COMMITTED" | "REJECTED";
+export type NodeStatus = "DRAFT" | "APPROVED" | "COMMITTED" | "REJECTED" | "MERGE_PENDING";
 export type Severity = "critical" | "high" | "medium" | "low";
 
 export interface ConceptNode {

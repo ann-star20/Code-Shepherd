@@ -21,20 +21,114 @@ type ConceptItem = {
   state: string;
 };
 
-const INITIAL_CONCEPTS: ConceptItem[] = [];
+const INITIAL_CONCEPTS: ConceptItem[] = [
+  {
+    name: "SQLi",
+    concept_type: "vulnerability_root_cause",
+    cwe_id: "CWE-89",
+    owasp_id: "A03:2025",
+    severity: "critical",
+    description_ko: "SQL 인젝션은 공격자가 악의적인 SQL 구문을 입력값에 삽입하여 데이터베이스를 조작하는 공격.",
+    aliases: ["SQL Injection", "SQLInjection", "SqlInjectionVulnerability"],
+    affected_components: ["database_query_layer", "orm_layer"],
+    security_mechanism: ["parameterized_query", "input_type_validation"],
+    domains: ["security"],
+    state: "COMMITTED",
+  },
+  {
+    name: "XSS",
+    concept_type: "vulnerability_root_cause",
+    cwe_id: "CWE-79",
+    owasp_id: "A03:2025",
+    severity: "high",
+    description_ko: "크로스 사이트 스크립팅(XSS)은 공격자가 악성 스크립트를 신뢰된 웹 페이지에 주입하는 공격.",
+    aliases: ["Cross-Site Scripting", "CrossSiteScripting"],
+    affected_components: ["template_rendering_layer", "api_response_serialization"],
+    security_mechanism: ["output_encoding", "content_security_policy"],
+    domains: ["security"],
+    state: "COMMITTED",
+  },
+  {
+    name: "BrokenAccessControl",
+    concept_type: "vulnerability_root_cause",
+    cwe_id: "CWE-284",
+    owasp_id: "A01:2021",
+    severity: "critical",
+    description_ko: "접근 제어 결함은 사용자가 권한 밖의 작업을 수행할 수 있게 만드는 보안 취약점.",
+    aliases: ["Broken Access Control", "IDOR", "AuthorizationBypass"],
+    affected_components: ["authorization_layer", "api_endpoint"],
+    security_mechanism: ["rbac", "attribute_based_access_control"],
+    domains: ["security"],
+    state: "COMMITTED",
+  },
+  {
+    name: "CSRF",
+    concept_type: "vulnerability_root_cause",
+    cwe_id: "CWE-352",
+    owasp_id: "A01:2021",
+    severity: "high",
+    description_ko: "사용자가 의도하지 않은 상태 변경 요청을 공격자가 위조하여 인증된 사용자 권한으로 실행시키는 공격.",
+    aliases: ["CrossSiteRequestForgery", "CSRFAttack", "크로스사이트 요청 위조"],
+    affected_components: ["web_forms", "session_management", "api_endpoints"],
+    security_mechanism: ["csrf_token", "samesite_cookie", "origin_validation"],
+    domains: ["security"],
+    state: "COMMITTED",
+  },
+  {
+    name: "MissingIndex",
+    concept_type: "performance_antipattern",
+    cwe_id: "CWE-1047",
+    owasp_id: "",
+    severity: "medium",
+    description_ko: "인덱스 누락으로 인해 DB 전체 테이블 스캔(Full Scan)이 발생하여 쿼리 성능이 급격히 저하되는 안티패턴.",
+    aliases: ["Missing Database Index", "MissingDbIndex", "FullTableScan"],
+    affected_components: ["database_query_layer", "reporting_module"],
+    security_mechanism: ["composite_index", "covering_index"],
+    domains: ["performance"],
+    state: "COMMITTED",
+  },
+  {
+    name: "N+1Query",
+    concept_type: "performance_antipattern",
+    cwe_id: "CWE-1048",
+    owasp_id: "",
+    severity: "medium",
+    description_ko: "루프 내에서 관련 객체를 개별 쿼리로 지연 로딩하여 DB 쿼리가 N+1회 실행되는 성능 안티패턴.",
+    aliases: ["NPlusOneQuery", "NPlusOneQueryProblem", "LazyLoadingLoop"],
+    affected_components: ["orm_layer", "database_query_layer", "api_list_endpoint"],
+    security_mechanism: ["eager_loading", "batch_fetch"],
+    domains: ["performance"],
+    state: "COMMITTED",
+  },
+];
 
-// DRAFT 시연용 (mock 모드 fallback - ConnPoolExhaustion)
+// DRAFT 시연용 [시나리오 A] NEW 분기 — ConnPoolExhaustion (Hybrid Score 0.439 < 0.72)
 const DRAFT_CONCEPT: ConceptItem = {
-  name: "ConnPoolExhaustion", 
+  name: "ConnPoolExhaustion",
   concept_type: "performance_antipattern",
-  cwe_id: "CWE-400", 
-  owasp_id: "", 
+  cwe_id: "CWE-400",
+  owasp_id: "",
   severity: "high",
   description_ko: "커넥션 반환 실패 또는 풀 설정 미흡으로 DB 커넥션 풀이 고갈되어 새로운 요청이 대기 또는 실패.",
   aliases: ["Connection Pool Exhaustion", "커넥션 풀 고갈", "DB Connection Leak"],
   affected_components: ["database_connection_pool", "http_client_pool", "api_gateway"],
   security_mechanism: ["connection_pool_sizing", "context_manager_connection"],
-  domains: ["security", "performance"], 
+  domains: ["security", "performance"],
+  state: "DRAFT",
+};
+
+// DRAFT 시연용 [시나리오 B] MERGE 분기 — CrossSiteRequestForgery → CSRF 병합 (Hybrid Score 0.934 ≥ 0.88)
+const DRAFT_CONCEPT_MERGE: ConceptItem = {
+  name: "CrossSiteRequestForgery",
+  concept_type: "vulnerability_root_cause",
+  cwe_id: "CWE-352",
+  owasp_id: "A01:2021",
+  severity: "high",
+  description_ko: "사용자가 의도하지 않은 상태 변경 요청을 공격자가 위조하여 인증된 사용자 권한으로 실행시키는 공격.",
+  aliases: ["Cross-Site Request Forgery", "Session Riding", "CSRF"],
+  affected_components: ["web_forms", "api_endpoints", "session_management"],
+  security_mechanism: ["csrf_token", "samesite_cookie", "origin_validation"],
+  domains: ["security"],
   state: "DRAFT",
 };
 
@@ -209,7 +303,6 @@ function layoutMechanismNodes(mechs: GraphNode[]): (GraphNode & { cx: number; cy
   }));
 }
 
-const SEED_NAMES = new Set(INITIAL_CONCEPTS.map((c) => c.name));
 
 const _domainKeys = Object.keys(DOMAIN_REGISTRY);
 const DOMAIN_HUB_POS: Record<string, number[]> = Object.fromEntries(
@@ -282,6 +375,7 @@ export function MainPage() {
   const docIdRef          = useRef<string | null>(null);
   const lastDocStateRef   = useRef<string | null>(null);
   const stagingFetchedRef = useRef(false);
+  const baselineNamesRef = useRef<Set<string> | null>(null);
   const [svgViewBox, setSvgViewBox] = useState({ x: 0, y: 0, w: 860, h: 340 });
   const [svgDragging, setSvgDragging] = useState(false);
   const svgContainerRef = useRef<HTMLDivElement>(null);
@@ -333,6 +427,9 @@ export function MainPage() {
             state: n.state ?? "COMMITTED",
           };
         });
+      if (baselineNamesRef.current === null) {
+        baselineNamesRef.current = new Set(apiConcepts.map((c) => c.name));
+      }
       setConcepts(apiConcepts as typeof INITIAL_CONCEPTS);
       if (apiConcepts.length > 0) {
         setSelectedConcept(apiConcepts[0] as typeof INITIAL_CONCEPTS[0]);
@@ -341,6 +438,10 @@ export function MainPage() {
   }, []);
 
   useEffect(() => { fetchTopology("all", ""); }, [fetchTopology]);
+
+  // DEV mock: CSRF는 INITIAL_CONCEPTS에 포함됨 — 별도 덮어쓰기 불필요
+  // (이전: setConcepts([CSRF_SEED]) → 다른 시드 개념을 소거하는 부작용 있어 제거)
+
   useEffect(() => {
     const id = setTimeout(() => fetchTopology(activeTab, graphSearch), 300);
     return () => clearTimeout(id);
@@ -539,17 +640,39 @@ export function MainPage() {
     if (import.meta.env.DEV && import.meta.env.VITE_MOCK_PIPELINE !== "false") {
       setTimeout(() => {
         setStepStatuses(s => ({ ...s, 1: "SUCCESS", 2: "LOADING" }));
-        addLog("CRAWLER", "2단계 [Crawler Agent] DOM 파싱 완료.");
+        addLog("CRAWLER", "2단계 [Crawler Agent] 개시: 대상 URL DOM 정제 중...");
       }, 1500);
       setTimeout(() => {
         setStepStatuses(s => ({ ...s, 2: "SUCCESS", 3: "LOADING" }));
-        addLog("EXTRACTOR", "3단계 [Extractor Agent] 스키마 매핑 중...");
+        addLog("EXTRACTOR", "3단계 [Extractor Agent] 개시: Gemini 2.5 Flash 구조화 추출 중...");
       }, 3000);
       setTimeout(() => {
-        addLog("EXTRACTOR", "DOMAIN_PENDING 감지 — ConnPoolExhaustion (security+performance 교차 도메인) 발견.");
-        setPendingDomain(true);
-        setPipelineState("WAITING_APPROVAL");
+        addLog("EXTRACTOR", "개념 1/2 추출: ConnPoolExhaustion (security+performance 교차 도메인)");
+        addLog("RESOLVER", "▶ 3-Factor 판정 [1/2]: ConnPoolExhaustion vs. 시드 노드 풀 (16개)");
+        addLog("RESOLVER", "  ① Jaro-Winkler(40%) = 0.421  ② Name_Vector cos(30%) = 0.512  ③ Desc_Vector cos(30%) = 0.388");
+        addLog("RESOLVER", "  Hybrid Score = 0.439 < 0.72 → NEW 분기 결정");
       }, 5000);
+      setTimeout(() => {
+        addLog("EXTRACTOR", "개념 2/2 추출: CrossSiteRequestForgery (CWE-352, security)");
+        addLog("RESOLVER", "▶ 3-Factor 판정 [2/2]: CrossSiteRequestForgery vs. 시드 노드 풀 (16개)");
+        addLog("RESOLVER", "  ① Jaro-Winkler(40%) = 0.961  ② Name_Vector cos(30%) = 0.924  ③ Desc_Vector cos(30%) = 0.911");
+        addLog("RESOLVER", "  Hybrid Score = 0.934 ≥ 0.88 → MERGE 분기 결정 (기존 'CSRF' 노드로 병합 예약)");
+        setStepStatuses(s => ({ ...s, 3: "SUCCESS", 4: "LOADING" }));
+        setConcepts(prev => {
+          const names = new Set(prev.map(c => c.name));
+          const toAdd = [DRAFT_CONCEPT, DRAFT_CONCEPT_MERGE].filter(d => !names.has(d.name));
+          return [...prev, ...toAdd] as typeof INITIAL_CONCEPTS;
+        });
+        setSelectedConcept(DRAFT_CONCEPT_MERGE);
+        setDraftSummary({ count: 2, names: [DRAFT_CONCEPT.name, DRAFT_CONCEPT_MERGE.name], domains: ["security", "performance"] });
+      }, 6000);
+      setTimeout(() => {
+        setStepStatuses(s => ({ ...s, 4: "SUCCESS" }));
+        addLog("WRITER", "4단계 [Graph Writer Agent] 2개 DRAFT 스테이징 완료 (NEW 1건 + MERGE 예약 1건). 관리자 HITL 승인 대기.");
+        setPipelineState("WAITING_APPROVAL");
+        setShowDraft(true);
+        addToast("success", "2개 핵심 기술 개념 도출 완료 — HITL 승인 필요");
+      }, 7500);
       return;
     }
 
@@ -606,21 +729,35 @@ export function MainPage() {
       } catch { /* 폴백으로 진행 */ }
     }
 
+    addLog("RESOLVER", "5단계 [Link Resolver Agent] — HITL 승인 수신. 2개 분기 액션 시퀀스 실행 중...");
     setTimeout(() => {
-      addLog("GRAPH", "Neo4j MERGE + APOC 라벨 결합 성공");
-      const merged = [
-        ...concepts.map((c) => ({ ...c, state: "COMMITTED" })),
-        { ...DRAFT_CONCEPT, state: "COMMITTED" },
-      ];
-      setConcepts(merged as typeof INITIAL_CONCEPTS);
-      setSelectedConcept({ ...DRAFT_CONCEPT, state: "COMMITTED" });
+      addLog("RESOLVER", "▶ [1/2] MERGE 분기 실행: CrossSiteRequestForgery → 'CSRF' 기존 노드 병합");
+      addLog("DB", "  CSRF.aliases += ['CrossSiteRequestForgery', 'Cross-Site Request Forgery', 'Session Riding'] (중복 제거)");
+      addLog("DB", "  MockEmbedding.embed('CSRF, CrossSiteRequestForgery, CSRFAttack, 크로스사이트 요청 위조, Session Riding') → 768-dim name_vector");
+      addLog("DB", "  PostgreSQL UPDATE concepts SET name_vector=$1::vector, aliases=$2 WHERE name='CSRF' — Centroid Shifting 완료");
+      addLog("RESOLVER", "  CSRF 벡터 중심점 이동 완료 (aliases 3개 → 6개, name_vector 재임베딩)");
+      addLog("RESOLVER", "▶ [2/2] NEW 분기 실행: ConnPoolExhaustion — 독립 마스터 노드 신규 생성");
+      addLog("DB", "  MockEmbedding.embed('ConnPoolExhaustion, Connection Pool Exhaustion, 커넥션 풀 고갈, DB Connection Leak') → 768-dim name_vector");
+      addLog("DB", "  PostgreSQL INSERT: concepts (name='ConnPoolExhaustion', name_vector=$10::vector, desc_vector=$11::vector) ON CONFLICT UPSERT");
+      addLog("GRAPH", "Neo4j MERGE (:Concept {name:'CSRF'}) SET aliases=apoc.coll.toSet([...]) 완료");
+      addLog("GRAPH", "Neo4j MERGE (:Concept {name:'ConnPoolExhaustion'}) SET labels=apoc.coll.toSet(['performance','security']) 완료");
+      const committed = concepts
+        .filter(c => c.name !== DRAFT_CONCEPT_MERGE.name)
+        .map(c => c.name === "CSRF"
+          ? { ...c, aliases: [...new Set([...c.aliases, "CrossSiteRequestForgery", "Cross-Site Request Forgery", "Session Riding"])], state: "COMMITTED" }
+          : { ...c, state: "COMMITTED" });
+      const final = committed.some(c => c.name === DRAFT_CONCEPT.name)
+        ? committed
+        : [...committed, { ...DRAFT_CONCEPT, state: "COMMITTED" }];
+      setConcepts(final as typeof INITIAL_CONCEPTS);
+      setSelectedConcept((final.find(c => c.name === "CSRF") ?? final[0]) as typeof INITIAL_CONCEPTS[0]);
       setStepStatuses({ 1: "SUCCESS", 2: "SUCCESS", 3: "SUCCESS", 4: "SUCCESS", 5: "SUCCESS" });
-      addLog("RESOLVER", "5단계 [Link Resolver Agent] SAME_AS 결합 성공.");
-      addLog("SYSTEM", "파이프라인 완료.");
+      addLog("SYSTEM", "파이프라인 완료 — COMMITTED. (MERGE 1건 + NEW 1건)");
+      addToast("success", "파이프라인 완료 — MERGE 1건(CSRF 벡터 업데이트) + NEW 1건(ConnPoolExhaustion)");
       setPipelineState("FINISHED");
       setShowDraft(false);
       setUrls([]);
-    }, 1500);
+    }, 2000);
   }
 
   // ── 전체 거부 ────────────────────────────────────────────────────────────
@@ -976,7 +1113,7 @@ export function MainPage() {
 
                   {allConceptNodes.map((c) => {
                     const style = getConceptStyle(c.domains);
-                    const isNew = !SEED_NAMES.has(c.name) && c.state !== "DRAFT";
+                    const isNew = baselineNamesRef.current !== null && !baselineNamesRef.current.has(c.name) && c.state !== "DRAFT";
                     const label = graphLabel(c.name);
                     return (
                       <g key={c.name} className="cursor-pointer"
@@ -1127,7 +1264,7 @@ export function MainPage() {
                           {selectedConcept.state === "DRAFT" && (
                             <span className="ml-2 text-xs px-1.5 py-0.5 bg-amber-100 text-amber-700 rounded font-bold border border-amber-200">DRAFT</span>
                           )}
-                          {!SEED_NAMES.has(selectedConcept.name) && selectedConcept.state !== "DRAFT" && (
+                          {baselineNamesRef.current !== null && !baselineNamesRef.current.has(selectedConcept.name) && selectedConcept.state !== "DRAFT" && (
                             <span className="ml-2 text-xs px-1.5 py-0.5 bg-emerald-100 text-emerald-700 rounded font-bold border border-emerald-200">신규 추가</span>
                           )}
                         </h4>

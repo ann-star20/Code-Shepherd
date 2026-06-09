@@ -20,6 +20,27 @@ describe("nodeStyler", () => {
     expect(s.color).toBe("#E24B4A");
   });
 
+  // ── T_gm_ns: MERGE_PENDING + REJECTED opacity 수정 ──────────────────────────
+  it("T_gm_ns_01: MERGE_PENDING → opacity 1 (기존 노드에 오버레이, 흐림 없음)", () => {
+    const s = getNodeStyle("MERGE_PENDING", "security");
+    expect(s.opacity).toBe(1);
+  });
+
+  it("T_gm_ns_02: MERGE_PENDING → strokeDasharray none (실선 유지)", () => {
+    const s = getNodeStyle("MERGE_PENDING", "security");
+    expect(s.strokeDasharray).toBe("none");
+  });
+
+  it("T_gm_ns_03: MERGE_PENDING → 도메인 색상 그대로 유지", () => {
+    const s = getNodeStyle("MERGE_PENDING", "security");
+    expect(s.color).toBe("#1D9E75");
+  });
+
+  it("T_gm_ns_04: REJECTED → opacity 0.3 (spec 준수, 구형 0.5 아님)", () => {
+    const s = getNodeStyle("REJECTED", "security");
+    expect(s.opacity).toBe(0.3);
+  });
+
   it("T_F1_domain_color_security", () => {
     expect(getDomainColor("security")).toBe("#1D9E75");
   });

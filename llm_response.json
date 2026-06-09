@@ -10,227 +10,28 @@
     "aliases": ["CSRF", "XSRF"],
     "root_cause": "lack_of_request_authenticity_verification",
     "affected_components": ["web_application", "http_request_handler", "user_session"],
-    "security_mechanism": [
-      {
-        "mechanism_name": "csrf_cookie",
-        "code_examples": []
-      },
-      {
-        "mechanism_name": "csrf_middleware_token_field",
-        "code_examples": []
-      },
-      {
-        "mechanism_name": "csrf_request_validation",
-        "code_examples": []
-      },
-      {
-        "mechanism_name": "origin_header_verification",
-        "code_examples": []
-      },
-      {
-        "mechanism_name": "strict_referer_checking",
-        "code_examples": []
-      },
-      {
-        "mechanism_name": "csrf_exempt_decorator",
-        "code_examples": [
-          {
-            "lang": "python",
-            "lang_version": "3.x",
-            "framework": "Django",
-            "framework_version": "6.0",
-            "code": "from django.http import HttpResponse\nfrom django.views.decorators.csrf import csrf_exempt\n\n@csrf_exempt\ndef my_view(request):\n    return HttpResponse(\"Hello world\")",
-            "description": "CSRF 보호를 비활성화하는 뷰 데코레이터 예시"
-          }
-        ]
-      },
-      {
-        "mechanism_name": "csrf_protect_decorator",
-        "code_examples": [
-          {
-            "lang": "python",
-            "lang_version": "3.x",
-            "framework": "Django",
-            "framework_version": "6.0",
-            "code": "from django.shortcuts import render\nfrom django.views.decorators.csrf import csrf_protect\n\n@csrf_protect\ndef my_view(request):\n    c = {}\n    # ...\n    return render(request, \"a_template.html\", c)",
-            "description": "뷰에 CSRF 보호 기능을 적용하는 데코레이터 예시"
-          }
-        ]
-      },
+    "mechanism": [
       {
         "mechanism_name": "requires_csrf_token_decorator",
         "code_examples": [
           {
             "lang": "python",
-            "lang_version": "3.x",
+            "lang_version": "2.7",
             "framework": "Django",
-            "framework_version": "6.0",
-            "code": "from django.shortcuts import render\nfrom django.views.decorators.csrf import requires_csrf_token\n\n@requires_csrf_token\ndef my_view(request):\n    c = {}\n    # ...\n    return render(request, \"a_template.html\", c)",
-            "description": "CSRF 토큰 템플릿 태그가 항상 작동하도록 보장하는 데코레이터 예시"
+            "framework_version": "1.11",
+            "code": "from django.shortcuts import render\nfrom django.views.decorators.csrf import requires_csrf_token\n\n@requires_csrf_token\ndef my_view(request):\n    # Django 1.11 / Python 2.7 환경\n    context = {'data': 'secure_content'}\n    return render(request, 'template.html', context)",
+            "description": "Django 1.11에서 데코레이터를 사용하여 CSRF 토큰 처리를 보장하는 방식"
+          },
+          {
+            "lang": "javascript",
+            "lang_version": "ES6",
+            "framework": "Express",
+            "framework_version": "4.17",
+            "code": "const express = require('express');\nconst csrf = require('csurf');\nconst cookieParser = require('cookie-parser');\n\nconst app = express();\nconst csrfProtection = csrf({ cookie: true });\n\napp.use(cookieParser());\n\napp.get('/protected', csrfProtection, (req, res) => {\n    // CSRF 토큰을 템플릿에 주입\n    res.render('template', { csrfToken: req.csrfToken() });\n});",
+            "description": "Express에서 csurf 미들웨어를 사용하여 토큰 기반의 CSRF 보호를 적용하는 방식"
           }
         ]
-      },
-      {
-        "mechanism_name": "ensure_csrf_cookie_decorator",
-        "code_examples": []
-      },
-      {
-        "mechanism_name": "host_header_validation",
-        "code_examples": []
       }
-    ],
-    "config_properties": [
-      {"key": "csrf_cookie_age", "value": "Defines the age of the CSRF cookie.", "type": "tuning"},
-      {"key": "csrf_cookie_domain", "value": "The domain to be used for the CSRF cookie. Can be set to '.example.com' to allow cross-subdomain requests.", "type": "security"},
-      {"key": "csrf_cookie_httponly", "value": "Whether the CSRF cookie should be HTTP-only, preventing client-side script access.", "type": "security"},
-      {"key": "csrf_cookie_name", "value": "The name of the CSRF cookie.", "type": "tuning"},
-      {"key": "csrf_cookie_path", "value": "The path to be used for the CSRF cookie.", "type": "tuning"},
-      {"key": "csrf_cookie_samesite", "value": "The SameSite flag for the CSRF cookie.", "type": "security"},
-      {"key": "csrf_cookie_secure", "value": "Whether the CSRF cookie should only be sent over HTTPS connections.", "type": "security"},
-      {"key": "csrf_failure_view", "value": "The view to be used when a CSRF validation fails.", "type": "tuning"},
-      {"key": "csrf_header_name", "value": "The name of the header used for CSRF token submission for AJAX requests.", "type": "tuning"},
-      {"key": "csrf_trusted_origins", "value": "A list of trusted origins for cross-domain requests. If the Origin header doesn’t match an entry in this list, the request will be rejected.", "type": "security"},
-      {"key": "csrf_use_sessions", "value": "Whether the CSRF token should be stored in the user’s session instead of a cookie.", "type": "security"}
     ]
-  },
-  {
-    "concept_name": "BREACH",
-    "concept_type": "vulnerability_root_cause",
-    "cwe_id": "CWE-200",
-    "owasp_id": null,
-    "severity": "high",
-    "domains": ["security"],
-    "description_ko": "압축된 HTTP 응답에서 사용자 입력이 반영된 데이터를 이용하여 비밀 정보(예: CSRF 토큰)를 추론하는 공격입니다. Django의 CSRF 토큰은 이 공격을 방어하기 위해 마스크와 함께 스크램블됩니다.",
-    "aliases": ["Browser Reconnaissance and Exfiltration via Adaptive Compression of Hypertext"],
-    "root_cause": "compression_side_channel",
-    "affected_components": ["http_compression_system", "browser", "csrf_token"],
-    "security_mechanism": [],
-    "config_properties": []
-  },
-  {
-    "concept_name": "ManInTheMiddleAttack",
-    "concept_type": "vulnerability_root_cause",
-    "cwe_id": "CWE-300",
-    "owasp_id": "A05:2021",
-    "severity": "critical",
-    "domains": ["security"],
-    "description_ko": "공격자가 통신하는 두 당사자 사이에 몰래 개입하여 메시지를 가로채거나 위조하는 공격입니다. CSRF 보호만으로는 막을 수 없으며, HTTPS와 HSTS 사용이 필수적입니다.",
-    "aliases": ["MITM", "MiTM"],
-    "root_cause": "insecure_channel_communication",
-    "affected_components": ["network_communication", "ssl_tls_protocol", "http_protocol"],
-    "security_mechanism": [
-      {
-        "mechanism_name": "https_protocol",
-        "code_examples": []
-      },
-      {
-        "mechanism_name": "http_strict_transport_security",
-        "code_examples": []
-      }
-    ],
-    "config_properties": []
-  },
-  {
-    "concept_name": "CrossSiteScripting",
-    "concept_type": "vulnerability_root_cause",
-    "cwe_id": "CWE-79",
-    "owasp_id": "A03:2021",
-    "severity": "critical",
-    "domains": ["security"],
-    "description_ko": "공격자가 악성 스크립트를 웹 페이지에 주입하여 사용자의 브라우저에서 실행되도록 하는 공격입니다. XSS 취약점이 존재하면 CSRF 보호가 무력화될 수 있어 CSRF 보호의 전제 조건으로 안전한 사이트 유지가 강조됩니다.",
-    "aliases": ["XSS"],
-    "root_cause": "improper_input_sanitization",
-    "affected_components": ["web_browser", "web_application", "user_input_processing"],
-    "security_mechanism": [],
-    "config_properties": []
-  },
-  {
-    "concept_name": "ReferrerDisclosure",
-    "concept_type": "vulnerability_root_cause",
-    "cwe_id": "CWE-200",
-    "owasp_id": null,
-    "severity": "low",
-    "domains": ["security"],
-    "description_ko": "사용자가 다른 웹사이트로 이동할 때 현재 페이지의 URL 정보가 Referer 헤더를 통해 노출되는 보안 문제입니다. 이는 CSRF 보호의 엄격한 Referer 검사와 충돌할 수 있습니다.",
-    "aliases": ["Referer Leak", "Referer Header Disclosure"],
-    "root_cause": "implicit_referer_transmission",
-    "affected_components": ["web_browser", "http_header"],
-    "security_mechanism": [
-      {
-        "mechanism_name": "referrer_policy_no_referrer",
-        "code_examples": []
-      }
-    ],
-    "config_properties": []
-  },
-  {
-    "concept_name": "SubdomainCookieCircumvention",
-    "concept_type": "vulnerability_root_cause",
-    "cwe_id": "CWE-284",
-    "owasp_id": null,
-    "severity": "medium",
-    "domains": ["security"],
-    "description_ko": "서브도메인이 클라이언트의 전체 도메인에 대한 쿠키를 설정할 수 있어 CSRF 보호 메커니즘을 우회할 수 있는 Django CSRF 보호의 제한 사항입니다. 서브도메인이 신뢰할 수 있는 사용자에게 통제되어야 합니다.",
-    "aliases": ["Subdomain CSRF Bypass"],
-    "root_cause": "shared_cookie_domain",
-    "affected_components": ["http_cookie_domain", "web_application_architecture"],
-    "security_mechanism": [],
-    "config_properties": []
-  },
-  {
-    "concept_name": "SessionFixation",
-    "concept_type": "vulnerability_root_cause",
-    "cwe_id": "CWE-384",
-    "owasp_id": "A05:2021",
-    "severity": "high",
-    "domains": ["security"],
-    "description_ko": "공격자가 사용자의 세션 ID를 미리 지정하거나 강제로 부여하여, 사용자가 로그인한 후에도 공격자가 해당 세션 ID를 통해 사용자의 세션을 가로챌 수 있는 공격입니다. 이 취약점은 서브도메인 통제 부족과 관련될 수 있습니다.",
-    "aliases": ["Session ID Fixation"],
-    "root_cause": "improper_session_id_management",
-    "affected_components": ["http_session_management", "web_application_framework"],
-    "security_mechanism": [],
-    "config_properties": []
-  },
-  {
-    "concept_name": "CSRFTokenPairPosting",
-    "concept_type": "vulnerability_root_cause",
-    "cwe_id": null,
-    "owasp_id": null,
-    "severity": null,
-    "domains": ["security"],
-    "description_ko": "임의의 CSRF 토큰 쌍(쿠키 및 POST 데이터)을 전송하는 것이 취약점인지에 대한 질문입니다. 공격자가 피해자 브라우저에 CSRF 쿠키를 삽입할 방법이 없으므로, XSS와 같은 다른 취약점이 없이는 자체적인 취약점이 아닙니다.",
-    "aliases": ["Arbitrary CSRF Token Posting"],
-    "root_cause": "misconception_of_csrf_token_security",
-    "affected_components": ["web_application_security_audit", "security_testing"],
-    "security_mechanism": [],
-    "config_properties": []
-  },
-  {
-    "concept_name": "CSRFProtectionSessionIndependence",
-    "concept_type": "vulnerability_root_cause",
-    "cwe_id": null,
-    "owasp_id": null,
-    "severity": null,
-    "domains": ["security"],
-    "description_ko": "Django의 CSRF 보호가 기본적으로 세션에 연결되지 않는 설계 결정에 대한 설명입니다. 이는 익명 사용자로부터 제출을 허용하는 사이트에서 세션 없이도 보호 기능을 사용할 수 있도록 하기 위함이며, `CSRF_USE_SESSIONS` 설정을 통해 변경 가능합니다.",
-    "aliases": ["CSRF Token Session Coupling"],
-    "root_cause": "design_choice_for_anonymity",
-    "affected_components": ["web_application_framework_design", "http_session_management"],
-    "security_mechanism": [],
-    "config_properties": []
-  },
-  {
-    "concept_name": "CSRFValidationFailureAfterLogin",
-    "concept_type": "vulnerability_root_cause",
-    "cwe_id": null,
-    "owasp_id": null,
-    "severity": "low",
-    "domains": ["security"],
-    "description_ko": "사용자 로그인 후 CSRF 유효성 검사 실패가 발생하는 흔한 사용자 경험 문제입니다. 보안상의 이유로 로그인 시 CSRF 토큰이 갱신되므로, 로그인 전에 생성된 폼은 재로드가 필요합니다.",
-    "aliases": ["CSRF Token Rotation Issue"],
-    "root_cause": "csrf_token_rotation_on_login",
-    "affected_components": ["user_interface", "http_session_management"],
-    "security_mechanism": [],
-    "config_properties": []
   }
 ]

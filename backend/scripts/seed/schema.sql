@@ -78,22 +78,28 @@ WITH (m = 24, ef_construction = 100);
 
 -- ── 4. 스테이징 테이블 (DRAFT → APPROVED → COMMITTED)
 CREATE TABLE IF NOT EXISTS staging_concepts (
-    id              UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    session_id      UUID NOT NULL,
-    doc_id          TEXT REFERENCES documents(doc_id) ON DELETE CASCADE,
-    concept_json    JSONB NOT NULL,
-    state           TEXT NOT NULL DEFAULT 'DRAFT',
-    known_domains   TEXT[] DEFAULT '{}',
-    unknown_domains TEXT[] DEFAULT '{}',
-    reviewed_at     TIMESTAMPTZ,
-    committed_at    TIMESTAMPTZ,
-    created_at      TIMESTAMPTZ DEFAULT now()
+    id                   UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    session_id           UUID NOT NULL,
+    doc_id               TEXT REFERENCES documents(doc_id) ON DELETE CASCADE,
+    concept_json         JSONB NOT NULL,
+    state                TEXT NOT NULL DEFAULT 'DRAFT',
+    known_domains        TEXT[] DEFAULT '{}',
+    unknown_domains      TEXT[] DEFAULT '{}',
+    infer_action         TEXT,           -- 사전 계산된 액션 (MERGE/RELATED_TO/NEW)
+    infer_score          FLOAT,          -- 최종 하이브리드 점수 (예: 0.934)
+    target_concept_name  TEXT,           -- MERGE/RELATED_TO 대상 마스터 개념명
+    reviewed_at          TIMESTAMPTZ,
+    committed_at         TIMESTAMPTZ,
+    created_at           TIMESTAMPTZ DEFAULT now()
 );
 
--- staging_concepts: 마이그레이션 안전 컬럼 추가
-ALTER TABLE staging_concepts ADD COLUMN IF NOT EXISTS known_domains   TEXT[] DEFAULT '{}';
-ALTER TABLE staging_concepts ADD COLUMN IF NOT EXISTS unknown_domains  TEXT[] DEFAULT '{}';
-ALTER TABLE staging_concepts ADD COLUMN IF NOT EXISTS committed_at     TIMESTAMPTZ;
+-- staging_concepts: 마이그레이션 안전 컬럼 추가 (기존 볼륨 호환)
+ALTER TABLE staging_concepts ADD COLUMN IF NOT EXISTS known_domains        TEXT[] DEFAULT '{}';
+ALTER TABLE staging_concepts ADD COLUMN IF NOT EXISTS unknown_domains       TEXT[] DEFAULT '{}';
+ALTER TABLE staging_concepts ADD COLUMN IF NOT EXISTS committed_at          TIMESTAMPTZ;
+ALTER TABLE staging_concepts ADD COLUMN IF NOT EXISTS infer_action          TEXT;
+ALTER TABLE staging_concepts ADD COLUMN IF NOT EXISTS infer_score           FLOAT;
+ALTER TABLE staging_concepts ADD COLUMN IF NOT EXISTS target_concept_name   TEXT;
 
 -- ── 5. 파이프라인 실행 로그 (에이전트별 이벤트 스트림 리팩토링 반영 완료)
 CREATE TABLE IF NOT EXISTS pipeline_logs (

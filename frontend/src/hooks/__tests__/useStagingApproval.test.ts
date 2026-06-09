@@ -16,7 +16,11 @@ vi.mock("@/services/stagingService", () => ({
 const makeDraftRecord = (id: string) => ({
   id,
   state: "DRAFT" as const,
-  concept_json: { id, name: `Concept_${id}`, domain: "security" as const, status: "DRAFT" as const, aliases: [], tags: [] },
+  concept_json: {
+    concept_name: `Concept_${id}`,
+    domains: ["security"],
+    aliases: [],
+  },
 });
 
 beforeEach(() => {

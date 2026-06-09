@@ -1,0 +1,15 @@
+[
+        {
+        "mechanism_name": "requires_csrf_token_decorator",
+        "code_examples": [
+          {
+            "lang": "python",
+            "lang_version": "3.x",
+            "framework": "Django",
+            "framework_version": "6.0",
+            "code": "from django.shortcuts import render\nfrom django.views.decorators.csrf import requires_csrf_token\n\n@requires_csrf_token\ndef my_view(request):\n    c = {}\n    # ...\n    return render(request, \"a_template.html\", c)",
+            "description": "CSRF 토큰 템플릿 태그가 항상 작동하도록 보장하는 데코레이터 예시"
+          }
+        ]
+      },
+]

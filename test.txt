@@ -110,3 +110,7 @@ python scripts/run_extractor.py `
 --response-file	파싱된 컨셉 JSON
 --response-file + .raw.txt	Gemini 원문 응답 (production 모드만)
 프롬프트 구조 요약: Gemini는 단일 user turn — system/user 분리 없음. _build_prompt가 반환하는 하나의 문자열 안에 역할지시 + 스키마 + 문서청크가 모두 포함됩니다.
+
+
+# 로컬의 node_modules와 package-lock.json을 과감히 삭제
+rm -rf node_modules package-lock.json

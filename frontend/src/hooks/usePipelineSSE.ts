@@ -26,17 +26,16 @@ export function usePipelineSSE(sessionId: string | null): PipelineSSEState {
     const source = new EventSource(`/api/pipeline/stream/${sessionId}`);
     setIsConnected(true);
 
-    source.addEventListener("step_update", (e: Event) => {
-      const { agent, status } = JSON.parse((e as MessageEvent).data) as {
-        agent: string;
-        status: PipelineStep["status"];
-      };
-      setSteps((prev) => prev.map((s) => (s.agent === agent ? { ...s, status } : s)));
-    });
-
-    source.addEventListener("log", (e: Event) => {
-      setLogs((prev) => [...prev, (e as MessageEvent).data]);
-    });
+    source.onmessage = (e: MessageEvent) => {
+      const payload = JSON.parse(e.data) as { type: string; [key: string]: unknown };
+      if (payload.type === "step_update") {
+        const { agent, status } = payload as { type: string; agent: string; status: PipelineStep["status"] };
+        setSteps((prev) => prev.map((s) => (s.agent === agent ? { ...s, status } : s)));
+      } else if (payload.type === "log") {
+        const { message } = payload as { type: string; message: string };
+        setLogs((prev) => [...prev, message]);
+      }
+    };
 
     source.onerror = () => setIsConnected(false);
 

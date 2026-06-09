@@ -10,7 +10,7 @@
   Layer 4 — :CodeExample     (unq_id: {mech}_{lang}_{lang_ver}_{fw}_{fw_ver})
 
 프론트엔드 구형 필드 수렴 계약 (입구 단 자동 정규화):
-  security_mechanism : list[str]        → list[MechanismIn]
+  mechanism : list[str]        → list[MechanismIn]
   config_properties  : list[dict]       → list[PropertyIn]
   code_examples      : list[dict] flat  → 첫 번째 MechanismIn.code_examples 귀속
   owasp_category     : str              → owasp_id 병합
@@ -149,7 +149,7 @@ class ConceptExtractionSchema(BaseModel):
     LLM Extractor 출력 + 프론트엔드 입력을 단일 수렴하는 핵심 도메인 엔티티.
 
     구형(legacy) → 신형(new) 자동 수렴:
-      security_mechanism : list[str]              → list[MechanismIn]
+      mechanism : list[str]              → list[MechanismIn]
       config_properties  : list[{key, value}]     → list[PropertyIn]  (type='security' 기본)
       code_examples      : list[dict] flat        → 첫 번째 MechanismIn.code_examples 귀속
       owasp_category     : str                    → owasp_id 병합
@@ -167,7 +167,7 @@ class ConceptExtractionSchema(BaseModel):
     doc_id: Optional[str] = None
 
     # 구형/신형 공용 — model_validator 내에서 정규화됨
-    security_mechanism: list[Any] = Field(default_factory=list)
+    mechanism: list[Any] = Field(default_factory=list)
     config_properties: list[Any] = Field(default_factory=list)
     affected_components: list[str] = Field(default_factory=list)
     root_cause: Optional[str] = None
@@ -189,8 +189,8 @@ class ConceptExtractionSchema(BaseModel):
         # ③ domains 소문자 정규화
         self.domains = [d.lower() for d in self.domains]
 
-        # ④ security_mechanism 수렴 (str | dict | MechanismIn → MechanismIn)
-        self.security_mechanism = [_coerce_mechanism(x) for x in self.security_mechanism]
+        # ④ mechanism 수렴 (str | dict | MechanismIn → MechanismIn)
+        self.mechanism = [_coerce_mechanism(x) for x in self.mechanism]
 
         # ⑤ config_properties 수렴 (dict | PropertyIn → PropertyIn)
         self.config_properties = [_coerce_property(x) for x in self.config_properties]
@@ -198,15 +198,15 @@ class ConceptExtractionSchema(BaseModel):
         # ⑥ 구형 flat code_examples → 첫 번째 Mechanism에 귀속 / default mech 생성
         if self.code_examples:
             parsed = [_coerce_code_example(ex) for ex in self.code_examples]
-            if self.security_mechanism:
-                for mech in self.security_mechanism:
+            if self.mechanism:
+                for mech in self.mechanism:
                     if not mech.code_examples:
                         mech.code_examples = parsed
                         break
                 else:
-                    self.security_mechanism[0].code_examples.extend(parsed)
+                    self.mechanism[0].code_examples.extend(parsed)
             else:
-                self.security_mechanism = [
+                self.mechanism = [
                     MechanismIn(mechanism_name="general_mitigation", code_examples=parsed)
                 ]
             self.code_examples = []
@@ -217,7 +217,7 @@ class ConceptExtractionSchema(BaseModel):
 
     @property
     def mechanisms(self) -> list[MechanismIn]:
-        return self.security_mechanism  # type: ignore[return-value]
+        return self.mechanism  # type: ignore[return-value]
 
     @property
     def properties(self) -> list[PropertyIn]:
