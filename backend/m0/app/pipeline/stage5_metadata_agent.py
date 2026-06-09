@@ -38,8 +38,9 @@ Markdown 형식의 기술 문서에서 구조화된 메타데이터와 핵심 �
 - 코드 블록(```), 설명 텍스트, 마크다운 형식을 일절 포함하지 않습니다.
 
 필드 제약 조건:
-- category: 문서 내용에 가장 적합한 카테고리를 자유롭게 추론하세요.
-  기존 카테고리에 맞으면 그것을, 맞지 않으면 더 정확한 새 카테고리명을 제안하세요.
+- category: 아래 기존 카테고리 목록에서 반드시 선택하세요.
+  기존 카테고리로 충분히 분류 가능한 경우 새 카테고리명을 제안하지 마세요.
+  기존 카테고리 중 어느 것으로도 전혀 설명할 수 없는 완전히 새로운 주제인 경우에만 새 이름을 사용하세요.
 - category_reasoning: 카테고리를 선택한 근거를 2~3문장으로 설명하세요.
 - category_alternatives: 기존 카테고리 중 차선책 1~2개를 배열로 제시하세요.
 - team, author: 문서에 명시된 경우만 추출, 불명확하면 null
@@ -154,13 +155,12 @@ async def _extract_metadata(
         )
         return _fallback_metadata(), []
 
-    # 마크다운 헤딩(#~###)을 태그로 자동 추가 — Gemini 생성 태그에 병합
-    heading_tags = _extract_heading_tags(markdown)
     ai_tags: list[str] = data.get("tags", [])
-    merged_tags = list(dict.fromkeys(heading_tags + ai_tags))  # 순서 유지 + 중복 제거
+    merged_tags = list(dict.fromkeys(ai_tags))  # 중복 제거
 
+    h1_title = _extract_h1_title(sample)
     metadata: "DocumentMetadata" = {
-        "title": data.get("title", "제목 없음"),
+        "title": h1_title or data.get("title", "제목 없음"),
         "category": data.get("category", "기타"),
         "category_reasoning": data.get("category_reasoning", ""),
         "category_alternatives": data.get("category_alternatives", []),
@@ -235,13 +235,18 @@ def _fallback_metadata() -> "DocumentMetadata":
     }
 
 
-def _mock_metadata(markdown: str) -> "DocumentMetadata":
-    title = "제목 없음"
+def _extract_h1_title(markdown: str) -> str | None:
+    """markdown에서 첫 번째 H1(# 제목)을 추출한다. 없으면 None."""
     for line in markdown.splitlines():
         stripped = line.strip()
-        if stripped.startswith("#"):
-            title = stripped.lstrip("#").strip() or title
-            break
+        if stripped.startswith("# ") or stripped == "#":
+            title = stripped.lstrip("#").strip()
+            return title if title else None
+    return None
+
+
+def _mock_metadata(markdown: str) -> "DocumentMetadata":
+    title = _extract_h1_title(markdown) or "제목 없음"
     return {
         "title": title,
         "category": "코딩컨벤션",   # Mock은 기존 카테고리 반환 → category_is_new=False
