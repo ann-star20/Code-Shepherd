@@ -6,7 +6,7 @@ from datetime import UTC, datetime
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, status
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel
-from sqlalchemy import case, select, text
+from sqlalchemy import case, func, select, text
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -91,6 +91,18 @@ async def _create_pending_plans(session: AsyncSession, issues: list[ReviewIssue]
     return plans
 
 
+async def _count_user_mistakes(session: AsyncSession, *, user_id: uuid.UUID | None, keyword: str) -> int:
+    """이 개발자가 같은 keyword로 발생시킨 review_issue 누적 횟수 — depth 결정(D18)의 mistake_count."""
+    if user_id is None:
+        return 0
+    result = await session.execute(
+        select(func.count())
+        .select_from(ReviewIssue)
+        .where(ReviewIssue.user_id == user_id, ReviewIssue.keyword == keyword)
+    )
+    return result.scalar_one()
+
+
 async def _run_card_generation(plan_issue_pairs: list[tuple[uuid.UUID, ReviewIssue]]) -> None:
     """BackgroundTask — pending 상태로 미리 만들어둔 plan row를 generate_card 결과로 갱신한다 (D2: "202 즉시 응답 후 비동기 생성").
 
@@ -114,7 +126,8 @@ async def _run_card_generation(plan_issue_pairs: list[tuple[uuid.UUID, ReviewIss
                 plan.status = "running"
                 await session.commit()
 
-                generated = await generate_card(issue, adapter)
+                mistake_count = await _count_user_mistakes(session, user_id=issue.user_id, keyword=issue.keyword)
+                generated = await generate_card(issue, adapter, mistake_count=mistake_count)
                 plan.status = generated.status
                 plan.llm_fallback = generated.llm_fallback
                 plan.error_message = generated.error_message

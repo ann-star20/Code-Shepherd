@@ -143,7 +143,7 @@ async def fallback_card(*, issue: ReviewIssue, depth: str, card_type: str) -> di
     )
 
 
-async def generate_card(issue: ReviewIssue, adapter: SearchAdapter) -> CurriculumPlan:
+async def generate_card(issue: ReviewIssue, adapter: SearchAdapter, mistake_count: int = 0) -> CurriculumPlan:
     """이슈 1건을 받아 RAG 검색 3종 → 카드 빌드 → curriculum_plan 레코드를 생성한다.
 
     embed_query 타임아웃 등 외부 API 오류는 status='failed' + error_message로 기록한다 (T6).
@@ -166,7 +166,7 @@ async def generate_card(issue: ReviewIssue, adapter: SearchAdapter) -> Curriculu
     docs_recommend = await rag_search(adapter, embedding3, category="learning_resource")
 
     llm_fallback = docs_concept is None or docs_example is None
-    depth = determine_depth(issue)
+    depth = determine_depth(issue, mistake_count=mistake_count)
     card_type = route_card_type(issue)
 
     try:

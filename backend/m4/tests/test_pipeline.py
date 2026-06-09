@@ -202,6 +202,22 @@ def test_depth_is_quick_when_severity_low_and_mistake_count_below_threshold():
     assert learn_pipeline.determine_depth(issue, mistake_count=2) == "quick"
 
 
+@pytest.mark.asyncio
+async def test_generate_card_forwards_mistake_count_to_depth_decision(mock_build_card):
+    """generate_card가 받은 mistake_count를 determine_depth에 그대로 전달해 depth를 결정한다 (D18) —
+    호출부에서 mistake_count를 안 넘기면 항상 0으로 처리되어 반복 실수 조건이 작동하지 않는 누락을 방지."""
+    issue = make_issue(severity="low")
+    adapter = FakeAdapter([
+        [make_doc("security_guide doc 1"), make_doc("security_guide doc 2")],
+        [make_doc("coding_convention doc 1"), make_doc("coding_convention doc 2")],
+        [make_doc("learning_resource doc 1"), make_doc("learning_resource doc 2")],
+    ])
+
+    await learn_pipeline.generate_card(issue, adapter, mistake_count=3)
+
+    assert mock_build_card.call_args.kwargs["depth"] == "deep"
+
+
 def test_depth_is_deep_when_mistake_count_reaches_threshold():
     """severity가 낮아도 mistake_count가 3 이상이면 depth가 'deep'으로 결정된다 (D18)."""
     issue = make_issue(severity="low")
