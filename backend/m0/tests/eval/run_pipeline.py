@@ -17,6 +17,7 @@ import asyncio
 import json
 import logging
 import sys
+import time
 from pathlib import Path
 from typing import Any
 
@@ -155,23 +156,27 @@ async def fetch_metadata(base_url: str, doc_id: str) -> dict:
 def build_output_entry(
     golden_id: str,
     doc_id: str,
+    file_type: str,
     title: str | None,
     category: str | None,
     tags: list[str],
     entities: dict,
     quality_score: float,
     status: str,
+    processing_time_ms: float | None = None,
 ) -> dict:
     """run_eval.py의 load_results_from_file()이 읽을 수 있는 형식으로 반환한다."""
     return {
-        "golden_id": golden_id,
-        "doc_id": doc_id,
-        "title": title,
-        "category": category,
-        "tags": tags,
-        "entities": entities,
-        "quality_score": quality_score,
-        "status": status,
+        "golden_id":           golden_id,
+        "doc_id":              doc_id,
+        "file_type":           file_type,
+        "title":               title,
+        "category":            category,
+        "tags":                tags,
+        "entities":            entities,
+        "quality_score":       quality_score,
+        "status":              status,
+        "processing_time_ms":  processing_time_ms,
     }
 
 
@@ -215,6 +220,8 @@ async def run(
         logger.info("[%d/%d] %s (%s)", i, len(docs), golden_id, file_path.name)
 
         try:
+            t_start = time.monotonic()
+
             # 1. 업로드
             doc_id = await upload_document(base_url, file_path)
             logger.info("  업로드 완료 → doc_id=%s", doc_id)
@@ -224,7 +231,8 @@ async def run(
                 base_url, doc_id, poll_interval, max_retries
             )
             status = status_data.get("status", "unknown")
-            logger.info("  처리 완료 → status=%s", status)
+            processing_time_ms = round((time.monotonic() - t_start) * 1000)
+            logger.info("  처리 완료 → status=%s (%dms)", status, processing_time_ms)
 
             # 3. 메타데이터 수집 (quality_score도 /details에서 가져옴)
             meta = await fetch_metadata(base_url, doc_id)
@@ -237,12 +245,14 @@ async def run(
             results.append(build_output_entry(
                 golden_id=golden_id,
                 doc_id=doc_id,
+                file_type=doc["file_type"],
                 title=meta["title"],
                 category=meta["category"],
                 tags=meta["tags"],
                 entities=meta["entities"],
                 quality_score=quality_score,
                 status=status,
+                processing_time_ms=processing_time_ms,
             ))
 
         except TimeoutError as e:
@@ -250,6 +260,7 @@ async def run(
             results.append(build_output_entry(
                 golden_id=golden_id,
                 doc_id="",
+                file_type=doc["file_type"],
                 title=None,
                 category=None,
                 tags=[],
@@ -262,6 +273,7 @@ async def run(
             results.append(build_output_entry(
                 golden_id=golden_id,
                 doc_id="",
+                file_type=doc["file_type"],
                 title=None,
                 category=None,
                 tags=[],
