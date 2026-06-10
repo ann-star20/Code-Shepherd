@@ -6,6 +6,8 @@
 
     # Docker 내부
     docker exec -it code-shepherd-backend-1 python scripts/verify_pipeline.py <session_id>
+    docker exec -it code-shepherd-base-1 python scripts/verify_pipeline.py <session_id>
+    
 
 환경변수:
     DATABASE_URL   postgresql://user:pass@host:port/dbname

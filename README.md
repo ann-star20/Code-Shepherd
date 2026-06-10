@@ -46,3 +46,8 @@ sleep 5
 docker compose exec backend python scripts/seed_postgres.py && docker compose exec backend python scripts/seed_neo4j.py
 
  docker-compose logs -f -t
+
+
+ docker compose down -v frontend && docker compose --no-cache build frontend
+ docker compose down -v frontend && docker compose --no-cache build frontend
+ docker compose up
