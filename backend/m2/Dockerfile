@@ -9,7 +9,7 @@ COPY m2 /app/service
 
 WORKDIR /app/service
 
-RUN uv sync --no-dev --extra analysis
+RUN uv sync --no-dev
 
 EXPOSE 8003
 
