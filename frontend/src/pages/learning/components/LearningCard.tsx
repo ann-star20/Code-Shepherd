@@ -17,7 +17,6 @@ export default function LearningCard({ issue }: LearningCardProps) {
   const { plan } = issue;
 
   useEffect(() => {
-    // D11 — 별도 완료 버튼 없이 완료된 카드가 로드될 때만 자동 호출 (서버에서 idempotent 처리)
     if (plan.status === "completed") {
       void m4Api.post("/api/complete", { plan_id: plan.id });
     }
@@ -25,8 +24,12 @@ export default function LearningCard({ issue }: LearningCardProps) {
 
   if (plan.status === "pending" || plan.status === "running") {
     return (
-      <div role="status" aria-label="학습 카드를 생성하고 있어요" className="flex items-center justify-center p-8">
-        <span className="h-6 w-6 rounded-full border-2 border-notion-border border-t-notion-text animate-spin" />
+      <div role="status" className="flex items-center gap-3 rounded-xl border border-notion-border bg-white p-6 text-notion-text-secondary">
+        <span className="h-5 w-5 shrink-0 rounded-full border-2 border-notion-border border-t-notion-text animate-spin" />
+        <div>
+          <p className="font-medium text-notion-text">학습 카드 생성 중</p>
+          <p className="text-sm">잠시만 기다려주세요...</p>
+        </div>
       </div>
     );
   }
@@ -83,11 +86,11 @@ export default function LearningCard({ issue }: LearningCardProps) {
         <p className="text-notion-text">{explanation}</p>
         <p className="text-sm text-notion-text-secondary">왜 위험한가: {why_dangerous}</p>
 
-        {learning_recommendations.length > 0 && (
+        {(learning_recommendations ?? []).length > 0 && (
           <div>
             <p className="text-sm font-medium text-notion-text mb-1">학습 추천</p>
             <ul className="text-sm text-notion-text-secondary list-disc list-inside">
-              {learning_recommendations.map((rec) => (
+              {(learning_recommendations ?? []).map((rec) => (
                 <li key={rec.title}>
                   {rec.title} — {rec.description}
                 </li>

@@ -270,14 +270,19 @@ class _FakeCardSession:
     DB 일시 장애 시나리오를 재현한다.
     """
 
-    def __init__(self, plans_by_id, commit_exception=None, commit_fail_at=None):
+    def __init__(self, plans_by_id, commit_exception=None, commit_fail_at=None, mistake_count=0):
         self._plans = plans_by_id
         self.commit_count = 0
         self._commit_exception = commit_exception
         self._commit_fail_at = commit_fail_at
+        self._mistake_count = mistake_count
 
     async def get(self, _model, plan_id):
         return self._plans.get(plan_id)
+
+    async def execute(self, _stmt):
+        """_count_user_mistakes()의 select(func.count()) 더블 — scalar_one()이 mistake_count를 반환."""
+        return SimpleNamespace(scalar_one=lambda: self._mistake_count)
 
     async def commit(self):
         self.commit_count += 1
@@ -343,6 +348,23 @@ async def test_run_card_generation_marks_plan_failed_on_db_write_exception():
 
     assert plan.status == "failed"
     assert plan.error_message == "connection lost"
+
+
+@pytest.mark.asyncio
+async def test_run_card_generation_passes_counted_mistake_count_to_generate_card():
+    """동일 user_id+keyword로 발생한 과거 review_issue 누적 횟수(mistake_count, D18)를 집계해
+    generate_card에 전달한다 — depth 결정이 항상 mistake_count=0으로 고정되는 누락을 방지."""
+    plan_id = uuid.uuid4()
+    issue = make_issue()
+    plan = make_plan(issue.id, id=plan_id, status="pending")
+    generated = make_plan(issue.id, status="completed", card_content={"explanation": "..."})
+    session = _FakeCardSession({plan_id: plan}, mistake_count=3)
+
+    p1, p2, p3, p4 = _patch_card_generation_infra(session)
+    with p1, p2, p3, p4, patch.object(routes, "generate_card", new=AsyncMock(return_value=generated)) as generate_card_mock:
+        await routes._run_card_generation([(plan_id, issue)])
+
+    assert generate_card_mock.call_args.kwargs["mistake_count"] == 3
 
 
 # ---------------------------------------------------------------------------
