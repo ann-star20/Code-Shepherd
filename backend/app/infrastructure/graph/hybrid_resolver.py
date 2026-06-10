@@ -47,6 +47,11 @@ class ResolveResult:
     target:        str | None   # 기존 마스터 노드명 (NEW일 때 None)
     score:         float
     incoming_name: str
+    score_metrics: dict = None  # {"jaro": float, "name_vec": float, "desc_vec": float}
+
+    def __post_init__(self):
+        if self.score_metrics is None:
+            self.score_metrics = {"jaro": 0.0, "name_vec": 0.0, "desc_vec": 0.0}
 
 
 class EmbeddingProtocol(Protocol):

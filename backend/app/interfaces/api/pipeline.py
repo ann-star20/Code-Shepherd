@@ -31,8 +31,11 @@ _STATE_STEP_MAP: dict[str, list[dict]] = {
         {"agent": "Input",   "status": "DONE"},
         {"agent": "Crawler", "status": "RUNNING"},
     ],
-    "EXTRACTED": [
+    "EXTRACTING": [
         {"agent": "Crawler",   "status": "DONE"},
+        {"agent": "Extractor", "status": "RUNNING"},
+    ],
+    "EXTRACTED": [
         {"agent": "Extractor", "status": "DONE"},
     ],
     "COMMITTED": [

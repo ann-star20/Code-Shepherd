@@ -72,11 +72,21 @@ def build_doc_id(prefix: str, url: str, content: str = "", etag: str = "") -> st
 
 class CodeExampleIn(BaseModel):
     lang: str
-    lang_version: str = "*"
-    framework: str = ""
-    framework_version: str = "*"
+    lang_version: Optional[str] = "*"
+    framework: Optional[str] = ""
+    framework_version: Optional[str] = "*"
     code: str
     description: str = ""
+
+    @model_validator(mode="after")
+    def _coerce_nulls(self) -> CodeExampleIn:
+        if self.lang_version is None:
+            self.lang_version = "*"
+        if self.framework is None:
+            self.framework = ""
+        if self.framework_version is None:
+            self.framework_version = "*"
+        return self
 
 
 # ─── Layer 3: Mechanism ───────────────────────────────────────────────────────

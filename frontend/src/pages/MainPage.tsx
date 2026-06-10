@@ -546,9 +546,9 @@ export function MainPage() {
         const msg: {
           type: string;
           agent?: string;
+          status?: string;
           message?: string;
           ts?: string;
-          doc_state?: string;
         } = JSON.parse(event.data as string);
 
         if (msg.type === "connected") {
@@ -558,68 +558,79 @@ export function MainPage() {
 
         if (msg.type === "log" && msg.message) {
           const t = msg.ts?.slice(11, 19) ?? new Date().toTimeString().slice(0, 8);
+          // 로그 형식: "[AgentName] 메시지" — agent 필드는 별도로 내려오지 않음
+          const agentMatch = msg.message.match(/^\[([^\]]+)\]/);
+          const agentType = agentMatch ? agentMatch[1].toUpperCase() : "SYSTEM";
           setLogs((prev) => {
             if (prev.some((e) => e.message === msg.message)) return prev;
-            return [...prev, { time: t, type: msg.agent?.toUpperCase() ?? "SYSTEM", message: msg.message! }];
+            return [...prev, { time: t, type: agentType, message: msg.message! }];
           });
-          // Extractor 로그 감지: step 2 → step 3
-          if (
-            msg.agent?.toLowerCase() === "extractor" &&
-            lastDocStateRef.current !== "EXTRACTING" &&
-            lastDocStateRef.current !== "EXTRACTED" &&
-            lastDocStateRef.current !== "COMMITTED"
-          ) {
+          return;
+        }
+
+        // ── step_update: DB 상태 전이마다 백엔드가 발행 ────────────────────
+        if (msg.type === "step_update") {
+          const { agent, status } = msg;
+
+          if (agent === "Input" && status === "DONE") {
+            setStepStatuses(s => ({ ...s, 1: "SUCCESS" }));
+          } else if (agent === "Crawler" && status === "RUNNING") {
+            setStepStatuses(s => ({ ...s, 1: "SUCCESS", 2: "LOADING" }));
+            addToast("info", "Crawler Agent 시작 — 원본 텍스트 정제 중");
+            lastDocStateRef.current = "CRAWLING";
+          } else if (agent === "Crawler" && status === "DONE") {
+            setStepStatuses(s => ({ ...s, 2: "SUCCESS" }));
+          } else if (agent === "Extractor" && status === "RUNNING") {
             setStepStatuses(s => ({ ...s, 2: "SUCCESS", 3: "LOADING" }));
             addToast("info", "Extractor Agent 시작 — Gemini 추출 중");
             lastDocStateRef.current = "EXTRACTING";
+          } else if (agent === "Extractor" && status === "DONE" && !stagingFetchedRef.current) {
+            stagingFetchedRef.current = true;
+            lastDocStateRef.current = "EXTRACTED";
+            setStepStatuses(s => ({ ...s, 3: "SUCCESS", 4: "LOADING" }));
+
+            fetch(`/api/staging/${sessionId}?all_states=true`).then(async (sRes) => {
+              if (!sRes.ok) return;
+              const sData = await sRes.json();
+              const drafted = (sData.items as ApiConcept[]).map(mapApiConcept);
+              if (drafted.length > 0) {
+                setConcepts((prev) => {
+                  const names = new Set(prev.map((c) => c.name));
+                  return [...prev, ...drafted.filter((d) => !names.has(d.name))] as typeof INITIAL_CONCEPTS;
+                });
+                setSelectedConcept(drafted[0] as typeof DRAFT_CONCEPT);
+                const count = drafted.length;
+                const names = drafted.slice(0, 3).map((d) => d.name);
+                const domains = [...new Set(drafted.flatMap((d) => d.domains))];
+                setDraftSummary({ count, names, domains });
+                addToast("success", `${count}개 핵심 기술 개념 도출 완료`);
+              }
+              setStepStatuses(s => ({ ...s, 4: "SUCCESS" }));
+              addLog("SYSTEM", "스테이징 적재 완료. 점선(DRAFT) 미리보기를 확인 후 승인하세요.");
+              setPipelineState("WAITING_APPROVAL");
+              setShowDraft(true);
+            }).catch(() => {
+              setStepStatuses(s => ({ ...s, 4: "SUCCESS" }));
+              setPipelineState("WAITING_APPROVAL");
+              setShowDraft(true);
+            });
+          } else if (agent === "Writer" && status === "DONE") {
+            if (lastDocStateRef.current === "COMMITTED") return;
+            lastDocStateRef.current = "COMMITTED";
+            setStepStatuses(s => ({ ...s, 5: "SUCCESS" }));
+            closeSSE();
+            setConcepts((prev) => prev.map((c) => ({ ...c, state: "COMMITTED" })) as typeof INITIAL_CONCEPTS);
+            addLog("SYSTEM", "파이프라인 완료 — COMMITTED");
+            addToast("success", "파이프라인 완료 — 모든 개념이 확정 적재되었습니다");
+            setPipelineState("FINISHED");
+            setShowDraft(false);
+            setUrls([]);
           }
           return;
         }
 
-        const docState = msg.type === "finished" ? "COMMITTED" : (msg.doc_state ?? null);
-        if (!docState) return;
-
-        const prev = lastDocStateRef.current;
-
-        if (docState === "CRAWLING" && prev !== "CRAWLING" && prev !== "EXTRACTING" && prev !== "EXTRACTED" && prev !== "COMMITTED") {
-          setStepStatuses(s => ({ ...s, 1: "SUCCESS", 2: "LOADING" }));
-          addToast("info", "Crawler Agent 시작 — 원본 텍스트 정제 중");
-          lastDocStateRef.current = "CRAWLING";
-        }
-
-        if (docState === "EXTRACTED" && !stagingFetchedRef.current) {
-          stagingFetchedRef.current = true;
-          lastDocStateRef.current = "EXTRACTED";
-          setStepStatuses(s => ({ ...s, 2: "SUCCESS", 3: "SUCCESS", 4: "LOADING" }));
-
-          fetch(`/api/staging/${sessionId}?all_states=true`).then(async (sRes) => {
-            if (!sRes.ok) return;
-            const sData = await sRes.json();
-            const drafted = (sData.items as ApiConcept[]).map(mapApiConcept);
-            if (drafted.length > 0) {
-              setConcepts((prev) => {
-                const names = new Set(prev.map((c) => c.name));
-                return [...prev, ...drafted.filter((d) => !names.has(d.name))] as typeof INITIAL_CONCEPTS;
-              });
-              setSelectedConcept(drafted[0] as typeof DRAFT_CONCEPT);
-              const count = drafted.length;
-              const names = drafted.slice(0, 3).map((d) => d.name);
-              const domains = [...new Set(drafted.flatMap((d) => d.domains))];
-              setDraftSummary({ count, names, domains });
-              addToast("success", `${count}개 핵심 기술 개념 도출 완료`);
-            }
-            setStepStatuses(s => ({ ...s, 4: "SUCCESS" }));
-            addLog("SYSTEM", "스테이징 적재 완료. 점선(DRAFT) 미리보기를 확인 후 승인하세요.");
-            setPipelineState("WAITING_APPROVAL");
-            setShowDraft(true);
-          }).catch(() => {
-            setStepStatuses(s => ({ ...s, 4: "SUCCESS" }));
-            setPipelineState("WAITING_APPROVAL");
-            setShowDraft(true);
-          });
-        }
-
-        if (docState === "COMMITTED" && prev !== "COMMITTED") {
+        if (msg.type === "finished") {
+          if (lastDocStateRef.current === "COMMITTED") return;
           lastDocStateRef.current = "COMMITTED";
           setStepStatuses(s => ({ ...s, 5: "SUCCESS" }));
           closeSSE();
@@ -629,21 +640,6 @@ export function MainPage() {
           setPipelineState("FINISHED");
           setShowDraft(false);
           setUrls([]);
-        }
-
-        if (docState === "FAILED" && prev !== "FAILED") {
-          lastDocStateRef.current = "FAILED";
-          setStepStatuses(s => {
-            const updated = { ...s };
-            for (let i = 1; i <= 5; i++) {
-              if (updated[i] === "LOADING") updated[i] = "FAILED";
-            }
-            return updated;
-          });
-          closeSSE();
-          addLog("ERROR", "파이프라인 오류 — FAILED");
-          addToast("error", "파이프라인 오류 — FAILED 상태");
-          setPipelineState("IDLE");
         }
       } catch { /* JSON parse 오류 무시 */ }
     };

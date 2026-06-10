@@ -3,6 +3,7 @@
 import logging
 import os
 from celery import Celery
+from celery.signals import worker_process_init
 
 logging.basicConfig(level=logging.INFO, format="%(name)s | %(levelname)s | %(message)s")
 
@@ -26,3 +27,10 @@ celery_app.conf.update(
     task_acks_late=True,           # worker 장애 시 재처리 보장
     worker_prefetch_multiplier=1,  # 태스크 하나씩 처리 (긴 태스크 공정 분배)
 )
+
+
+@worker_process_init.connect
+def warm_up_embedding(**kwargs):
+    # 각 ForkPoolWorker 시작 시 BGE-M3를 미리 로드해 첫 태스크 2분 지연 제거
+    from app.infrastructure.llm.factory import create_embedding_client
+    create_embedding_client(model=os.getenv("EMBEDDING_MODEL", "BAAI/bge-m3"))

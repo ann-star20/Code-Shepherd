@@ -12,6 +12,7 @@ import asyncio
 import json
 import logging
 import os
+from unittest import mock
 
 import asyncpg
 import psycopg2
@@ -74,6 +75,13 @@ def crawl_task(self, session_id: str, doc_id: str):
         with conn.cursor() as cur:
             cur.execute("SELECT original_url FROM documents WHERE doc_id=%s", (doc_id,))
             row = cur.fetchone()
+            if row and row[0] == 'FAILED':
+                _log(conn, doc_id, session_id, "System", "WARNING", f"[RESET] 과거 실패 문서({doc_id}) 감지 ➔ 스테이징 세척 및 1단계 클린 리부팅 단행.")
+                with conn.cursor() as cur:
+                    cur.execute("DELETE FROM staging_concepts WHERE doc_id=%s", (doc_id,))
+                    cur.execute("DELETE FROM pipeline_logs WHERE doc_id=%s", (doc_id,))
+                conn.commit()
+                _set_state(conn, doc_id, "PENDING")
         if not row:
             raise ValueError(f"doc_id '{doc_id}' not found in documents")
         url = row[0]
@@ -111,6 +119,7 @@ def extract_task(self, session_id: str, doc_id: str, chunks: list[str]):
     """
     conn = _pg_conn()
     try:
+        _set_state(conn, doc_id, "EXTRACTING")
         _log(conn, doc_id, session_id, "Extractor", "INFO",
              f"LLM 추출 시작 — {len(chunks)} 청크 (real_llm={_USE_REAL_LLM})")
         asyncio.run(_do_extract(session_id, doc_id, chunks))
@@ -130,19 +139,29 @@ async def _save_infer_scores(
     results: list,
     db_pool: object,
 ) -> None:
-    """staging_concepts에 infer_action/infer_confidence/target_concept_name 업데이트.
-
+    """
+    staging_concepts에 infer_action/infer_confidence/target_concept_name 업데이트.
+    3-Factor 하이브리드 중복 판정 역추적 전용 세부 지표 영속화.
+    최종 결합 신뢰도(infer_confidence)뿐만 아니라 Jaro, Name_Vec, Desc_Vec 점수를 RDB에 개별 컬럼으로 분리 적재함.
     mock/production 모드 모두 동일 로직. 환경 플래그에 무관하다.
     """
     for concept, result in zip(concepts, results):
         await db_pool.execute(
-            """UPDATE staging_concepts
-               SET infer_action = $1, infer_confidence = $2, target_concept_name = $3
-               WHERE session_id = $4::uuid
-               AND concept_json->>'concept_name' = $5""",
-            result.action.value,
-            result.score,
-            result.target,
+"""UPDATE staging_concepts
+               SET infer_action = $1, 
+                   infer_confidence = $2, 
+                   target_concept_name = $3,
+                   score_jaro_winkler = $4,
+                   score_name_vector = $5,
+                   score_desc_vector = $6
+               WHERE session_id = $7::uuid
+               AND concept_json->>'concept_name' = $8""",
+            result.action.value,         # MERGE / RELATED_TO / NEW
+            result.score,                # 최종 결합 Hybrid Score
+            result.target,               # 병합/연관 타겟 마스터 개념명
+            result.score_metrics["jaro"],     # 1) 어휘 구조 유사도 (40%)
+            result.score_metrics["name_vec"], # 2) 키워드 풀 1024차원 코사인 유사도 (30%)
+            result.score_metrics["desc_vec"], # 3) 요약 설명문 1024차원 코사인 유사도 (30%)
             session_id,
             concept.concept_name,
         )
@@ -164,12 +183,16 @@ async def _do_extract(session_id: str, doc_id: str, chunks: list[str]) -> None:
     
     # USE_REAL_EMBEDDING=true → GeminiEmbeddingService, false(기본) → MockEmbeddingService
     embedding_mode = "production" if _USE_REAL_EMBEDDING else "development"
+    # embedding_svc = create_embedding_client(
+    #     embedding_mode,
+    #     api_key=os.getenv("GEMINI_API_KEY", ""),
+    #     model=os.getenv("EMBEDDING_MODEL", "text-embedding-004"),
+    # )
+    # 🎯 1024차원 고성능 BGE-M3 로컬 임베딩 클라이언트 빌드 및 의존성 인젝션
     embedding_svc = create_embedding_client(
         embedding_mode,
-        api_key=os.getenv("GEMINI_API_KEY", ""),
-        model=os.getenv("EMBEDDING_MODEL", "text-embedding-004"),
+        model=os.getenv("EMBEDDING_MODEL", "BAAI/bge-m3"),
     )
-
     pool = await asyncpg.create_pool(_pg_async_dsn(), min_size=1, max_size=2, ssl=False)
     try:
         async with pool.acquire() as db_conn:
@@ -243,8 +266,7 @@ async def _do_write_graph(session_id: str) -> dict[str, int]:
     embedding_mode = "production" if _USE_REAL_EMBEDDING else "development"
     embedding_svc = create_embedding_client(
         embedding_mode,
-        api_key=os.getenv("GEMINI_API_KEY", ""),
-        model=os.getenv("EMBEDDING_MODEL", "text-embedding-004"),
+        model=os.getenv("EMBEDDING_MODEL", "BAAI/bge-m3"),
     )
 
     neo4j_uri  = os.getenv("NEO4J_URI", "bolt://127.0.0.1:7688")

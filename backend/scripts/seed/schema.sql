@@ -32,7 +32,7 @@ CREATE TABLE IF NOT EXISTS documents (
     created_at        TIMESTAMPTZ DEFAULT now(),
     updated_at        TIMESTAMPTZ,
     CONSTRAINT documents_state_check
-        CHECK (state IN ('PENDING','CRAWLING','EXTRACTED','COMMITTED','FAILED'))
+        CHECK (state IN ('PENDING','CRAWLING','EXTRACTING','EXTRACTED','COMMITTED','FAILED'))
 );
 
 -- ── 3. 개념 마스터 테이블 (하이브리드 벡터 통합 스펙 보전)
