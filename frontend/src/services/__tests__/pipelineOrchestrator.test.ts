@@ -6,6 +6,8 @@ import {
   prescanDocument,
   triggerPipeline,
   runPipelineStart,
+  continuePipeline,
+  learnFrameworkMetadata,
 } from "@/services/pipelineOrchestrator";
 
 const mock = new MockAdapter(apiClient);
@@ -151,5 +153,74 @@ describe("runPipelineStart", () => {
     await expect(
       runPipelineStart(["https://docs.djangoproject.com/"], null, { onLog: () => {} }),
     ).rejects.toThrow();
+  });
+
+  it("T_orch_08: returns needsManualMetadata when infer_status is manual_required, without triggering pipeline", async () => {
+    // Arrange
+    mock.onPost("/documents").reply(200, { documents: [{ doc_id: "DOC-unknown" }] });
+    mock.onPost("/documents/DOC-unknown/prescan").reply(200, {
+      doc_id: "DOC-unknown",
+      original_url: "https://docs.astro.build/en/getting-started/",
+      framework: null,
+      infer_confidence: 0.0,
+      infer_status: "manual_required",
+      suggested_frameworks: ["Django", "FastAPI"],
+    });
+    let triggerCalled = false;
+    mock.onPost("/pipeline/trigger").reply(() => { triggerCalled = true; return [202, { session_id: "ses-unused" }]; });
+
+    // Act
+    const result = await runPipelineStart(
+      ["https://docs.astro.build/en/getting-started/"],
+      null,
+      { onLog: () => {} },
+    );
+
+    // Assert
+    expect(result.docId).toBe("DOC-unknown");
+    expect(result.sessionId).toBeNull();
+    expect(result.needsManualMetadata).toBe(true);
+    expect(result.prescanResult?.suggested_frameworks).toEqual(["Django", "FastAPI"]);
+    expect(triggerCalled).toBe(false);
+  });
+});
+
+// ── continuePipeline ──────────────────────────────────────────────────────────
+describe("continuePipeline", () => {
+  it("T_orch_09: triggers pipeline and emits CRAWLER log", async () => {
+    // Arrange
+    mock.onPost("/pipeline/trigger", { doc_id: "DOC-resume" }).reply(202, { session_id: "ses-resume" });
+    const logTypes: string[] = [];
+
+    // Act
+    const result = await continuePipeline("DOC-resume", { onLog: (type) => logTypes.push(type) });
+
+    // Assert
+    expect(result.docId).toBe("DOC-resume");
+    expect(result.sessionId).toBe("ses-resume");
+    expect(logTypes).toEqual(["CRAWLER"]);
+  });
+});
+
+// ── learnFrameworkMetadata ─────────────────────────────────────────────────────
+describe("learnFrameworkMetadata", () => {
+  it("T_orch_10: posts framework/pattern/langs to /documents/metadata/learn", async () => {
+    // Arrange
+    mock.onPost("/documents/metadata/learn", {
+      framework: "Astro",
+      pattern: "docs\\.astro\\.build",
+      supported_langs: ["TypeScript"],
+      default_lang: "TypeScript",
+    }).reply(200, { status: "SUCCESS" });
+
+    // Act + Assert
+    await expect(
+      learnFrameworkMetadata({
+        framework: "Astro",
+        pattern: "docs\\.astro\\.build",
+        supported_langs: ["TypeScript"],
+        default_lang: "TypeScript",
+      }),
+    ).resolves.toBeUndefined();
   });
 });

@@ -1,5 +1,12 @@
 import { useState, useEffect, useRef, useCallback, useMemo } from "react";
-import { runPipelineStart } from "@/services/pipelineOrchestrator";
+import {
+  runPipelineStart,
+  continuePipeline,
+  learnFrameworkMetadata,
+  type PrescanResult,
+  type LearnMetadataPayload,
+} from "@/services/pipelineOrchestrator";
+import { MetadataLearnModal } from "@/components/molecules/MetadataLearnModal";
 
 // ── 도메인 레지스트리 (수정 없음) ───────────────────────────────────────────
 const DOMAIN_REGISTRY: Record<string, { label_ko: string; color_hex: string; bg_hex: string; border_hex: string }> = {
@@ -417,6 +424,8 @@ export function MainPage() {
   } | null>(null);
   const [codeLoading, setCodeLoading]       = useState(false);
   const [draftSummary, setDraftSummary]     = useState<{ count: number; names: string[]; domains: string[] }>({ count: 0, names: [], domains: [] });
+  const [metadataLearnModal, setMetadataLearnModal] = useState<PrescanResult | null>(null);
+  const [isLearningMetadata, setIsLearningMetadata] = useState(false);
 
   const consoleRef        = useRef<HTMLDivElement>(null);
   const sseRef            = useRef<EventSource | null>(null);
@@ -730,21 +739,57 @@ export function MainPage() {
 
     // PROD: 실제 API 호출
     try {
-      const { docId, sessionId } = await runPipelineStart(
+      const result = await runPipelineStart(
         urls.map((u) => u.value),
         docIdRef.current,
         { onLog: addLog },
       );
-      docIdRef.current = docId;
-      sessionIdRef.current = sessionId;
+      docIdRef.current = result.docId;
+
+      if (result.needsManualMetadata && result.prescanResult) {
+        addLog("INPUT", "메타데이터 자동 추론 실패 — 관리자 수동 보정 대기 중...");
+        setStepStatuses(s => ({ ...s, 1: "SUCCESS" }));
+        setMetadataLearnModal(result.prescanResult);
+        return;
+      }
+
+      sessionIdRef.current = result.sessionId;
       setStepStatuses(s => ({ ...s, 1: "SUCCESS", 2: "LOADING" }));
-      startSSE(sessionId);
+      startSSE(result.sessionId!);
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : String(err);
       addLog("ERROR", `파이프라인 시작 실패: ${msg}`);
       setPipelineState("IDLE");
       setStepStatuses(INITIAL_STEP_STATUSES);
     }
+  }
+
+  // ── HITL 메타데이터 자율 학습 (v3.2) ────────────────────────────────────
+  async function submitMetadataCorrection(payload: LearnMetadataPayload) {
+    if (!docIdRef.current) return;
+    setIsLearningMetadata(true);
+    try {
+      await learnFrameworkMetadata(payload);
+      addLog("INPUT", `메타데이터 학습 완료: ${payload.framework} 패턴이 framework_metadata에 등록되었습니다.`);
+      setMetadataLearnModal(null);
+
+      const result = await continuePipeline(docIdRef.current, { onLog: addLog });
+      sessionIdRef.current = result.sessionId;
+      setStepStatuses(s => ({ ...s, 2: "LOADING" }));
+      startSSE(result.sessionId!);
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : String(err);
+      addLog("ERROR", `메타데이터 학습 실패: ${msg}`);
+    } finally {
+      setIsLearningMetadata(false);
+    }
+  }
+
+  function cancelMetadataCorrection() {
+    setMetadataLearnModal(null);
+    addLog("INPUT", "메타데이터 보정 취소 — 파이프라인 대기 상태로 복귀.");
+    setPipelineState("IDLE");
+    setStepStatuses(INITIAL_STEP_STATUSES);
   }
 
   // ── HITL 도메인 복구 (mock 모드) ─────────────────────────────────────────
@@ -1558,6 +1603,16 @@ export function MainPage() {
             </div>
           </div>
         </div>
+      )}
+
+      {/* ── HITL 메타데이터 보정 모달 (PRD-fix/prescan_process-v3 §7) ───────── */}
+      {metadataLearnModal && (
+        <MetadataLearnModal
+          prescanResult={metadataLearnModal}
+          onSubmit={submitMetadataCorrection}
+          onCancel={cancelMetadataCorrection}
+          isSubmitting={isLearningMetadata}
+        />
       )}
     </div>
   );
