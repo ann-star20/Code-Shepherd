@@ -2,6 +2,16 @@
 @tailwind components;
 @tailwind utilities;
 
+@keyframes pulse-glow {
+  0%, 100% { box-shadow: 0 0 6px 1px #f59e0b88, 0 0 0 1.5px #f59e0b; }
+  50%       { box-shadow: 0 0 18px 4px #f59e0bcc, 0 0 0 2px #f59e0b; }
+}
+
+@keyframes pulse-dot {
+  0%, 100% { opacity: 1; transform: scale(1); }
+  50%       { opacity: 0.5; transform: scale(0.7); }
+}
+
 @layer base {
   * {
     box-sizing: border-box;

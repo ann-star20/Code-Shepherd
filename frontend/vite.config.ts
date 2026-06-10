@@ -24,6 +24,28 @@ export default defineConfig({
         changeOrigin: true,
         rewrite: (path) => path.replace(/^\/api/, ""),
       },
+      "/kms": {
+        target: "http://m0:8002",
+        changeOrigin: true,
+        bypass: (req) => {
+          // text/html 요청(페이지 네비게이션)은 프록시하지 않고 SPA로 서빙
+          if (req.headers["accept"]?.includes("text/html")) return req.url;
+        },
+      },
+      "/hitl": {
+        target: "http://m0:8002",
+        changeOrigin: true,
+        bypass: (req) => {
+          if (req.headers["accept"]?.includes("text/html")) return req.url;
+        },
+      },
+      "/chat": {
+        target: "http://m0:8002",
+        changeOrigin: true,
+        bypass: (req) => {
+          if (req.headers["accept"]?.includes("text/html")) return req.url;
+        },
+      },
       // m3 리뷰 결과 조회 — GET /review/{owner}/{repo}/{pr}. m3는 8004 포트.
       // 로컬 풀스택은 VITE_M3_PROXY_TARGET=http://localhost:8004 로 덮어쓴다(기본은 compose 호스트).
       // TODO(prod): 프로덕션은 게이트웨이/인그레스에서 m3 라우팅을 처리 — 이 프록시는 로컬 dev 전용.
