@@ -17,6 +17,7 @@
   cd frontend && npm test
 
 
+  cd frontend && npm run build
 
 # db지우기
 윈도우(PowerShell) 예시: Remove-Item -Recurse -Force ${env:USERPROFILE}/neo4j/*
@@ -33,13 +34,12 @@ docker compose exec backend python scripts/seed_postgres.py && docker compose ex
 
 # DB 리셋 (원하는 경우)
 docker compose exec postgres psql -U postgres -c "UPDATE documents SET state='PENDING' WHERE doc_id='EXT_https---docs-nestjs-com-security-csrf_4a05f756'"
-<!-- docker compose exec postgres psql -U postgres -c "UPDATE documents SET state='PENDING' WHERE doc_id='EXT_https---docs-djangoproject-com-en-6-0-topics-security_32450f22'" -->
+docker compose exec postgres psql -U postgres -c "UPDATE documents SET state='PENDING' WHERE doc_id='EXT_https---docs-djangoproject-com-en-6-0-topics-security_32450f22'"
+docker compose exec postgres psql -U postgres -c "UPDATE documents SET state='PENDING' WHERE doc_id='EXT_https---docs-nestjs-com-security-csrf_4a05f756'"
 https://docs.nestjs.com/security/csrf
-
-
 # 1. Neo4j 볼륨 내 오염된 데이터 및 인덱스 잔재 영구 격리 삭제 후 재가동
 docker compose down -v
-docker compose up -d --build
+docker compose up --build
 
 # 2. 인프라가 안정화될 때까지 5초 대기 후 마이그레이션 스크립트 재실행
 sleep 5
@@ -51,3 +51,13 @@ docker compose exec backend python scripts/seed_postgres.py && docker compose ex
  docker compose down -v frontend && docker compose --no-cache build frontend
  docker compose down -v frontend && docker compose --no-cache build frontend
  docker compose up
+
+ # 1. 실행 중인 컨테이너 정지 및 볼륨(구버전 캐시) 삭제
+docker compose down -v
+
+# 2. 캐시를 완전히 무시하고 처음부터 이미지 새로 빌드 및 실행
+docker compose up --build --force-recreate
+
+docker compose down -v frontend & docker compose build --no-cache frontend;
+docker compose up
+https://docs.nestjs.com/security/csrf

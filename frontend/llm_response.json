@@ -10,7 +10,7 @@
     "aliases": ["CSRF", "XSRF"],
     "root_cause": "lack_of_request_authenticity_verification",
     "affected_components": ["web_application", "http_request_handler", "user_session"],
-    "security_mechanism": [
+    "mechanism": [
       {
         "mechanism_name": "csrf_cookie",
         "code_examples": []
@@ -104,7 +104,7 @@
     "aliases": ["Browser Reconnaissance and Exfiltration via Adaptive Compression of Hypertext"],
     "root_cause": "compression_side_channel",
     "affected_components": ["http_compression_system", "browser", "csrf_token"],
-    "security_mechanism": [],
+    "mechanism": [],
     "config_properties": []
   },
   {
@@ -118,7 +118,7 @@
     "aliases": ["MITM", "MiTM"],
     "root_cause": "insecure_channel_communication",
     "affected_components": ["network_communication", "ssl_tls_protocol", "http_protocol"],
-    "security_mechanism": [
+    "mechanism": [
       {
         "mechanism_name": "https_protocol",
         "code_examples": []
@@ -141,7 +141,7 @@
     "aliases": ["XSS"],
     "root_cause": "improper_input_sanitization",
     "affected_components": ["web_browser", "web_application", "user_input_processing"],
-    "security_mechanism": [],
+    "mechanism": [],
     "config_properties": []
   },
   {
@@ -155,7 +155,7 @@
     "aliases": ["Referer Leak", "Referer Header Disclosure"],
     "root_cause": "implicit_referer_transmission",
     "affected_components": ["web_browser", "http_header"],
-    "security_mechanism": [
+    "mechanism": [
       {
         "mechanism_name": "referrer_policy_no_referrer",
         "code_examples": []
@@ -174,7 +174,7 @@
     "aliases": ["Subdomain CSRF Bypass"],
     "root_cause": "shared_cookie_domain",
     "affected_components": ["http_cookie_domain", "web_application_architecture"],
-    "security_mechanism": [],
+    "mechanism": [],
     "config_properties": []
   },
   {
@@ -188,7 +188,7 @@
     "aliases": ["Session ID Fixation"],
     "root_cause": "improper_session_id_management",
     "affected_components": ["http_session_management", "web_application_framework"],
-    "security_mechanism": [],
+    "mechanism": [],
     "config_properties": []
   },
   {
@@ -202,7 +202,7 @@
     "aliases": ["Arbitrary CSRF Token Posting"],
     "root_cause": "misconception_of_csrf_token_security",
     "affected_components": ["web_application_security_audit", "security_testing"],
-    "security_mechanism": [],
+    "mechanism": [],
     "config_properties": []
   },
   {
@@ -216,7 +216,7 @@
     "aliases": ["CSRF Token Session Coupling"],
     "root_cause": "design_choice_for_anonymity",
     "affected_components": ["web_application_framework_design", "http_session_management"],
-    "security_mechanism": [],
+    "mechanism": [],
     "config_properties": []
   },
   {
@@ -230,7 +230,7 @@
     "aliases": ["CSRF Token Rotation Issue"],
     "root_cause": "csrf_token_rotation_on_login",
     "affected_components": ["user_interface", "http_session_management"],
-    "security_mechanism": [],
+    "mechanism": [],
     "config_properties": []
   }
 ]

@@ -170,7 +170,8 @@ async def prescan_document(
         async with httpx.AsyncClient(timeout=10.0, follow_redirects=True) as client:
             resp = await client.get(url)
             etag = resp.headers.get("ETag") or resp.headers.get("etag")
-
+            if etag:
+                etag = etag.strip('"')
             if resp.status_code == 200:
                 framework, confidence = await _infer_via_db_patterns(conn, url)
 

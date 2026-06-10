@@ -4,6 +4,7 @@ import hashlib
 import re
 from urllib.parse import urlparse, urlunparse
 
+import httpx
 from fastapi import APIRouter, Depends
 from pydantic import BaseModel, HttpUrl, field_validator
 
@@ -40,6 +41,17 @@ class DocumentsResponse(BaseModel):
     documents: list[DocumentItem]
 
 
+class CheckDuplicateRequest(BaseModel):
+    url: HttpUrl
+
+
+class CheckDuplicateResponse(BaseModel):
+    is_duplicate: bool
+    doc_id: str
+    original_url: str
+    etag: str | None = None
+
+
 # ── doc_id / content_hash 생성 ─────────────────────────────────────────────
 
 def _build_doc_id(prefix: str, url: str) -> str:
@@ -56,7 +68,49 @@ def _content_hash(url: str) -> str:
     return hashlib.sha256(url.encode()).hexdigest()[:8]
 
 
+async def _fetch_etag(url: str) -> str | None:
+    """대상 URL의 ETag(따옴표 제거)를 조회. 네트워크 오류 시 None."""
+    try:
+        async with httpx.AsyncClient(timeout=10.0, follow_redirects=True) as client:
+            resp = await client.get(url)
+            etag = resp.headers.get("ETag") or resp.headers.get("etag")
+            return etag.strip('"') if etag else None
+    except (httpx.HTTPError, OSError):
+        return None
+
+
 # ── 엔드포인트 ─────────────────────────────────────────────────────────────
+
+
+@router.post("/check-duplicate", response_model=CheckDuplicateResponse)
+async def check_duplicate_document(
+    body: CheckDuplicateRequest,
+    conn=Depends(get_conn),
+):
+    """파이프라인 시작/링크 등록 전, (original_url, etag) 조합으로 이미
+    지식화(COMMITTED)가 완료된 동일 버전 문서인지 사전 검증.
+
+    flow-ui-V4 §1: ETag가 동일한 COMMITTED 문서가 존재하면 `is_duplicate=true`를
+    반환하여 프론트엔드가 등록을 건너뛰고 안내 팝업을 띄울 수 있게 한다.
+    """
+    url = str(body.url)
+    doc_id = _build_doc_id("EXT", url)
+    etag = await _fetch_etag(url)
+
+    is_duplicate = False
+    if etag:
+        row = await conn.fetchrow(
+            "SELECT 1 FROM documents WHERE doc_id = $1 AND etag = $2 AND state = 'COMMITTED'",
+            doc_id, etag,
+        )
+        is_duplicate = row is not None
+
+    return CheckDuplicateResponse(
+        is_duplicate=is_duplicate,
+        doc_id=doc_id,
+        original_url=url,
+        etag=etag,
+    )
 
 @router.post("", status_code=201, response_model=DocumentsResponse)
 async def submit_documents(

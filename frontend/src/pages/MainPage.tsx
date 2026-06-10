@@ -3,10 +3,12 @@ import {
   runPipelineStart,
   continuePipeline,
   learnFrameworkMetadata,
+  checkDuplicateDocument,
   type PrescanResult,
   type LearnMetadataPayload,
 } from "@/services/pipelineOrchestrator";
 import { MetadataLearnModal } from "@/components/molecules/MetadataLearnModal";
+import { DuplicateDocumentModal } from "@/components/molecules/DuplicateDocumentModal";
 
 // ── 도메인 레지스트리 (수정 없음) ───────────────────────────────────────────
 const DOMAIN_REGISTRY: Record<string, { label_ko: string; color_hex: string; bg_hex: string; border_hex: string }> = {
@@ -24,6 +26,7 @@ type ConceptItem = {
   aliases: string[];
   affected_components: string[];
   mechanism: string[];
+  mechanismDetails?: MechanismDetail[];
   domains: string[];
   state: string;
   // 3-Factor 하이브리드 판정 역추적 (DRAFT 개념에서만 유효)
@@ -304,7 +307,13 @@ function detectFramework(url: string): string {
   return "범용 가이드라인 분석 패턴 적용";
 }
 
-type ApiMechanism = string | { mechanism_name: string; code_examples?: unknown[] };
+type MechanismCodeExample = {
+  lang: string; lang_version?: string; framework?: string; framework_version?: string;
+  code: string; description?: string;
+};
+type MechanismDetail = { name: string; code_examples: MechanismCodeExample[] };
+
+type ApiMechanism = string | { mechanism_name: string; code_examples?: MechanismCodeExample[] };
 
 type ApiConcept = {
   id: string; state: string; concept_name: string; domains: string[];
@@ -324,6 +333,11 @@ function normMechanism(m: ApiMechanism): string {
   return typeof m === "string" ? m : (m.mechanism_name ?? "");
 }
 
+function mechanismDetail(m: ApiMechanism): MechanismDetail {
+  if (typeof m === "string") return { name: m, code_examples: [] };
+  return { name: m.mechanism_name ?? "", code_examples: m.code_examples ?? [] };
+}
+
 function mapApiConcept(item: ApiConcept) {
   return {
     name: item.concept_name, concept_type: item.concept_type ?? "vulnerability_root_cause",
@@ -331,6 +345,7 @@ function mapApiConcept(item: ApiConcept) {
     severity: item.severity ?? "medium", description_ko: item.description_ko ?? "",
     aliases: item.aliases ?? [], affected_components: item.affected_components ?? [],
     mechanism: (item.mechanism ?? []).map(normMechanism),
+    mechanismDetails: (item.mechanism ?? []).map(mechanismDetail),
     domains: item.domains ?? [], state: item.state ?? "DRAFT",
     infer_action: item.infer_action,
     infer_confidence: item.infer_confidence,
@@ -396,6 +411,7 @@ function layoutConceptNodes<T extends { name: string; domains: string[]; cwe_id:
 // ── MainPage ──────────────────────────────────────────────────────────────────
 export function MainPage() {
   const [urls, setUrls] = useState([
+    { id: 0, value: "https://docs.nestjs.com/security/csrf", label: "NestJS CSRF 보안 명세 감지" },
     { id: 1, value: "https://docs.djangoproject.com/en/6.0/topics/security/",      label: "Django Core Security 명세 감지" },
     { id: 2, value: "https://docs.spring.io/spring-security/reference/reactive/", label: "Spring Security Reactive 명세 감지" },
   ]);
@@ -426,6 +442,7 @@ export function MainPage() {
   const [draftSummary, setDraftSummary]     = useState<{ count: number; names: string[]; domains: string[] }>({ count: 0, names: [], domains: [] });
   const [metadataLearnModal, setMetadataLearnModal] = useState<PrescanResult | null>(null);
   const [isLearningMetadata, setIsLearningMetadata] = useState(false);
+  const [duplicateAlertUrl, setDuplicateAlertUrl] = useState<string | null>(null);
 
   const consoleRef        = useRef<HTMLDivElement>(null);
   const sseRef            = useRef<EventSource | null>(null);
@@ -525,6 +542,32 @@ export function MainPage() {
     setCodeFramework("");
     fetchCode(selectedConcept.name, "", "");
   }, [selectedConcept?.name, fetchCode]);
+
+  // ── DRAFT 미리보기: concept_json.mechanism[].code_examples 직접 렌더링 ──
+  // (Neo4j 미반영 상태이므로 /api/graph/concept/{name}/code 는 비어있음)
+  const draftCodeExamples = useMemo(() => {
+    return (selectedConcept?.mechanismDetails ?? []).flatMap((m) =>
+      (m.code_examples ?? []).map((ex) => ({
+        mechanism: m.name, lang: ex.lang, framework: ex.framework ?? "",
+        code: ex.code, description: ex.description,
+      }))
+    );
+  }, [selectedConcept]);
+  const isDraftWithCode = selectedConcept?.state === "DRAFT" && draftCodeExamples.length > 0;
+  const draftCodeLangs = useMemo(
+    () => [...new Set(draftCodeExamples.map((ex) => ex.lang).filter(Boolean))],
+    [draftCodeExamples],
+  );
+  const draftCodeFrameworks = useMemo(
+    () => [...new Set(draftCodeExamples.map((ex) => ex.framework).filter(Boolean))],
+    [draftCodeExamples],
+  );
+  const filteredDraftCodeExamples = useMemo(
+    () => draftCodeExamples.filter(
+      (ex) => (!codeLang || ex.lang === codeLang) && (!codeFramework || ex.framework === codeFramework)
+    ),
+    [draftCodeExamples, codeLang, codeFramework],
+  );
 
   function handleCodeLangChange(lang: string) {
     setCodeLang(lang);
@@ -665,6 +708,17 @@ export function MainPage() {
     if (urls.length >= 5) { addLog("WARNING", "URL 대기열은 최대 5개입니다."); return; }
     if (urls.some((u) => u.value.toLowerCase() === newUrl.trim().toLowerCase())) {
       addLog("WARNING", `중복 URL 차단: ${newUrl}`); return;
+    }
+    const trimmedUrl = newUrl.trim();
+    try {
+      const dup = await checkDuplicateDocument(trimmedUrl);
+      if (dup.is_duplicate) {
+        setDuplicateAlertUrl(trimmedUrl);
+        setNewUrl("");
+        return;
+      }
+    } catch {
+      // 중복 체크 실패 시 fail-open: 정상 등록 흐름으로 진행
     }
     try {
       const res = await fetch("/api/documents", {
@@ -989,7 +1043,7 @@ export function MainPage() {
         <div className="flex items-center space-x-3">
           <div className="w-8 h-8 rounded-lg bg-[#115E59] flex items-center justify-center text-white font-bold text-lg">K</div>
           <div>
-            <h1 className="font-serif text-xl font-bold tracking-tight text-stone-900">수집 에이전트 지식 그래프 실시간 웹뷰</h1>
+            <h1 className="font-serif text-xl font-bold tracking-tight text-stone-600">수집 에이전트 지식 그래프 웹뷰</h1>
             <p className="text-sm text-stone-500">공식 문서 파싱 → 다중 도메인 지식 그래프 실시간 동기화 관제 패널</p>
           </div>
         </div>
@@ -999,11 +1053,11 @@ export function MainPage() {
               <span className={`animate-ping absolute inline-flex h-full w-full rounded-full ${pipelineState === "RUNNING" ? "bg-amber-400" : "bg-emerald-400"} opacity-75`} />
               <span className={`relative inline-flex rounded-full h-2 w-2 ${pipelineState === "RUNNING" ? "bg-amber-500" : "bg-emerald-500"}`} />
             </span>
-            <span className="text-sm font-medium text-stone-600">
+            <span className="text-sm font-medium text-stone-500">
               {pipelineState === "RUNNING" ? "에이전트 작동 중" : "파이프라인 준비 완료"}
             </span>
           </div>
-          <span className="px-2.5 py-1 text-sm italic bg-stone-100 rounded-full text-stone-700">Django & Spring 하이브리드 대응</span>
+          <span className="px-2.5 py-1 text-sm italic bg-stone-100 rounded-full text-stone-700">하이브리드 대응</span>
         </div>
       </header>
 
@@ -1028,56 +1082,13 @@ export function MainPage() {
         {/* ── 2-컬럼 그리드 ──────────────────────────────────────────────── */}
         <div className="grid grid-cols-12 gap-8">
 
-          {/* ══ LEFT COLUMN ══ */}
-          <section className="col-span-12 lg:col-span-4 flex flex-col space-y-6">
-
-            {/* URL 대기열 */}
-            <div className="bg-white rounded-2xl border border-stone-200/70 p-6 shadow-sm">
-              <h2 className="font-serif text-lg font-bold text-stone-900 mb-4 flex items-center justify-between">
-                <span>수집 대상 링크 대기열</span>
-                <span className="text-sm font-sans text-stone-400 font-normal">MAX 5 URLs</span>
-              </h2>
-              <form onSubmit={handleAddUrl} className="flex gap-2 mb-4">
-                <input
-                  type="text" value={newUrl} onChange={(e) => setNewUrl(e.target.value)}
-                  placeholder="공식 가이드 및 보안 URL을 입력하세요..."
-                  className="flex-1 px-4 py-2.5 text-base bg-stone-50 border border-stone-200 rounded-xl focus:outline-none focus:ring-1 focus:ring-[#115E59] focus:bg-white transition-all placeholder:text-stone-400"
-                />
-                <button type="submit" className="px-4 py-2 text-base bg-[#115E59] text-white rounded-xl hover:bg-[#0f4e4a] transition-all font-medium">추가</button>
-              </form>
-              <div className="space-y-2 max-h-[180px] overflow-y-auto mb-4">
-                {urls.map((u) => (
-                  <div key={u.id} className="p-3 bg-stone-50/60 rounded-xl border border-stone-200/50 flex flex-col space-y-1">
-                    <div className="flex items-start justify-between gap-2">
-                      <span className="text-sm font-mono text-stone-700 break-all font-semibold flex-1">{u.value}</span>
-                      <button type="button" onClick={() => setUrls((p) => p.filter((x) => x.id !== u.id))}
-                        className="shrink-0 text-stone-400 hover:text-red-500 text-sm">✕</button>
-                    </div>
-                    <span className="text-xs text-[#0F766E] font-medium">{u.label}</span>
-                  </div>
-                ))}
-                {urls.length === 0 && <div className="text-center py-6 text-stone-400 text-base italic">대기열이 비어 있습니다.</div>}
-              </div>
-              <button
-                onClick={startPipeline}
-                disabled={pipelineState === "RUNNING" || pipelineState === "COMMITTING" || urls.length === 0}
-                className="w-full py-3.5 rounded-xl font-medium text-sm transition-all flex items-center justify-center space-x-2 bg-stone-900 text-white hover:bg-stone-800 disabled:bg-stone-100 disabled:text-stone-400 disabled:cursor-not-allowed"
-              >
-                <span>에이전트 통합 크롤러 기동하기</span><span>✦</span>
-              </button>
-            </div>
+          {/* ══ LEFT COLUMN ══ (PRD-extra-UI-v3 §1: 전체 숨김 처리) ══ */}
+          <section className="hidden flex-col space-y-6">
 
             {/* 파이프라인 흐름 — PRD-UI-V2 §3 StepStatus 인디케이터 */}
             <div className="bg-white rounded-2xl border border-stone-200/70 p-6 shadow-sm">
               <h3 className="font-serif text-lg font-bold text-stone-900 mb-4">에이전트 파이프라인 흐름 상태</h3>
               <PipelineStepList statuses={stepStatuses} onRetry={handleRetryStep} />
-              {/* Debug Drawer 진입점 (PRD-UI-V2 §3) */}
-              <button
-                onClick={() => setShowDrawer(true)}
-                className="mt-4 w-full py-1.5 text-xs text-stone-400 hover:text-stone-700 border border-stone-100 hover:border-stone-200 rounded-lg transition-all font-mono tracking-wider"
-              >
-                ▸ Terminal Raw Logs
-              </button>
             </div>
 
             {/* 실시간 로그 (compact 패널) */}
@@ -1109,7 +1120,52 @@ export function MainPage() {
           </section>
 
           {/* ══ RIGHT COLUMN ══ */}
-          <section className="col-span-12 lg:col-span-8 flex flex-col space-y-6">
+          <section className="col-span-12 flex flex-col space-y-6">
+
+            {/* URL 대기열 — PRD-extra-UI-v3 §1: RIGHT COLUMN 최상단으로 이동 */}
+            <div className="bg-white rounded-2xl border border-stone-200/70 p-6 shadow-sm">
+              <h2 className="font-serif text-lg font-bold text-stone-900 mb-4 flex items-center justify-between">
+                <span>수집 대상 링크 대기열</span>
+                <div className="flex items-center gap-3">
+                  <span className="text-sm font-sans text-stone-400 font-normal">MAX 5 URLs</span>
+                  <button
+                    type="button"
+                    onClick={() => setShowDrawer(true)}
+                    className="text-xs text-stone-400 hover:text-stone-700 border border-stone-200 hover:border-stone-300 rounded-lg px-2 py-1 font-mono tracking-wider transition-all"
+                  >
+                    ▸ Logs
+                  </button>
+                </div>
+              </h2>
+              <form onSubmit={handleAddUrl} className="flex gap-2 mb-4">
+                <input
+                  type="text" value={newUrl} onChange={(e) => setNewUrl(e.target.value)}
+                  placeholder="공식 가이드 및 보안 URL을 입력하세요..."
+                  className="flex-1 px-4 py-2.5 text-base bg-stone-50 border border-stone-200 rounded-xl focus:outline-none focus:ring-1 focus:ring-[#115E59] focus:bg-white transition-all placeholder:text-stone-400"
+                />
+                <button type="submit" className="px-4 py-2 text-base bg-[#115E59] text-white rounded-xl hover:bg-[#0f4e4a] transition-all font-medium">추가</button>
+              </form>
+              <div className="space-y-2 max-h-[180px] overflow-y-auto mb-4">
+                {urls.map((u) => (
+                  <div key={u.id} className="p-3 bg-stone-50/60 rounded-xl border border-stone-200/50 flex flex-col space-y-1">
+                    <div className="flex items-start justify-between gap-2">
+                      <span className="text-sm font-mono text-stone-700 break-all font-semibold flex-1">{u.value}</span>
+                      <button type="button" onClick={() => setUrls((p) => p.filter((x) => x.id !== u.id))}
+                        className="shrink-0 text-stone-400 hover:text-red-500 text-sm">✕</button>
+                    </div>
+                    <span className="text-xs text-[#0F766E] font-medium">{u.label}</span>
+                  </div>
+                ))}
+                {urls.length === 0 && <div className="text-center py-6 text-stone-400 text-base italic">대기열이 비어 있습니다.</div>}
+              </div>
+              <button
+                onClick={startPipeline}
+                disabled={pipelineState === "RUNNING" || pipelineState === "COMMITTING" || urls.length === 0}
+                className="w-full py-3.5 rounded-xl font-medium text-sm transition-all flex items-center justify-center space-x-2 bg-stone-900 text-white hover:bg-stone-800 disabled:bg-stone-100 disabled:text-stone-400 disabled:cursor-not-allowed"
+              >
+                <span>에이전트 통합 크롤러 기동하기</span><span>✦</span>
+              </button>
+            </div>
 
             {/* HITL 미등록 도메인 경고 */}
             {pendingDomain && (
@@ -1510,25 +1566,28 @@ export function MainPage() {
                             className="text-xs border border-stone-200 rounded-lg px-2 py-1 bg-white text-stone-700 focus:outline-none focus:ring-1 focus:ring-stone-300"
                           >
                             <option value="">언어 전체</option>
-                            {(codeResult?.langs ?? []).map((l) => <option key={l} value={l}>{l}</option>)}
+                            {(isDraftWithCode ? draftCodeLangs : (codeResult?.langs ?? [])).map((l) => <option key={l} value={l}>{l}</option>)}
                           </select>
                           <select value={codeFramework} onChange={(e) => handleCodeFrameworkChange(e.target.value)}
                             className="text-xs border border-stone-200 rounded-lg px-2 py-1 bg-white text-stone-700 focus:outline-none focus:ring-1 focus:ring-stone-300"
                           >
                             <option value="">프레임워크 전체</option>
-                            {(codeResult?.frameworks ?? []).map((f) => <option key={f} value={f}>{f}</option>)}
+                            {(isDraftWithCode ? draftCodeFrameworks : (codeResult?.frameworks ?? [])).map((f) => <option key={f} value={f}>{f}</option>)}
                           </select>
                         </div>
                       </div>
 
-                      {codeLoading && <p className="text-xs text-stone-400 animate-pulse">코드 예제 로딩 중…</p>}
-                      {!codeLoading && codeResult && codeResult.examples.length === 0 && (
+                      {isDraftWithCode && (
+                        <p className="text-xs text-amber-600">DRAFT 미리보기 — 추출된 Mechanism/CodeExample (Neo4j 미반영)</p>
+                      )}
+                      {!isDraftWithCode && codeLoading && <p className="text-xs text-stone-400 animate-pulse">코드 예제 로딩 중…</p>}
+                      {!isDraftWithCode && !codeLoading && codeResult && codeResult.examples.length === 0 && (
                         <p className="text-xs text-stone-400">본 메커니즘에 등록된 프레임워크별 실물 소스코드 플레이북 예제가 존재하지 않습니다.</p>
                       )}
-                      {!codeLoading && !codeResult && (
+                      {!isDraftWithCode && !codeLoading && !codeResult && (
                         <p className="text-xs text-stone-400">Neo4j 연결 후 코드 예제를 불러올 수 있습니다.</p>
                       )}
-                      {!codeLoading && codeResult && codeResult.examples.map((ex, idx) => (
+                      {(isDraftWithCode ? filteredDraftCodeExamples : (!codeLoading && codeResult ? codeResult.examples : [])).map((ex, idx) => (
                         <div key={idx} className="rounded-xl border border-stone-200 overflow-hidden">
                           <div className="flex items-center justify-between bg-stone-50 px-3 py-1.5 border-b border-stone-200">
                             <span className="text-xs font-bold text-stone-600">{ex.mechanism}</span>
@@ -1619,6 +1678,14 @@ export function MainPage() {
           onSubmit={submitMetadataCorrection}
           onCancel={cancelMetadataCorrection}
           isSubmitting={isLearningMetadata}
+        />
+      )}
+
+      {/* ── 중복 문서 안내 모달 (flow-ui-V4 §1) ───────────────────────────── */}
+      {duplicateAlertUrl && (
+        <DuplicateDocumentModal
+          url={duplicateAlertUrl}
+          onConfirm={() => setDuplicateAlertUrl(null)}
         />
       )}
     </div>

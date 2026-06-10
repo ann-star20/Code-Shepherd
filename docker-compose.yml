@@ -73,6 +73,7 @@ services:
       CELERY_BROKER_URL: redis://redis:6379/0
       CELERY_RESULT_BACKEND: redis://redis:6379/1
       APP_MODE: ${APP_MODE:-development}
+      USE_REAL_LLM: ${USE_REAL_LLM:-true}
       GEMINI_API_KEY: ${GEMINI_API_KEY:-}
     env_file:
       - .env
@@ -90,6 +91,7 @@ services:
     image: code-shepherd-base:latest # backend 빌드 이미지 재사용 (중복 빌드 제거)
     volumes:
       - ./backend:/app                # ⭐ 워커에도 볼륨을 묶어줘야 태스크 코드가 실시간 반영됨!
+      - hf_cache:/root/.cache/huggingface
     environment:
       DB_HOST: postgres
       DB_PORT: "5432"
@@ -103,6 +105,7 @@ services:
       CELERY_BROKER_URL: redis://redis:6379/0
       CELERY_RESULT_BACKEND: redis://redis:6379/1
       APP_MODE: ${APP_MODE:-mock}
+      USE_REAL_LLM: ${USE_REAL_LLM:-false}
       GEMINI_API_KEY: ${GEMINI_API_KEY:-}
     env_file:
       - .env
@@ -125,3 +128,7 @@ services:
       - "3000:3000"
     depends_on:
       - backend
+
+
+volumes:
+  hf_cache:  

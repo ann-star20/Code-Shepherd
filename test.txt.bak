@@ -1,0 +1,116 @@
+
+docker compose -f docker-compose.yml -f docker-compose.mock.yml up --build postgres redis backend celery_worker
+
+docker compose -f docker-compose.yml -f docker-compose.mock.yml up --build frontend
+
+
+wsl --shutdown
+"""
+APP_MODE=mock → MockClient → 6건 내장 개념 반환
+[WRITER] 단계에서 MechanismIn 에러 없이 Neo4j MERGE 완료 예상
+"""
+# celery_worker 재시작 (graph_writer.py 코드 변경 반영)
+# backend:/app 볼륨 마운트라 파일은 이미 컨테이너 안에 반영되어 있지만, Celery는 모듈을 캐싱하므로 프로세스 재시작이 필요합니다:
+docker compose restart celery_worker
+
+# DB 리셋 (원하는 경우)
+docker compose exec postgres psql -U postgres -c "UPDATE documents SET state='PENDING' WHERE doc_id='EXT_https---docs-djangoproject-com-en-6-0-topics-security_32450f22'"
+
+docker compose build frontend && docker compose up frontend
+
+Redis broker는 컨테이너가 꺼져도 태스크를 보관 (task_acks_late=True)
+이전 production 실행에서 실패한 extract_task가 Redis에 retry 예약된 채로 남아 있다가, worker 재시작하자마자 수거해서 즉시 실행
+.env는 이미 mock으로 바꿨으니, 아래 두 명령만 실행하면 됩니다:
+
+# 1. stale 태스크 제거
+docker exec code-shepherd-redis-1 redis-cli FLUSHDB
+docker compose up
+APP_MODE=mock docker compose up --build frontend
+# 2. 재시작
+docker compose -f docker-compose.yml -f docker-compose.mock.yml down
+docker compose -f docker-compose.yml -f docker-compose.mock.yml up postgres redis neo4j backend celery_worker
+docker compose -f docker-compose.yml -f docker-compose.mock.yml up backend
+docker compose build --no-cache backend
+docker compose up  frontend
+
+docker compose build --no-cache frontend && docker compose up -d frontend
+
+docker compose down -v
+# 기존 postgres 볼륨 초기화
+docker compose -f docker-compose.yml -f docker-compose.mock.yml down -v
+
+# 재빌드 및 실행
+docker compose -f docker-compose.yml -f docker-compose.mock.yml up --build backend
+
+pytest tests/harness/test_models_v2.py tests/harness/test_neo4j_repo.py tests/harness/test_seed_data.py -v
+cd frontend & npm run build & cd ..
+>>>>>>>>>>>>>>
+
+docker compose build --no-cache frontend
+docker compose up -d frontend
+docker compose logs -f frontend
+
+>>>>>>>>>>>>>>>
+mock_client.py 수정:
+
+extract_concepts()에서 _build_prompt()를 실제로 호출해 프롬프트 구조를 검증
+[PROMPT/mock] 로그 출력 — GeminiClient와 동일한 형식으로 mock/production 비교 가능
+반환값·시그니처는 동일하게 유지
+
+scripts/run_extractor.py 신규:
+
+플래그	동작
+--url URL	분석할 문서 URL (필수)
+--mode mock	크롤 + 프롬프트 빌드 + 고정 mock 응답 (기본)
+--mode production --api-key AIza...	실제 Gemini 호출
+--dump-prompt	구성된 LLM 프롬프트 전체 출력 후 종료
+--save-mock	추출 결과를 scripts/seed/generated/mock_<slug>.json으로 저장
+
+사용 예시:
+```
+# Django CSRF 문서로 실제 프롬프트 확인
+python backend/scripts/run_extractor.py --url "https://docs.djangoproject.com/en/6.0/ref/csrf/" --dump-prompt
+
+# production 모드로 추출 → mock 데이터셋 갱신
+python backend/scripts/run_extractor.py --url "https://docs.djangoproject.com/en/6.0/ref/csrf/" --mode production --api-key $env:GEMINI_API_KEY --save-mock
+```
+
+https://docs.djangoproject.com/en/6.0/ref/csrf/
+docker exec code-shepherd-postgres-1 psql -U postgres -c "UPDATE documents SET state='PENDING' WHERE doc_id='EXT_https---docs-djangoproject-com-en-6-0-ref-csrf_1d4bd345';"
+
+docker compose up --build frontend
+
+python backend/scripts/test_pipeline_flow.py
+
+
+cd backend
+
+# 프롬프트 전체를 파일로 저장 (터미널 잘림 없음)
+python scripts/run_extractor.py `
+  --url "https://docs.djangoproject.com/en/6.0/ref/csrf/" `
+  --framework Django `
+  --dump-prompt `
+  --request-file output/csrf_request.txt `
+  --out-file output/csrf_full.txt
+
+# mock 모드: 요청 프롬프트 + 응답 JSON 저장
+python scripts/run_extractor.py   --url "https://docs.djangoproject.com/en/6.0/ref/csrf/"   --framework Django  --request-file output/csrf_request.txt  --response-file output/csrf_response.json
+
+# production 모드: LLM 원문까지 저장 (csrf_response.raw.txt 추가 생성)
+python scripts/run_extractor.py `
+  --url "https://docs.djangoproject.com/en/6.0/ref/csrf/" `
+  --mode production --api-key AIza... `
+  --request-file output/csrf_request.txt `
+  --response-file output/csrf_response.json
+생성 파일 구조:
+
+파일	내용
+--out-file	전체 터미널 출력
+--request-file	LLM에 전송되는 프롬프트 (청크별 구분)
+--response-file	파싱된 컨셉 JSON
+--response-file + .raw.txt	Gemini 원문 응답 (production 모드만)
+프롬프트 구조 요약: Gemini는 단일 user turn — system/user 분리 없음. _build_prompt가 반환하는 하나의 문자열 안에 역할지시 + 스키마 + 문서청크가 모두 포함됩니다.
+
+
+# 로컬의 node_modules와 package-lock.json을 과감히 삭제
+rm -rf node_modules package-lock.json

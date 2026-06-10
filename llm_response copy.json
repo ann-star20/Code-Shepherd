@@ -1,0 +1,37 @@
+[
+  {
+    "concept_name": "CrossSiteRequestForgery",
+    "concept_type": "vulnerability_root_cause",
+    "cwe_id": "CWE-352",
+    "owasp_id": "A04:2021",
+    "severity": "high",
+    "domains": ["security"],
+    "description_ko": "악의적인 웹사이트가 로그인한 사용자의 자격 증명을 이용하여 사용자 웹사이트에서 특정 동작을 수행하도록 유도하는 공격입니다. 주로 GET 요청 외의 '안전하지 않은' HTTP 메서드(POST, PUT, DELETE)를 통해 발생합니다. Django는 CSRF 쿠키, 숨겨진 폼 필드, Origin 헤더 검증 등으로 보호를 제공합니다.",
+    "aliases": ["CSRF", "XSRF"],
+    "root_cause": "lack_of_request_authenticity_verification",
+    "affected_components": ["web_application", "http_request_handler", "user_session"],
+    "mechanism": [
+      {
+        "mechanism_name": "requires_csrf_token_decorator",
+        "code_examples": [
+          {
+            "lang": "python",
+            "lang_version": "2.7",
+            "framework": "Django",
+            "framework_version": "1.11",
+            "code": "from django.shortcuts import render\nfrom django.views.decorators.csrf import requires_csrf_token\n\n@requires_csrf_token\ndef my_view(request):\n    # Django 1.11 / Python 2.7 환경\n    context = {'data': 'secure_content'}\n    return render(request, 'template.html', context)",
+            "description": "Django 1.11에서 데코레이터를 사용하여 CSRF 토큰 처리를 보장하는 방식"
+          },
+          {
+            "lang": "javascript",
+            "lang_version": "ES6",
+            "framework": "Express",
+            "framework_version": "4.17",
+            "code": "const express = require('express');\nconst csrf = require('csurf');\nconst cookieParser = require('cookie-parser');\n\nconst app = express();\nconst csrfProtection = csrf({ cookie: true });\n\napp.use(cookieParser());\n\napp.get('/protected', csrfProtection, (req, res) => {\n    // CSRF 토큰을 템플릿에 주입\n    res.render('template', { csrfToken: req.csrfToken() });\n});",
+            "description": "Express에서 csurf 미들웨어를 사용하여 토큰 기반의 CSRF 보호를 적용하는 방식"
+          }
+        ]
+      }
+    ]
+  }
+]

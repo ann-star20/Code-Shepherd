@@ -31,6 +31,19 @@ export interface LearnMetadataPayload {
   default_lang?: string;
 }
 
+export interface DuplicateCheckResult {
+  is_duplicate: boolean;
+  doc_id: string;
+  original_url: string;
+  etag: string | null;
+}
+
+/** flow-ui-V4 §1: 등록 전 (original_url, etag) 조합으로 이미 지식화된 문서인지 확인. */
+export async function checkDuplicateDocument(url: string): Promise<DuplicateCheckResult> {
+  const { data } = await apiClient.post("/documents/check-duplicate", { url });
+  return data;
+}
+
 export async function registerDocument(url: string): Promise<string> {
   const { data } = await apiClient.post("/documents", { urls: [url] });
   return data.documents[0].doc_id;

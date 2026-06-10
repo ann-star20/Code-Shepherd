@@ -232,3 +232,97 @@ async def test_T11_pipeline_trigger_doc_not_found():
         )
 
     assert resp.status_code == 404
+
+
+# ── flow-ui-V4 §1: POST /api/documents/check-duplicate ─────────────────────
+
+
+@pytest.mark.anyio
+async def test_flowui4_check_duplicate_etag_matches_committed():
+    """Arrange: ETag가 동일한 COMMITTED 문서가 DB에 존재.
+    Act: POST /api/documents/check-duplicate.
+    Assert: 200, is_duplicate=true, etag 반환.
+    """
+    from app.main import app
+
+    mock_pool, mock_conn = _make_mock_pool(fetchrow_return={"?column?": 1})
+    app.state.pool = mock_pool
+
+    with patch("app.interfaces.api.documents.httpx") as mock_httpx:
+        mock_resp = MagicMock()
+        mock_resp.headers = {"ETag": '"abc123"'}
+        mock_httpx.AsyncClient.return_value.__aenter__ = AsyncMock(return_value=mock_httpx.AsyncClient.return_value)
+        mock_httpx.AsyncClient.return_value.__aexit__ = AsyncMock(return_value=False)
+        mock_httpx.AsyncClient.return_value.get = AsyncMock(return_value=mock_resp)
+        mock_httpx.HTTPError = Exception
+
+        async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as ac:
+            resp = await ac.post(
+                "/api/documents/check-duplicate",
+                json={"url": "https://docs.djangoproject.com/en/6.0/topics/security/"},
+            )
+
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["is_duplicate"] is True
+    assert body["etag"] == "abc123"
+
+
+@pytest.mark.anyio
+async def test_flowui4_check_duplicate_no_matching_committed_doc():
+    """Arrange: ETag는 조회되지만 동일 (doc_id, etag, COMMITTED) 행이 없음.
+    Act: POST /api/documents/check-duplicate.
+    Assert: 200, is_duplicate=false.
+    """
+    from app.main import app
+
+    mock_pool, mock_conn = _make_mock_pool(fetchrow_return=None)
+    app.state.pool = mock_pool
+
+    with patch("app.interfaces.api.documents.httpx") as mock_httpx:
+        mock_resp = MagicMock()
+        mock_resp.headers = {"ETag": '"abc123"'}
+        mock_httpx.AsyncClient.return_value.__aenter__ = AsyncMock(return_value=mock_httpx.AsyncClient.return_value)
+        mock_httpx.AsyncClient.return_value.__aexit__ = AsyncMock(return_value=False)
+        mock_httpx.AsyncClient.return_value.get = AsyncMock(return_value=mock_resp)
+        mock_httpx.HTTPError = Exception
+
+        async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as ac:
+            resp = await ac.post(
+                "/api/documents/check-duplicate",
+                json={"url": "https://docs.djangoproject.com/en/6.0/topics/security/"},
+            )
+
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["is_duplicate"] is False
+
+
+@pytest.mark.anyio
+async def test_flowui4_check_duplicate_etag_fetch_fails():
+    """Arrange: 대상 URL 조회 시 네트워크 오류 발생.
+    Act: POST /api/documents/check-duplicate.
+    Assert: 200, etag=null, is_duplicate=false, DB 조회 미수행.
+    """
+    from app.main import app
+
+    mock_pool, mock_conn = _make_mock_pool(fetchrow_return={"?column?": 1})
+    app.state.pool = mock_pool
+
+    with patch("app.interfaces.api.documents.httpx") as mock_httpx:
+        mock_httpx.HTTPError = Exception
+        mock_httpx.AsyncClient.return_value.__aenter__ = AsyncMock(return_value=mock_httpx.AsyncClient.return_value)
+        mock_httpx.AsyncClient.return_value.__aexit__ = AsyncMock(return_value=False)
+        mock_httpx.AsyncClient.return_value.get = AsyncMock(side_effect=mock_httpx.HTTPError("boom"))
+
+        async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as ac:
+            resp = await ac.post(
+                "/api/documents/check-duplicate",
+                json={"url": "https://docs.djangoproject.com/en/6.0/topics/security/"},
+            )
+
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["etag"] is None
+    assert body["is_duplicate"] is False
+    mock_conn.fetchrow.assert_not_called()

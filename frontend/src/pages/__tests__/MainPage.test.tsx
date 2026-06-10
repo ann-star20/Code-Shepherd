@@ -8,7 +8,7 @@ import { DashboardLayout } from "@/components/templates/DashboardLayout";
 import { pipelineService } from "@/services/pipelineService";
 import { stagingService } from "@/services/stagingService";
 import { graphService } from "@/services/graphService";
-import { runPipelineStart } from "@/services/pipelineOrchestrator";
+import { runPipelineStart, checkDuplicateDocument } from "@/services/pipelineOrchestrator";
 
 vi.mock("react-force-graph-2d", () => ({
   default: ({
@@ -36,6 +36,7 @@ vi.mock("@/services/pipelineService", () => ({
 }));
 vi.mock("@/services/pipelineOrchestrator", () => ({
   runPipelineStart: vi.fn(),
+  checkDuplicateDocument: vi.fn(),
 }));
 vi.mock("@/services/stagingService", () => ({
   stagingService: {
@@ -72,6 +73,9 @@ beforeEach(() => {
   vi.mocked(stagingService.getDiff).mockResolvedValue({ draft: 0, approved: 0, committed: 0 });
   vi.mocked(graphService.getTopology).mockResolvedValue({ nodes: [], edges: [] });
   vi.mocked(runPipelineStart).mockResolvedValue({ docId: "doc-default", sessionId: "ses-default" });
+  vi.mocked(checkDuplicateDocument).mockResolvedValue({
+    is_duplicate: false, doc_id: "doc-default", original_url: "", etag: null,
+  });
 });
 
 // ── DashboardLayout ───────────────────────────────────────────────────────────
@@ -443,14 +447,52 @@ describe("T14 ExtractorSpinner — 통합 폴링 테스트", () => {
   });
 });
 
+// ── flow-ui-V4 §1: ETag 중복 문서 안내 모달 ───────────────────────────────────
+describe("flow-ui-V4 §1 — 중복 문서 안내 모달", () => {
+  it("중복 문서 감지 시 안내 모달이 표시되고 URL 대기열에는 추가되지 않는다", async () => {
+    // Arrange
+    const dupUrl = "https://docs.python.org/3/library/secrets.html";
+    vi.mocked(checkDuplicateDocument).mockResolvedValue({
+      is_duplicate: true, doc_id: "EXT_dup_00000000", original_url: dupUrl, etag: "abc123",
+    });
+    const user = userEvent.setup();
+    render(<MainPage />);
+    // Act
+    await user.type(screen.getByPlaceholderText("공식 가이드 및 보안 URL을 입력하세요..."), dupUrl);
+    await user.click(screen.getByRole("button", { name: "추가" }));
+    // Assert
+    const dialog = await screen.findByRole("dialog", { name: "중복 문서 안내" });
+    expect(dialog.textContent).toContain("는 이미 지식화된 문서입니다.");
+    expect(dialog.textContent).toContain(dupUrl);
+    expect(screen.queryByText(dupUrl, { selector: "span.font-mono.text-stone-700" })).toBeNull();
+  });
+
+  it("중복 안내 모달에서 '확인' 클릭 시 모달이 닫힌다", async () => {
+    // Arrange
+    const dupUrl = "https://docs.python.org/3/library/secrets.html";
+    vi.mocked(checkDuplicateDocument).mockResolvedValue({
+      is_duplicate: true, doc_id: "EXT_dup_00000000", original_url: dupUrl, etag: "abc123",
+    });
+    const user = userEvent.setup();
+    render(<MainPage />);
+    await user.type(screen.getByPlaceholderText("공식 가이드 및 보안 URL을 입력하세요..."), dupUrl);
+    await user.click(screen.getByRole("button", { name: "추가" }));
+    await screen.findByRole("dialog", { name: "중복 문서 안내" });
+    // Act
+    await user.click(screen.getByRole("button", { name: "확인" }));
+    // Assert
+    expect(screen.queryByRole("dialog", { name: "중복 문서 안내" })).toBeNull();
+  });
+});
+
 // ── T15: Debug Drawer 열기/닫기 ───────────────────────────────────────────────
 describe("T15 DebugDrawer — 터미널 로그 드로어", () => {
-  it("T15_Assert1: 'Terminal Raw Logs' 버튼 클릭 시 드로어 dialog가 열린다", async () => {
+  it("T15_Assert1: '▸ Logs' 버튼 클릭 시 드로어 dialog가 열린다", async () => {
     // Arrange
     const user = userEvent.setup();
     render(<MainPage />);
     // Act
-    await user.click(screen.getByText(/Terminal Raw Logs/));
+    await user.click(screen.getByRole("button", { name: /Logs/ }));
     // Assert
     expect(screen.getByRole("dialog")).toBeTruthy();
     expect(screen.getByText("TERMINAL RAW LOGS")).toBeTruthy();
@@ -460,7 +502,7 @@ describe("T15 DebugDrawer — 터미널 로그 드로어", () => {
     // Arrange
     const user = userEvent.setup();
     render(<MainPage />);
-    await user.click(screen.getByText(/Terminal Raw Logs/));
+    await user.click(screen.getByRole("button", { name: /Logs/ }));
     expect(screen.getByRole("dialog")).toBeTruthy();
     // Act
     await user.click(screen.getByLabelText("close-drawer"));
@@ -472,7 +514,7 @@ describe("T15 DebugDrawer — 터미널 로그 드로어", () => {
     // Arrange
     const user = userEvent.setup();
     render(<MainPage />);
-    await user.click(screen.getByText(/Terminal Raw Logs/));
+    await user.click(screen.getByRole("button", { name: /Logs/ }));
     // Act
     await user.click(screen.getByTestId("drawer-overlay"));
     // Assert

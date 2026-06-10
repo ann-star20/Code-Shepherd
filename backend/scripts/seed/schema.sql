@@ -89,6 +89,8 @@ CREATE TABLE IF NOT EXISTS pipeline_logs (
     agent      TEXT NOT NULL,                          -- 이벤트를 유발한 에이전트명
     level      TEXT NOT NULL DEFAULT 'INFO',           -- 로그 레벨
     message    TEXT,                                   -- 실시간 상태 롤링 subText 메시지
+    etag              TEXT,
+    description              TEXT,
     created_at TIMESTAMPTZ DEFAULT now()
 );
 

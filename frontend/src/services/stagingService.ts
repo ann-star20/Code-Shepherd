@@ -22,7 +22,7 @@ export interface StagingConceptJson {
   owasp_id?: string;
   root_cause?: string;
   affected_components?: string[];
-  security_mechanism?: string[];
+  mechanism?: string[];
   /** 하이브리드 리졸버 판정 결과 (DEV mock 또는 pre-scoring 시 포함) */
   merge_action?: "MERGE" | "RELATED_TO" | "NEW";
   merge_score?: number;
