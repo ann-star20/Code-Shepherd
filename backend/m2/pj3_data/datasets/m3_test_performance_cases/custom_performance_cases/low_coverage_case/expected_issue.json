@@ -1,0 +1,18 @@
+{
+  "case_id": "m3_custom_low_coverage_001",
+  "module": "M3",
+  "source": "Task-Link Custom",
+  "expected_issues": [
+    {
+      "id": "TEST-001",
+      "title": "Coverage below threshold",
+      "severity": "Major",
+      "target": "whole_project",
+      "expected_metric": {
+        "coverage_line_threshold": 0.8,
+        "expected_below_threshold": true
+      },
+      "evidence": "Only calculate_total is tested while apply_discount, calculate_shipping, and create_order_summary remain untested."
+    }
+  ]
+}

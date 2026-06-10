@@ -1,0 +1,17 @@
+{
+  "case_id": "m3_custom_n_plus_one_repository_001",
+  "module": "M3",
+  "source": "Task-Link Custom",
+  "expected_issues": [
+    {
+      "id": "PERF-002",
+      "rule_id": "PERF-002",
+      "title": "N+1 query pattern",
+      "severity": "Major",
+      "target_file": "app/order_service.py",
+      "target_function": "get_orders_with_customers",
+      "evidence": "customer_repository.find_by_id is called inside a for-loop.",
+      "recommendation": "Fetch related customers in bulk before the loop using find_all_by_ids."
+    }
+  ]
+}
