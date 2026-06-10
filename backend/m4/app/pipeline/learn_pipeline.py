@@ -2,6 +2,7 @@
 
 import json
 import os
+import re
 
 import google.generativeai as genai
 import httpx
@@ -29,8 +30,13 @@ _CARD_PROMPT_BODY = (
     "코딩 컨벤션 참고 자료(coding_convention):\n{docs_example}\n"
     "학습 추천 참고 자료(learning_resource):\n{docs_recommend}\n"
     "리뷰 대상 코드:\n{code_snippet}\n\n"
-    "다음 키를 가진 JSON 객체만 반환해: "
-    '{{"explanation": string, "core_summary": string, "after_code": string|null, "recommendations": [string]}}'
+    "다음 키를 가진 JSON 객체만 반환해 (마크다운 문법 사용 금지 — **bold**, # 헤더, bullet 기호 등 절대 쓰지 말 것):\n"
+    "- explanation: 이 취약점이 무엇인지, e-commerce 서비스 맥락에서 왜 위험한지를 포함해 최대 한 단락으로 설명 (개발자가 쉽게 이해할 수 있게)\n"
+    "- why_dangerous: e-commerce 환경에서 이 취약점이 실제로 어떤 피해를 줄 수 있는지 최대 한 단락으로 구체적으로 설명\n"
+    "- core_summary: 핵심 한 줄 요약 (마크다운 없이 평문)\n"
+    "- after_code: 위의 '리뷰 대상 코드'를 keyword와 sub_category 기준의 이슈를 직접 수정한 코드. 새로운 예시 코드 작성 금지. 코드펜스 기호 없이 순수 코드만. 핵심 변경사항에는 해당 코드 바로 윗줄에 별도 줄로 코멘트 추가 (인라인 코멘트 금지)\n"
+    "- learning_recommendations: 학습 추천 최대 7개, 각각 title(짧은 제목)과 description(한 문장)\n"
+    '{{"explanation": string, "why_dangerous": string, "core_summary": string, "after_code": string|null, "learning_recommendations": [{{"title": string, "description": string}}]}}'
 )
 
 # D18 — depth별로 Builder Agent에게 다른 깊이의 카드를 지시하는 템플릿 (T10)
@@ -56,6 +62,16 @@ def route_card_type(issue: ReviewIssue) -> str:
 def determine_depth(issue: ReviewIssue, mistake_count: int = 0) -> str:
     """D18 — severity가 critical/high이거나 동일 keyword 실수가 3회 이상이면 deep, 아니면 quick."""
     return "deep" if (issue.severity in ("critical", "high") or mistake_count >= 3) else "quick"
+
+
+def _parse_llm_json(text: str) -> dict:
+    """Gemini 응답을 JSON으로 파싱 — 마크다운 코드펜스 제거 후 시도."""
+    text = text.strip()
+    if text.startswith("```"):
+        text = re.sub(r"^```(?:json)?\s*\n?", "", text)
+        text = re.sub(r"\n?\s*```$", "", text)
+        text = text.strip()
+    return json.loads(text)
 
 
 def _format_docs(docs: list[dict] | None) -> str:
@@ -87,11 +103,18 @@ async def build_card(
     )
     model = genai.GenerativeModel(BUILDER_MODEL_NAME)
     # response_mime_type 미지정 시 Gemini가 JSON을 마크다운 코드펜스(```json ... ```)로 감싸 반환해 json.loads가 실패함
-    response = await model.generate_content_async(
-        prompt,
-        generation_config=genai.GenerationConfig(response_mime_type="application/json"),
-    )
-    return json.loads(response.text)
+    # Gemini가 가끔 malformed JSON을 반환하므로 최대 3회 재시도
+    last_exc: Exception = RuntimeError("build_card: no attempts made")
+    for _ in range(3):
+        response = await model.generate_content_async(
+            prompt,
+            generation_config=genai.GenerationConfig(response_mime_type="application/json"),
+        )
+        try:
+            return _parse_llm_json(response.text)
+        except json.JSONDecodeError as e:
+            last_exc = e
+    raise last_exc
 
 
 def _skip_ragas_eval() -> bool:
@@ -213,6 +236,17 @@ async def generate_card(issue: ReviewIssue, adapter: SearchAdapter, mistake_coun
 
     # before_code: code_snippet 없으면 null (프론트에서 단일 컬럼 렌더링)
     card_content["before_code"] = issue.code_snippet or None
+    # after_code에 마크다운 코드펜스가 포함된 경우 제거
+    if card_content.get("after_code"):
+        card_content["after_code"] = re.sub(r"^```[\w]*\n?", "", card_content["after_code"]).rstrip("`").strip()
+    # header: issue 메타데이터에서 직접 구성 (LLM 생성 불필요)
+    card_content["header"] = {
+        "keyword": issue.keyword,
+        "name_of_function": issue.name_of_function or "",
+        "language": issue.programming_language or "",
+        "framework": issue.framework or "",
+        "framework_version": issue.framework_version or "",
+    }
 
     return CurriculumPlan(
         issue_id=issue.id,

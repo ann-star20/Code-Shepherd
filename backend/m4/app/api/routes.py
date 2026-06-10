@@ -1,5 +1,6 @@
 """T2 누락 라우트 + T4 JWT 인증 — POST /api/learn, GET /api/pr/{scan_id}, POST /api/complete (D2/D4/D11/D19)."""
 
+import asyncio
 import uuid
 from datetime import UTC, datetime
 
@@ -116,12 +117,12 @@ async def _run_card_generation(plan_issue_pairs: list[tuple[uuid.UUID, ReviewIss
     engine = create_engine_from_url(settings.database_url)
     session_factory = create_session_factory(engine)
 
-    async with session_factory() as session:
-        adapter = PgvectorAdapter(session)
-        for plan_id, issue in plan_issue_pairs:
+    async def _generate_one(plan_id: uuid.UUID, issue: ReviewIssue) -> None:
+        async with session_factory() as session:
+            adapter = PgvectorAdapter(session)
             plan = await session.get(CurriculumPlan, plan_id)
             if plan is None:
-                continue
+                return
             try:
                 plan.status = "running"
                 await session.commit()
@@ -134,12 +135,11 @@ async def _run_card_generation(plan_issue_pairs: list[tuple[uuid.UUID, ReviewIss
                 plan.card_content = generated.card_content
                 await session.commit()
             except Exception as exc:
-                # generate_card() 자체의 예상 못 한 예외, 또는 결과 저장 commit() 실패(DB 연결 끊김 등) —
-                # 어느 경로로 실패하든 plan이 'running'에 영원히 멈추지 않도록 'failed'로 기록한다 (T6 catch-all 안전망)
                 plan.status = "failed"
                 plan.error_message = str(exc)
                 await session.commit()
 
+    await asyncio.gather(*[_generate_one(plan_id, issue) for plan_id, issue in plan_issue_pairs])
     await engine.dispose()
 
 
@@ -185,10 +185,10 @@ async def post_learn(
 
 async def _load_issues_with_plans(
     session: AsyncSession, scan_id: uuid.UUID
-) -> list[tuple[ReviewIssue, CurriculumPlan | None]]:
+) -> list[tuple[ReviewIssue, CurriculumPlan]]:
     result = await session.execute(
         select(ReviewIssue, CurriculumPlan)
-        .outerjoin(CurriculumPlan, CurriculumPlan.issue_id == ReviewIssue.id)
+        .join(CurriculumPlan, CurriculumPlan.issue_id == ReviewIssue.id)
         .where(ReviewIssue.pull_request_id == scan_id)
         .order_by(_SEVERITY_RANK, ReviewIssue.created_at)
     )
