@@ -1,13 +1,33 @@
-__pycache__
-**/__pycache__
+# .dockerignore
+
+# 1. 가상환경 디렉토리 (★가장 중요: 몇 기가씩 먹는 주범)
+.venv/
+venv/
+env/
+ENV/
+
+# 2. 파이썬 캐시 파일
+**/__pycache__/
 *.pyc
 *.pyo
-.pytest_cache
-.ruff_cache
-.mypy_cache
-tests/
-.env
-.env.*
-*.egg-info
-.venv
-venv
+*.pyd
+
+# 3. 깃 히스토리 (프로젝트가 오래될수록 커짐)
+.git/
+.github/
+.gitignore
+
+# 4. 로컬 테스트 및 개발 로그
+.pytest_cache/
+.coverage
+htmlcov/
+*.log
+*.md
+# 5. 프론트엔드 작업물이 같이 있다면 제외
+node_modules/
+
+
+docs/old/*
+*.bak
+skills
+*/README.md

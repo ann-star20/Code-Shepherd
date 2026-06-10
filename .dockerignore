@@ -1,0 +1,14 @@
+# .dockerignore 파일 내용
+.git
+.venv
+venv
+__pycache__
+*.pyc
+*.md
+# 만약 로컬에 다운로드한 임베딩 모델 파일이 있다면 그것도 제외
+
+
+docs/old/*
+*.bak
+skills
+*/README.md
