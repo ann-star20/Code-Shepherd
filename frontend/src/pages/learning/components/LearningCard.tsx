@@ -3,7 +3,7 @@
  * (T9, FRONTEND_SPEC Section 4 자동 완료 / Section 5 레이아웃 / Section 6-1 card_content 구조).
  */
 
-import { useEffect } from "react";
+import { useEffect, useState } from "react";
 
 import type { IssueWithPlan } from "../hooks/useLearningApi";
 import { m4Api } from "../lib/m4Api";
@@ -15,6 +15,7 @@ interface LearningCardProps {
 
 export default function LearningCard({ issue }: LearningCardProps) {
   const { plan } = issue;
+  const [expanded, setExpanded] = useState(false);
 
   useEffect(() => {
     if (plan.status === "completed") {
@@ -59,50 +60,64 @@ export default function LearningCard({ issue }: LearningCardProps) {
 
   return (
     <article className="bg-white rounded-xl border border-notion-border shadow-sm overflow-hidden">
-      <header className="p-4 border-b border-notion-border">
-        <p className="font-medium text-notion-text">
-          [{header.keyword}] — [{header.name_of_function}]
-        </p>
-        {metaLabel && <p className="text-sm text-notion-text-secondary">{metaLabel}</p>}
-        {plan.llm_fallback && (
-          <p className="mt-2 text-xs text-amber-600">사내 문서 기반 아님 (LLM 자체 생성)</p>
-        )}
-      </header>
-
-      <div className={before_code ? "grid grid-cols-2 gap-px bg-notion-border" : ""}>
-        {before_code && (
-          <div className="bg-white p-4">
-            <p className="text-sm font-medium text-notion-text mb-2">Before (문제 코드)</p>
-            <CodeBlock code={before_code} />
-          </div>
-        )}
-        <div className="bg-white p-4">
-          <p className="text-sm font-medium text-notion-text mb-2">After (수정 코드)</p>
-          <CodeBlock code={after_code} />
+      <button
+        type="button"
+        onClick={() => setExpanded((prev) => !prev)}
+        aria-expanded={expanded}
+        className="flex w-full items-start justify-between gap-2 p-4 text-left hover:bg-notion-bg-secondary"
+      >
+        <div>
+          <p className="font-medium text-notion-text">
+            [{header.keyword}] — [{header.name_of_function}]
+          </p>
+          {metaLabel && <p className="text-sm text-notion-text-secondary">{metaLabel}</p>}
+          {plan.llm_fallback && (
+            <p className="mt-2 text-xs text-amber-600">사내 문서 기반 아님 (LLM 자체 생성)</p>
+          )}
         </div>
-      </div>
+        <span className="shrink-0 text-notion-text-secondary">{expanded ? "▲" : "▼"}</span>
+      </button>
 
-      <div className="p-4 border-t border-notion-border space-y-3">
-        <p className="text-notion-text">{explanation}</p>
-        <p className="text-sm text-notion-text-secondary">왜 위험한가: {why_dangerous}</p>
-
-        {(learning_recommendations ?? []).length > 0 && (
-          <div>
-            <p className="text-sm font-medium text-notion-text mb-1">학습 추천</p>
-            <ul className="text-sm text-notion-text-secondary list-disc list-inside">
-              {(learning_recommendations ?? []).map((rec) => (
-                <li key={rec.title}>
-                  {rec.title} — {rec.description}
-                </li>
-              ))}
-            </ul>
+      {expanded && (
+        <>
+          <div
+            className={`border-t border-notion-border ${before_code ? "grid grid-cols-2 gap-px bg-notion-border" : ""}`}
+          >
+            {before_code && (
+              <div className="bg-white p-4">
+                <p className="text-sm font-medium text-notion-text mb-2">Before (문제 코드)</p>
+                <CodeBlock code={before_code} />
+              </div>
+            )}
+            <div className="bg-white p-4">
+              <p className="text-sm font-medium text-notion-text mb-2">After (수정 코드)</p>
+              <CodeBlock code={after_code} />
+            </div>
           </div>
-        )}
 
-        <div className="rounded-lg bg-notion-bg-secondary p-3">
-          <p className="text-sm font-medium text-notion-text">{core_summary}</p>
-        </div>
-      </div>
+          <div className="p-4 border-t border-notion-border space-y-3">
+            <p className="text-notion-text">{explanation}</p>
+            <p className="text-sm text-notion-text-secondary">왜 위험한가: {why_dangerous}</p>
+
+            {(learning_recommendations ?? []).length > 0 && (
+              <div>
+                <p className="text-sm font-medium text-notion-text mb-1">학습 추천</p>
+                <ul className="text-sm text-notion-text-secondary list-disc list-inside">
+                  {(learning_recommendations ?? []).map((rec) => (
+                    <li key={rec.title}>
+                      {rec.title} — {rec.description}
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            )}
+
+            <div className="rounded-lg bg-notion-bg-secondary p-3">
+              <p className="text-sm font-medium text-notion-text">{core_summary}</p>
+            </div>
+          </div>
+        </>
+      )}
     </article>
   );
 }
