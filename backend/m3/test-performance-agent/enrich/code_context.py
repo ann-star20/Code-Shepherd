@@ -33,33 +33,34 @@ def describe_function(func_source: str) -> str:
         return ""
     try:
         import json  # noqa: PLC0415
-        import google.generativeai as genai  # noqa: PLC0415
+        from google import genai  # noqa: PLC0415
+        from google.genai import types  # noqa: PLC0415
         from config.settings import LLM_MODEL  # noqa: PLC0415
 
-        genai.configure(api_key=api_key)
-        model = genai.GenerativeModel(
-            LLM_MODEL,
-            generation_config={"response_mime_type": "application/json"},
-        )
+        client = genai.Client(api_key=api_key)
         prompt = (
             "다음 파이썬 함수가 무엇을 하는지 한국어 한 문장으로 짧게 설명하세요. "
             '예: "장바구니 항목을 불러오는 함수". '
             '추측·평가는 하지 말고 코드가 하는 일만. JSON으로만: {"description": "..."}\n\n'
             f"함수:\n{func_source}"
         )
-        resp = model.generate_content(prompt)
+        resp = client.models.generate_content(
+            model=LLM_MODEL,
+            contents=prompt,
+            config=types.GenerateContentConfig(response_mime_type="application/json"),
+        )
         data = json.loads(resp.text)
         return str(data.get("description", "")).strip()
     except Exception:
         return ""
 
 
-def _enclosing_function_source(source: str, line: int) -> str:
-    """주어진 줄을 포함하는 가장 안쪽 함수의 소스. 없으면 빈 문자열."""
+def _enclosing_function(source: str, line: int) -> tuple[str, str]:
+    """주어진 줄을 포함하는 가장 안쪽 함수의 (소스, 이름). 없으면 ("", "")."""
     try:
         tree = ast.parse(source)
     except SyntaxError:
-        return ""
+        return "", ""
     best: tuple[int, int, ast.AST] | None = None
     for node in ast.walk(tree):
         if not isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
@@ -70,15 +71,16 @@ def _enclosing_function_source(source: str, line: int) -> str:
             if best is None or (end - start) < (best[1] - best[0]):
                 best = (start, end, node)
     if best is None:
-        return ""
-    return ast.get_source_segment(source, best[2]) or ""
+        return "", ""
+    return ast.get_source_segment(source, best[2]) or "", best[2].name
 
 
 def augment_issues(issues: list[Issue], repo_path: str, describe=None) -> None:
-    """각 이슈가 가리키는 함수를 추출해 code_snippet·code_context를 채운다(제자리 수정).
+    """각 이슈가 가리키는 함수를 추출해 code_snippet·name_of_function·code_context를 채운다(제자리).
 
-    - code_snippet = 함수 전체 소스 (AST=사실). LLM 키 없이도 항상 채움.
-    - code_context = 그 함수의 한 줄 LLM 설명. 키 있을 때만 채움(없으면 빈 값).
+    - code_snippet     = 함수 전체 소스 (AST=사실). LLM 키 없이도 항상 채움.
+    - name_of_function = 그 함수 이름 (AST=사실). LLM 키 없이도 항상 채움.
+    - code_context     = 그 함수의 한 줄 LLM 설명. 키 있을 때만 채움(없으면 빈 값).
     describe 주입 가능(테스트용); 미주입 시 모듈의 describe_function 사용.
     함수 못 찾으면 둘 다 빈 값으로 남음. 같은 함수의 설명은 1회만 호출(캐시).
     """
@@ -94,10 +96,11 @@ def augment_issues(issues: list[Issue], repo_path: str, describe=None) -> None:
             source = (repo / issue.file).read_text(encoding="utf-8")
         except OSError:
             continue
-        func_source = _enclosing_function_source(source, issue.line)
+        func_source, func_name = _enclosing_function(source, issue.line)
         if not func_source:
             continue
         issue.code_snippet = func_source       # AST=사실, 키 없이도 항상
+        issue.name_of_function = func_name     # AST=사실, 키 없이도 항상
         if has_key:                            # LLM 설명은 키 있을 때만
             if func_source not in cache:
                 cache[func_source] = describe(func_source)

@@ -7,6 +7,7 @@
 - GET /review: 저장된 결과 반환 / 없으면 빈 결과.
 """
 import sys
+from types import SimpleNamespace
 
 import pytest
 from httpx import ASGITransport, AsyncClient
@@ -88,8 +89,8 @@ def spies(monkeypatch):
     """refine·post·persist seam 을 spy 로 교체. 판정(aggregate)은 실제 로직 유지."""
     calls = {"refine": [], "post": [], "persist": []}
 
-    def fake_refine(combined, verdict, skill):
-        calls["refine"].append((list(combined), verdict, skill))
+    def fake_refine(combined, verdict, skill, metrics=None):
+        calls["refine"].append((list(combined), verdict, skill, metrics))
         return "## 자동 리뷰\n본문"
 
     def fake_post(owner, repo, pr_number, body):
@@ -167,7 +168,7 @@ async def test_review_post_failure_is_honest(client, monkeypatch):
     def failing_gh_post(owner, repo, pr_number, body):
         raise RuntimeError("GitHub 인증 실패 (401)")
 
-    monkeypatch.setattr(appmain, "_review_refine", lambda c, v, s: "본문")
+    monkeypatch.setattr(appmain, "_review_refine", lambda c, v, s, m=None: "본문")
     monkeypatch.setattr(appmain, "_review_persist", lambda *a, **k: True)
     monkeypatch.setattr(appmain, "_gh_post", failing_gh_post)
 
@@ -220,3 +221,153 @@ async def test_get_review_empty_when_missing(client, monkeypatch):
     assert data["found"] is False
     assert data["verdict"] is None
     assert data["issues"] == []
+
+
+# ════════════════════════════════════════════════════════════════════
+# 7B — /review 가 코멘트 생성 직전, 합쳐진 이슈의 message 로 사내규칙(RAG)을
+# 검색해 rag_context 를 채운다. 검색기(search_convention)는 _rag_search seam 으로
+# mock 한다(실 GCP 안 붙임). 포맷(format_context)은 7A 것을 실제로 재사용한다.
+# 합격 기준: 채운 rag_context 가 refine 입력까지 전달 / 빈결과·예외는 빈 인용 200 /
+# RAG_ENABLED 꺼짐(기본)이면 검색조차 안 함(평소·테스트 부하 0).
+# ════════════════════════════════════════════════════════════════════
+
+_FAKE_RAG_DOCS = [
+    {
+        "content": "N+1 쿼리 금지: 반복문 안에서 쿼리하지 말고 selectinload 로 한 번에 로드한다.",
+        "doc_title": "ORM 사용 가이드",
+        "source_url": "http://kms/orm",
+        "score": 0.91,
+    }
+]
+
+
+@pytest.mark.asyncio
+async def test_review_fills_rag_context_before_refine(client, spies, monkeypatch):
+    """RAG_ENABLED + 검색 성공 → 각 이슈 message 로 검색한 사내규칙이 rag_context 로
+    채워져 refine 입력 이슈까지 전달된다(📖·제목·본문 포함 — 포맷은 7A 재사용)."""
+    monkeypatch.setenv("RAG_ENABLED", "1")
+    seen: list[str] = []
+
+    def fake_search(message):
+        seen.append(message)
+        return _FAKE_RAG_DOCS
+
+    monkeypatch.setattr(appmain, "_rag_search", fake_search)
+
+    payload = _request(
+        performance=_result("performance", [_issue("Major", "PERF-001", message="N+1 의심")])
+    )
+    resp = await client.post("/review", json=payload)
+    assert resp.status_code == 200
+
+    # 검색은 이슈 message 통째로 호출됐다.
+    assert seen == ["N+1 의심"]
+    # refine 입력 combined 이슈에 rag_context 가 실려 있다.
+    combined = spies["refine"][0][0]
+    assert len(combined) == 1
+    rag = combined[0]["rag_context"]
+    assert "📖" in rag
+    assert "ORM 사용 가이드" in rag
+    assert "selectinload" in rag
+
+
+@pytest.mark.asyncio
+async def test_review_rag_empty_search_leaves_context_empty(client, spies, monkeypatch):
+    """검색 결과 없음(빈 리스트) → rag_context 빈 채로, /review 정상 200(가짜 인용 금지)."""
+    monkeypatch.setenv("RAG_ENABLED", "1")
+    monkeypatch.setattr(appmain, "_rag_search", lambda m: [])
+
+    payload = _request(performance=_result("performance", [_issue("Major", "PERF-001")]))
+    resp = await client.post("/review", json=payload)
+    assert resp.status_code == 200
+    combined = spies["refine"][0][0]
+    assert combined[0]["rag_context"] == ""
+
+
+@pytest.mark.asyncio
+async def test_review_rag_search_exception_is_honest(client, spies, monkeypatch):
+    """검색이 예외를 던져도 → rag_context 빈 채로 남고 /review 는 그대로 200(500 안 됨)."""
+    monkeypatch.setenv("RAG_ENABLED", "1")
+
+    def boom(message):
+        raise RuntimeError("GCP 연결 실패")
+
+    monkeypatch.setattr(appmain, "_rag_search", boom)
+
+    payload = _request(security_scan=_result("security_scan", [_issue("Critical", "SEC-001")]))
+    resp = await client.post("/review", json=payload)
+    assert resp.status_code == 200
+    assert resp.json()["verdict"] == "escalate"  # 판정 회귀 없음
+    combined = spies["refine"][0][0]
+    assert combined[0]["rag_context"] == ""
+
+
+@pytest.mark.asyncio
+async def test_review_rag_disabled_skips_search(client, spies, monkeypatch):
+    """RAG_ENABLED 꺼짐(기본) → 검색 자체를 호출하지 않고 rag_context 빈 채(평소·테스트 부하 0)."""
+    monkeypatch.delenv("RAG_ENABLED", raising=False)
+    called: list[str] = []
+    monkeypatch.setattr(appmain, "_rag_search", lambda m: called.append(m) or [])
+
+    payload = _request(performance=_result("performance", [_issue("Major", "PERF-001")]))
+    resp = await client.post("/review", json=payload)
+    assert resp.status_code == 200
+    assert called == []  # 검색 미호출
+    combined = spies["refine"][0][0]
+    assert combined[0]["rag_context"] == ""
+
+
+# ════════════════════════════════════════════════════════════════════
+# 7D — 코멘트 '📊 지표 줄'용 측정값(metrics)을 /verify→/review→코멘트로 흘린다.
+# 공유 계약 M3VerifyResponse 에 optional metrics(기본 None) additive 추가.
+# coverage_line(0~1) → coverage_pct(0~100). 측정값 없으면 빈 dict(정직 — 가짜 0% 금지).
+# ════════════════════════════════════════════════════════════════════
+
+
+def test_review_metrics_extracts_coverage_pct():
+    """test_verification.metrics.coverage_line(분수) → coverage_pct(%, 반올림)."""
+    payload = SimpleNamespace(
+        test_verification=SimpleNamespace(metrics={"coverage_line": 0.726}),
+        performance=None,
+    )
+    assert appmain._review_metrics(payload) == {"coverage_pct": 73}
+
+
+def test_review_metrics_empty_without_metrics():
+    """metrics 없음(None) → 빈 dict (지표 줄 생략 → 가짜 숫자 금지)."""
+    payload = SimpleNamespace(
+        test_verification=SimpleNamespace(metrics=None),
+        performance=None,
+    )
+    assert appmain._review_metrics(payload) == {}
+
+
+def test_review_metrics_carries_max_complexity_when_present():
+    """performance.metrics 에 max_complexity 가 있으면(향후) 그대로 전달."""
+    payload = SimpleNamespace(
+        test_verification=SimpleNamespace(metrics={"coverage_line": 0.5}),
+        performance=SimpleNamespace(metrics={"max_complexity": 3}),
+    )
+    assert appmain._review_metrics(payload) == {"coverage_pct": 50, "max_complexity": 3}
+
+
+@pytest.mark.asyncio
+async def test_review_passes_metrics_to_refine(client, spies):
+    """test_verification 에 coverage metrics 가 실려오면 → coverage_pct 로 변환돼 refine 까지 전달."""
+    tv = _result("test_verification", [_issue("Minor", "TEST-001")])
+    tv["metrics"] = {"coverage_line": 0.72}
+    payload = _request(test_verification=tv)
+    resp = await client.post("/review", json=payload)
+    assert resp.status_code == 200
+    # spies fake_refine 가 받은 4번째 인자(metrics)
+    metrics = spies["refine"][0][3]
+    assert metrics == {"coverage_pct": 72}
+
+
+@pytest.mark.asyncio
+async def test_review_no_metrics_passes_empty_to_refine(client, spies):
+    """metrics 없이 온 경우 → refine 에 빈 dict 전달(지표 줄 생략)."""
+    payload = _request(performance=_result("performance", [_issue("Major", "PERF-001")]))
+    resp = await client.post("/review", json=payload)
+    assert resp.status_code == 200
+    assert spies["refine"][0][3] == {}

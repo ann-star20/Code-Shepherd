@@ -1,14 +1,19 @@
-"""Dev3 파이프라인 — 골든 4 탐지기 오케스트레이션.
+"""Dev3 파이프라인 — 탐지기 6개 오케스트레이션.
 
 run(dev3_input, repo_path) → list[AgentOutput]
 
 탐지 순서:
   1. coverage.measure()          (test_verification 선행)
   2. missing_funcs.detect()      (coverage.json 의존)
-  3. nplus1.detect()             (병렬 실행 대상)
-  4. complexity.detect()         (병렬 실행 대상)
+  3. edge_cases.detect()         (TEST-003; LLM 키 없으면 휴리스틱 폴백)
+  4. nplus1.detect()             (병렬 실행 대상)
+  5. complexity.detect()         (병렬 실행 대상)
+  6. memory_leak.detect()        (PERF-003; LLM 키 없으면 휴리스틱 폴백)
 
 부분 실패 허용: 탐지기가 예외를 던지면 빈 결과로 대체 (PRD §3 원칙 ②).
+
+결정성: LLM 키 있으면 LLM 모드(비결정적), 없으면 휴리스틱(결정적).
+CI/데모에서는 GOOGLE_API_KEY 없이 실행해 결정성 보장 권장.(b) 선택
 """
 from __future__ import annotations
 
@@ -20,14 +25,14 @@ from contracts import AgentOutput, Dev3Input
 from enrich import code_context, framework
 from filter.diff_filter import filter_issues, parse_diff
 from harness import instrument
-from performance import complexity, nplus1
+from performance import complexity, memory_leak, nplus1
 from rag import augment as rag_augment
-from test_verification import coverage, missing_funcs
+from test_verification import coverage, edge_cases, missing_funcs
 
 
 @instrument("dev3.run", "chain")
 def run(dev3_input: Dev3Input, repo_path: str) -> list[AgentOutput]:
-    """골든 4 탐지기 실행 후 diff 필터 적용 → 2개 AgentOutput 반환."""
+    """탐지기 6개 실행 후 diff 필터 적용 → 2개 AgentOutput 반환."""
     t0 = time.time()
 
     changed = parse_diff(dev3_input.pr_diff)
@@ -43,6 +48,11 @@ def run(dev3_input: Dev3Input, repo_path: str) -> list[AgentOutput]:
     except Exception:
         mf_issues = []
 
+    try:
+        ec_issues = edge_cases.detect(repo_path, changed)
+    except Exception:
+        ec_issues = []
+
     # ── performance 탐지기 ───────────────────────
     try:
         n1_issues = nplus1.detect(repo_path, changed)
@@ -54,11 +64,16 @@ def run(dev3_input: Dev3Input, repo_path: str) -> list[AgentOutput]:
     except Exception:
         cx_issues = []
 
+    try:
+        ml_issues = memory_leak.detect(repo_path, changed)
+    except Exception:
+        ml_issues = []
+
     elapsed_ms = int((time.time() - t0) * 1000)
 
     # ── diff 교집합 필터 ─────────────────────────
-    test_issues = filter_issues(cov_issues + mf_issues, changed, repo_path)
-    perf_issues = filter_issues(n1_issues + cx_issues, changed, repo_path)
+    test_issues = filter_issues(cov_issues + mf_issues + ec_issues, changed, repo_path)
+    perf_issues = filter_issues(n1_issues + cx_issues + ml_issues, changed, repo_path)
 
     # ── code_snippet(AST)·code_context(LLM) 채움 — 성능(PERF) 이슈만 (Dev4 요청) ──
     # 테스트 이슈엔 채우지 않음: Dev4가 성능 분석에만 함수 소스/설명을 사용.
@@ -72,11 +87,18 @@ def run(dev3_input: Dev3Input, repo_path: str) -> list[AgentOutput]:
     for issue in test_issues + perf_issues:
         issue.github_id = github_id
 
-    # ── 사내 컨벤션 RAG 채움 (rag_context) — RAG_ENABLED일 때만 (기본 비활성) ──
-    # 기본 off: 평소·테스트에서 BGE-M3 로드·GCP 접속이 일어나지 않게.
+    # ── 사내 컨벤션 RAG 채움 (rag_context) — RAG_ENABLED 이면 실행 ──
+    # 기본 ON: docker-compose 에서 RAG_ENABLED=1 설정 → 실 분석 시 rag_context 채움.
+    # 단위테스트: conftest _rag_off autouse 가 unset → BGE-M3·GCP 비접촉.
     if os.getenv("RAG_ENABLED"):
         rag_augment.augment_issues(test_issues)
         rag_augment.augment_issues(perf_issues)
+
+    # ── performance metrics — 복잡도 이슈의 중첩 깊이 중 최댓값(있을 때만) ──
+    # depth 실린 이슈만 집계 → 복잡도 이슈 0건이면 None 유지(가짜 숫자 금지).
+    # 코멘트 렌더(_review_metrics→_metrics_line)가 max_complexity 키를 읽어 '최대 복잡도 N'으로 출력.
+    cx_depths = [i.complexity_depth for i in perf_issues if i.complexity_depth is not None]
+    perf_metrics = {"max_complexity": max(cx_depths)} if cx_depths else None
 
     # ── 조립 ────────────────────────────────────
     tv_output = assemble_output(
@@ -94,7 +116,7 @@ def run(dev3_input: Dev3Input, repo_path: str) -> list[AgentOutput]:
         pr_id=dev3_input.pr_id,
         agent="performance",
         issues=perf_issues,
-        metrics=None,
+        metrics=perf_metrics,
         execution_ms=elapsed_ms,
     )
 

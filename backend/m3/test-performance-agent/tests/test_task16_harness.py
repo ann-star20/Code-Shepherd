@@ -15,8 +15,11 @@ from unittest.mock import MagicMock, patch
 # 1. 키 없음 — no-op 검증 (★ 이 세션의 정상 상태)
 # ════════════════════════════════════════════
 
-def test_instrument_no_key_returns_original_fn(monkeypatch):
-    """LANGCHAIN_API_KEY 없으면 데코레이터가 원본 함수 그대로 반환한다."""
+def test_instrument_no_key_returns_callable_with_correct_behavior(monkeypatch):
+    """LANGCHAIN_API_KEY 없으면 데코레이터가 원본과 동일하게 동작하는 래퍼를 반환한다.
+
+    (LatencyCollector 지원 추가로 래퍼 반환 — identity가 아닌 동작이 중요)
+    """
     monkeypatch.delenv("LANGCHAIN_API_KEY", raising=False)
 
     # harness를 fresh import (다른 테스트 상태 격리)
@@ -27,7 +30,8 @@ def test_instrument_no_key_returns_original_fn(monkeypatch):
         return x * 2
 
     wrapped = harness.instrument("test_tool")(my_fn)
-    assert wrapped is my_fn, "키 없을 때 instrument()는 원본 함수를 그대로 반환해야 한다"
+    assert callable(wrapped), "instrument()는 callable을 반환해야 한다"
+    assert wrapped(5) == 10, "래퍼가 원본 함수와 동일한 결과를 반환해야 한다"
 
 
 def test_instrument_no_key_fn_executes_correctly(monkeypatch):
@@ -45,7 +49,7 @@ def test_instrument_no_key_fn_executes_correctly(monkeypatch):
 
 
 def test_instrument_no_key_run_type_llm_noop(monkeypatch):
-    """run_type='llm'이어도 키 없으면 no-op."""
+    """run_type='llm'이어도 키 없으면 LangSmith 미사용 — 래퍼가 원본처럼 동작한다."""
     monkeypatch.delenv("LANGCHAIN_API_KEY", raising=False)
 
     import harness
@@ -55,7 +59,7 @@ def test_instrument_no_key_run_type_llm_noop(monkeypatch):
         return f"answer:{prompt}"
 
     wrapped = harness.instrument("llm_call", "llm")(llm_call)
-    assert wrapped is llm_call
+    assert callable(wrapped)
     assert wrapped("hi") == "answer:hi"
 
 

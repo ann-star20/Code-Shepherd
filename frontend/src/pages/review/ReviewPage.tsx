@@ -37,6 +37,11 @@ interface ReviewIssue {
   message: string;
   rule_id: string | null;
   suggestion: string | null;
+  // 백엔드(/review)가 이슈마다 함께 주는 사내 규칙 인용. 없으면 비움 — 가짜로 채우지 않는다.
+  rag_context?: string | null;
+  // 출처 링크. 현재 백엔드는 인용 텍스트(rag_context) 안에 링크를 넣어 주지만,
+  // 별도 source_url 이 오면 진짜 링크로 렌더한다. 없으면 텍스트만(가짜 링크 금지).
+  source_url?: string | null;
 }
 
 interface ReviewResult {
@@ -183,8 +188,12 @@ function ReviewDetail({
   }
 
   return (
-    <div data-testid="review-detail" className="space-y-5">
-      <div className="flex items-center justify-between gap-3">
+    <div
+      data-testid="review-detail"
+      className="lg:h-full lg:flex lg:flex-col lg:min-h-0"
+    >
+      {/* 고정 헤더 — PR# · 판정 · GitHub 링크. 아래 이슈/코멘트를 내려도 항상 보인다. */}
+      <div className="flex items-center justify-between gap-3 pb-4 lg:shrink-0">
         <h2 className="text-base font-semibold text-notion-text">
           PR #{pr.github_pr_number}{" "}
           <span className="font-normal text-notion-text-secondary">
@@ -208,60 +217,89 @@ function ReviewDetail({
         </div>
       </div>
 
-      {/* 이슈 테이블 */}
-      <div className="bg-white border border-notion-border rounded-lg overflow-hidden">
-        <div className="px-4 py-2.5 border-b border-notion-border">
-          <h3 className="text-sm font-medium text-notion-text">
-            발견된 이슈 {review.issues.length}건
-          </h3>
-        </div>
+      {/* 스크롤 영역 — 이슈 카드 + 코멘트만 독립적으로 내려간다(위 헤더는 고정). */}
+      <div className="space-y-5 lg:flex-1 lg:min-h-0 lg:overflow-y-auto lg:pr-1">
+      {/* 이슈 목록 — 이슈 하나당 카드 한 장. 텍스트가 길어도 세로로 늘어나 레이아웃이 안 깨진다. */}
+      <div>
+        <h3 className="text-sm font-medium text-notion-text mb-2">
+          발견된 이슈 {review.issues.length}건
+        </h3>
         {review.issues.length === 0 ? (
-          <p className="px-4 py-6 text-center text-sm text-notion-text-secondary">
+          <p className="bg-white border border-notion-border rounded-lg px-4 py-6 text-center text-sm text-notion-text-secondary">
             지적된 이슈가 없습니다.
           </p>
         ) : (
-          <div className="overflow-x-auto">
-            <table
-              data-testid="review-issues"
-              className="w-full text-sm text-left"
-            >
-              <thead className="text-xs text-notion-text-secondary bg-notion-bg-secondary">
-                <tr>
-                  <th className="px-4 py-2 font-medium">심각도</th>
-                  <th className="px-4 py-2 font-medium">위치</th>
-                  <th className="px-4 py-2 font-medium">규칙</th>
-                  <th className="px-4 py-2 font-medium">설명 · 제안</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-notion-border">
-                {review.issues.map((issue, i) => (
-                  <tr key={i} data-testid={`issue-row-${i}`} className="align-top">
-                    <td className="px-4 py-2.5 whitespace-nowrap">
-                      <span
-                        className={`inline-block text-xs font-medium px-2 py-0.5 rounded border ${SEVERITY_CLS[issue.severity]}`}
-                      >
-                        {issue.severity}
-                      </span>
-                    </td>
-                    <td className="px-4 py-2.5 whitespace-nowrap font-mono text-xs text-notion-text-secondary">
+          <div data-testid="review-issues" className="space-y-3">
+            {review.issues.map((issue, i) => {
+              const rag = issue.rag_context?.trim();
+              return (
+                <div
+                  key={i}
+                  data-testid={`issue-row-${i}`}
+                  className="bg-white border border-notion-border rounded-lg p-4"
+                >
+                  {/* 상단: 심각도 · 위치 · 규칙코드(작은 꼬리표) */}
+                  <div className="flex flex-wrap items-center gap-2 mb-2">
+                    <span
+                      className={`inline-block text-xs font-medium px-2 py-0.5 rounded border ${SEVERITY_CLS[issue.severity]}`}
+                    >
+                      {issue.severity}
+                    </span>
+                    <span className="font-mono text-xs text-notion-text-secondary break-all">
                       {issue.file ?? "(전체)"}
                       {issue.line != null ? `:${issue.line}` : ""}
-                    </td>
-                    <td className="px-4 py-2.5 whitespace-nowrap text-xs text-notion-text-secondary">
-                      {issue.rule_id ?? "-"}
-                    </td>
-                    <td className="px-4 py-2.5 text-notion-text">
-                      <p>{issue.message}</p>
-                      {issue.suggestion && (
-                        <p className="text-xs text-notion-text-secondary mt-1">
-                          💡 {issue.suggestion}
-                        </p>
-                      )}
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
+                    </span>
+                    {issue.rule_id && (
+                      <span className="font-mono text-[11px] text-notion-text-secondary bg-notion-bg-secondary border border-notion-border px-1.5 py-0.5 rounded">
+                        {issue.rule_id}
+                      </span>
+                    )}
+                  </div>
+
+                  {/* 설명 · 제안 */}
+                  <p className="text-sm text-notion-text break-words">{issue.message}</p>
+                  {issue.suggestion && (
+                    <p className="text-xs text-notion-text-secondary mt-1 break-words">
+                      💡 {issue.suggestion}
+                    </p>
+                  )}
+
+                  {/* 📖 사내 규칙 — 카드 전체 폭 인용. 길어도 줄바꿈되어 안 깨진다. */}
+                  {rag ? (
+                    <div
+                      data-testid={`issue-rag-${i}`}
+                      className="mt-3 border-l-2 border-notion-border bg-notion-bg-secondary rounded-r px-3 py-2"
+                    >
+                      <div className="text-xs font-medium text-notion-text mb-0.5">
+                        📖 사내 규칙
+                      </div>
+                      <div className="text-xs text-notion-text-secondary break-words whitespace-pre-wrap">
+                        {issue.source_url ? (
+                          <a
+                            href={issue.source_url}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="underline decoration-dotted hover:text-notion-text"
+                          >
+                            {rag}
+                          </a>
+                        ) : (
+                          rag
+                        )}
+                      </div>
+                    </div>
+                  ) : (
+                    <div
+                      data-testid={`issue-rag-${i}`}
+                      className="mt-2 text-xs text-notion-text-secondary"
+                    >
+                      <span className="font-medium text-notion-text">📖 사내 규칙</span>{" "}
+                      —
+                    </div>
+                  )}
+                </div>
+              );
+            })}
           </div>
         )}
       </div>
@@ -280,6 +318,7 @@ function ReviewDetail({
           </div>
         </div>
       )}
+      </div>
     </div>
   );
 }
@@ -320,8 +359,11 @@ export default function ReviewPage() {
   }
 
   return (
-    <div className="max-w-6xl mx-auto px-6 py-8" data-testid="review-page">
-      <div className="mb-6">
+    <div
+      className="max-w-6xl mx-auto w-full px-6 py-8 lg:h-full lg:flex lg:flex-col lg:overflow-hidden"
+      data-testid="review-page"
+    >
+      <div className="mb-6 lg:shrink-0">
         <h1 className="text-2xl font-semibold text-notion-text">PR 코드 리뷰</h1>
         <p className="text-sm text-notion-text-secondary mt-1">
           {currentTeam?.name ? `${currentTeam.name} · ` : ""}
@@ -329,14 +371,15 @@ export default function ReviewPage() {
         </p>
       </div>
 
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-5">
-        {/* 좌: PR 목록 */}
-        <div className="lg:col-span-1 bg-white border border-notion-border rounded-lg overflow-hidden h-fit">
-          <div className="flex items-center gap-2 px-4 py-3 border-b border-notion-border">
+      <div className="flex flex-col lg:flex-row gap-5 lg:flex-1 lg:min-h-0">
+        {/* 좌: PR 목록 — 오른쪽 상세와 독립적으로 스크롤(여기서 굴리면 여기만 내려감). */}
+        <div className="bg-white border border-notion-border rounded-lg overflow-hidden lg:w-[31%] lg:shrink-0 lg:flex lg:flex-col lg:min-h-0">
+          <div className="flex items-center gap-2 px-4 py-3 border-b border-notion-border lg:shrink-0">
             <GitPullRequest size={16} className="text-notion-text-secondary" />
             <h2 className="text-sm font-medium text-notion-text">PR 목록</h2>
           </div>
 
+          <div className="lg:flex-1 lg:min-h-0 lg:overflow-y-auto">
           {prsLoading ? (
             <p className="px-4 py-8 text-center text-sm text-notion-text-secondary">
               불러오는 중...
@@ -393,10 +436,11 @@ export default function ReviewPage() {
               })}
             </ul>
           )}
+          </div>
         </div>
 
         {/* 우: 선택 PR 상세 */}
-        <div className="lg:col-span-2">
+        <div className="lg:flex-1 lg:min-h-0 lg:flex lg:flex-col">
           {selectedPr && owner && repo ? (
             <ReviewDetail pr={selectedPr} owner={owner} repo={repo} />
           ) : (

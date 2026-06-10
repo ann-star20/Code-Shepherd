@@ -16,6 +16,10 @@ GOOGLE_API_KEY: str = os.getenv("GOOGLE_API_KEY", "")
 GITHUB_TOKEN: str = os.getenv("GITHUB_TOKEN", "")
 GITHUB_REPO: str = os.getenv("GITHUB_REPO", "")  # "owner/repo"
 
+# ── 리뷰 대시보드 링크 (코멘트 footer) — 데모=localhost, 배포 시 env 로 주입 ──
+# 실제 사용 시점 값은 llm_refiner._dashboard_url() 이 env 에서 직접 읽는다.
+REVIEW_DASHBOARD_URL: str = os.getenv("REVIEW_DASHBOARD_URL", "http://localhost:5173/review")
+
 # ── 관찰(LangSmith) ──
 LANGCHAIN_API_KEY: str = os.getenv("LANGCHAIN_API_KEY", "")
 LANGCHAIN_PROJECT: str = os.getenv("LANGCHAIN_PROJECT", "dev3-pr-comment")

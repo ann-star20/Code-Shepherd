@@ -96,3 +96,30 @@ def test_triple_nested_loop_major(tmp_path):
     assert len(issues) == 1
     assert issues[0].severity == "Major"
     assert issues[0].rule_id == "PERF-001"
+
+
+# ════════════════════════════════════════════
+# 구조적 깊이 노출 — Issue.metric_value (perf metrics 집계용)
+# ════════════════════════════════════════════
+
+def test_double_nested_loop_carries_depth(tmp_path):
+    """이중 중첩 → Issue.complexity_depth == 2 (프로즈 외 구조적 필드로 깊이 노출)."""
+    issues = _write_and_detect(tmp_path, """
+        def foo(xs, ys):
+            for x in xs:
+                for y in ys:
+                    print(x, y)
+    """)
+    assert issues[0].complexity_depth == 2
+
+
+def test_triple_nested_loop_carries_depth(tmp_path):
+    """삼중 중첩 → Issue.complexity_depth == 3."""
+    issues = _write_and_detect(tmp_path, """
+        def foo(xs, ys, zs):
+            for x in xs:
+                for y in ys:
+                    for z in zs:
+                        print(x, y, z)
+    """)
+    assert issues[0].complexity_depth == 3

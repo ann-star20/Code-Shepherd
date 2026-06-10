@@ -9,6 +9,7 @@ issue.code_context에 채움. 출력 계약(AgentOutput)은 불변, 선택 필�
 """
 import textwrap
 from pathlib import Path
+from unittest.mock import MagicMock, patch
 
 import pytest
 
@@ -213,3 +214,21 @@ def test_persist_sqlite_roundtrips_code_context(tmp_path):
     ).fetchone()
     conn.close()
     assert row == ("장바구니 항목 불러오는 함수",)
+
+
+# ─── 9) describe_function — 신 SDK(google.genai) 세임 (8-0a) ──────────────────
+def test_describe_function_uses_new_sdk_client(monkeypatch):
+    """describe_function이 genai.Client(api_key=...) 신 SDK를 호출한다."""
+    monkeypatch.setenv("GOOGLE_API_KEY", "test-key-code")
+    mock_resp = MagicMock()
+    mock_resp.text = '{"description": "장바구니 항목을 불러오는 함수"}'
+    mock_client = MagicMock()
+    mock_client.models.generate_content.return_value = mock_resp
+
+    with patch("google.genai.Client", return_value=mock_client) as MockClient:
+        from enrich.code_context import describe_function
+        result = describe_function("def load_cart(uid): pass")
+
+    MockClient.assert_called_once_with(api_key="test-key-code")
+    mock_client.models.generate_content.assert_called_once()
+    assert result == "장바구니 항목을 불러오는 함수"

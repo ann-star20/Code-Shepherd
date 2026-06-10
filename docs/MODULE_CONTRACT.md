@@ -243,6 +243,13 @@ agent_result:
   module_id: "module_3"
   # 나머지 필드는 Module 2와 동일 구조
 
+# M3VerifyResponse 추가 필드 (additive · optional · 기본 None — 2026-06-09, 7D)
+#   metrics: dict | None = None
+#   - test_verification 응답에 측정 지표를 담는다. 예: {"coverage_line": 0.72}
+#     (coverage_line/branch/func 는 0~1 분수). PR 코멘트 '📊 지표 줄' 렌더용.
+#   - 하위호환: 미설정(None)이면 기존 소비자(m1 오케스트레이터·m4)는 그냥 무시.
+#     기존 호출자 회귀 없음 — 새 필드를 안 읽으면 동작 동일.
+
 required_state_fields:
   - task_id
   - trace_id

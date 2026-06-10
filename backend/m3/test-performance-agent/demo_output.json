@@ -1,0 +1,132 @@
+[
+  {
+    "task_id": "demo-task-001",
+    "scan_id": 1,
+    "pr_id": "PR-demo",
+    "agent": "test_verification",
+    "issues": [
+      {
+        "severity": "Major",
+        "file": "(전체)",
+        "line": null,
+        "message": "테스트 라인 커버리지 20.0% < 기준 80%.",
+        "rule_id": "TEST-001",
+        "suggestion": "테스트를 추가해 커버리지를 80% 이상으로 올리세요.",
+        "keyword": "커버리지 미충족",
+        "sub_category": "라인·브랜치",
+        "code_context": "",
+        "rag_context": "",
+        "github_id": "junior_dev_01",
+        "code_snippet": "",
+        "programming_language": "python",
+        "framework": "django",
+        "framework_version": "4.2.1",
+        "name_of_function": "",
+        "complexity_depth": null
+      },
+      {
+        "severity": "Minor",
+        "file": "src/posts.py",
+        "line": 4,
+        "message": "함수 'get_posts'에 대한 테스트 실행 흔적이 없습니다.",
+        "rule_id": "TEST-004",
+        "suggestion": "get_posts()에 대한 단위 테스트를 추가하세요.",
+        "keyword": "테스트 누락",
+        "sub_category": "Untested Public Function",
+        "code_context": "",
+        "rag_context": "",
+        "github_id": "junior_dev_01",
+        "code_snippet": "",
+        "programming_language": "python",
+        "framework": "django",
+        "framework_version": "4.2.1",
+        "name_of_function": "",
+        "complexity_depth": null
+      },
+      {
+        "severity": "Minor",
+        "file": "src/posts.py",
+        "line": 16,
+        "message": "함수 'find_dups'에 대한 테스트 실행 흔적이 없습니다.",
+        "rule_id": "TEST-004",
+        "suggestion": "find_dups()에 대한 단위 테스트를 추가하세요.",
+        "keyword": "테스트 누락",
+        "sub_category": "Untested Public Function",
+        "code_context": "",
+        "rag_context": "",
+        "github_id": "junior_dev_01",
+        "code_snippet": "",
+        "programming_language": "python",
+        "framework": "django",
+        "framework_version": "4.2.1",
+        "name_of_function": "",
+        "complexity_depth": null
+      }
+    ],
+    "summary": {
+      "critical": 0,
+      "major": 1,
+      "minor": 2
+    },
+    "metrics": {
+      "coverage_line": 0.2,
+      "coverage_func": 0.25
+    },
+    "execution_ms": 164
+  },
+  {
+    "task_id": "demo-task-001",
+    "scan_id": 1,
+    "pr_id": "PR-demo",
+    "agent": "performance",
+    "issues": [
+      {
+        "severity": "Major",
+        "file": "src/posts.py",
+        "line": 7,
+        "message": "N+1 쿼리: 루프 안에서 DB 호출이 반복됩니다.",
+        "rule_id": "PERF-002",
+        "suggestion": "joinedload()/selectinload() 등으로 루프 밖에서 조회하세요.",
+        "keyword": "N+1 쿼리",
+        "sub_category": "Database/API Loop Call",
+        "code_context": "",
+        "rag_context": "",
+        "github_id": "junior_dev_01",
+        "code_snippet": "def get_posts(post_ids):\n    posts = []\n    for pid in post_ids:\n        post = db.query(f\"SELECT * FROM posts WHERE id={pid}\")\n        posts.append(post)\n    return posts",
+        "programming_language": "python",
+        "framework": "django",
+        "framework_version": "4.2.1",
+        "name_of_function": "get_posts",
+        "complexity_depth": null
+      },
+      {
+        "severity": "Minor",
+        "file": "src/posts.py",
+        "line": 18,
+        "message": "O(n^2) 시간복잡도: 2중 중첩 루프가 감지되었습니다.",
+        "rule_id": "PERF-001",
+        "suggestion": "루프를 평탄화하거나 적절한 자료구조로 복잡도를 낮추세요.",
+        "keyword": "시간복잡도",
+        "sub_category": "Nested Loop",
+        "code_context": "",
+        "rag_context": "",
+        "github_id": "junior_dev_01",
+        "code_snippet": "def find_dups(items):\n    result = []\n    for i in items:\n        for j in items:\n            if i == j:\n                result.append(i)\n    return result",
+        "programming_language": "python",
+        "framework": "django",
+        "framework_version": "4.2.1",
+        "name_of_function": "find_dups",
+        "complexity_depth": 2
+      }
+    ],
+    "summary": {
+      "critical": 0,
+      "major": 1,
+      "minor": 1
+    },
+    "metrics": {
+      "max_complexity": 2
+    },
+    "execution_ms": 164
+  }
+]

@@ -113,6 +113,10 @@ def process_pr(ctx: PRContext, *, do_comment: bool = True) -> dict:
     except Exception as e:  # noqa: BLE001
         print(f"  [DB 적재 skipped] {type(e).__name__}: {e}")
 
+    # 3b. review_issue 적재 (dev4 공용 표) — m3 자기 이슈만, PR번호로 작성자·PR 링크.
+    #     정직 skip·멱등 내장: DB/스키마 안 맞아도 웹훅은 안 깨짐.
+    _persist_review_issue_to_db(ctx, results)
+
     # 4. (선택) 집계·코멘트 — pr-comment-agent 연결
     if do_comment:
         try:
@@ -214,6 +218,81 @@ def _normalize_agent(name: str) -> str:
         return name
     # Dev3 어댑터는 'test_verification'/'performance'를 _agent로 넣음. 그 외는 performance 기본
     return name if name in allowed else "performance"
+
+
+# 실 GCP review_issue CHECK 허용값 = critical/high/medium/low. m3 3단계 → 그 4단계 매핑.
+# (Critical→critical, Major→high, Minor→medium. dev4 합의 시 여기만 수정.)
+_REVIEW_SEVERITY = {"Critical": "critical", "Major": "high", "Minor": "medium"}
+# review_issue 내용 컬럼 12개 (id/pull_request_id/user_id/created_at 은 DB/서브쿼리가 채움).
+_REVIEW_COLS = (
+    "github_id", "agent", "severity", "keyword", "sub_category", "code_context",
+    "code_snippet", "suggestion", "programming_language", "framework",
+    "framework_version", "name_of_function",
+)
+
+
+def _persist_review_issue_to_db(ctx: PRContext, results: dict, conn=None) -> None:
+    """PR 처리 뒤 dev4 공용 review_issue 에 m3 이슈를 적재.
+
+    - m3 자기 이슈(test_verification/performance)만 넣는다(다른 모듈 이슈 제외).
+    - pull_request_id·user_id 는 m3가 내부번호를 모르므로, 아는 GitHub PR번호로
+      pull_requests 행을 찾아 그 행의 id·user_id 를 서브쿼리로 채운다(dev4 합의).
+        ※ 스키마 확정 시 SQL 식별자만 수정: pull_requests / pr.id / pr.user_id /
+          pr.github_pr_number. 여러 레포 섞이면 매칭에 repo 조건 추가 필요.
+    - 멱등: 그 PR·agent 기존 행 DELETE 후 INSERT(재시도해도 중복 안 쌓임).
+    - 정직: 넣을 m3 이슈가 없으면 연결도 안 함. DB/스키마 안 맞으면 skip(예외 안 던짐).
+    - SQL 은 파라미터 바인딩(%s)만. conn 주입 시 커밋은 호출자가 제어(테스트 격리).
+    """
+    # 우리(m3) 이슈만 추림 — 원본 _agent 로만 판정(미상값을 performance 로 기본화하는
+    # _normalize_agent 를 필터에 쓰면 태그 없는 남의 이슈가 잘못 들어옴).
+    rows = [(i.get("_agent") or "", i)
+            for issues in results.values() for i in issues]
+    rows = [(ag, i) for ag, i in rows if ag in ("test_verification", "performance")]
+    if not rows:
+        return  # 넣을 게 없으면 연결도 안 함
+
+    # PR번호+repo 로 pull_requests 행을 특정 (github_pr_number 는 repo마다 중복되므로
+    # repository_full_name 까지 매칭해야 정확히 1행. 중복이어도 IN 으로 안전).
+    content_ph = ",".join(["%s"] * len(_REVIEW_COLS))
+    insert_sql = (
+        "INSERT INTO review_issue (pull_request_id,user_id," + ",".join(_REVIEW_COLS) + ") "
+        "SELECT pr.id, pr.user_id, " + content_ph + " "
+        "FROM pull_requests pr "
+        "WHERE pr.github_pr_number = %s AND pr.repository_full_name = %s"
+    )
+    delete_sql = (
+        "DELETE FROM review_issue WHERE agent = %s AND pull_request_id IN "
+        "(SELECT pr.id FROM pull_requests pr "
+        " WHERE pr.github_pr_number = %s AND pr.repository_full_name = %s)"
+    )
+    own = conn is None
+    try:
+        if own:
+            import psycopg2  # noqa: PLC0415
+            conn = psycopg2.connect(_pg_url(), connect_timeout=10)
+        with conn.cursor() as cur:
+            wiped: set = set()
+            for ag, i in rows:
+                if ag not in wiped:           # agent별 1회: 그 PR·agent 기존 행 제거(멱등)
+                    cur.execute(delete_sql, (ag, ctx.pr_number, ctx.repo_full_name))
+                    wiped.add(ag)
+                cur.execute(insert_sql, (
+                    i.get("github_id", ""), ag,
+                    _REVIEW_SEVERITY.get(i.get("severity"), i.get("severity")),
+                    i.get("keyword", ""), i.get("sub_category", ""),
+                    i.get("code_context", ""), i.get("code_snippet", ""),
+                    i.get("suggestion", ""), i.get("programming_language", ""),
+                    i.get("framework", ""), i.get("framework_version", ""),
+                    i.get("name_of_function", ""),
+                    ctx.pr_number, ctx.repo_full_name,
+                ))
+        if own:
+            conn.commit()
+    except Exception as e:  # noqa: BLE001 — 적재만 정직하게 skip
+        print(f"  [review_issue 적재 skipped] {type(e).__name__}: {e}")
+    finally:
+        if own and conn is not None:
+            conn.close()
 
 
 def _aggregate_and_comment(ctx: PRContext, issues: list[dict]):

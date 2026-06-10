@@ -78,6 +78,8 @@ def analyze(ctx: PRContext) -> list[dict]:
                     "github_id": i.github_id, "code_snippet": i.code_snippet,
                     "programming_language": i.programming_language,
                     "framework": i.framework, "framework_version": i.framework_version,
+                    # review_issue.name_of_function (AST 함수명) — gateway 적재가 사용
+                    "name_of_function": i.name_of_function,
                 })
         return issues
     finally:

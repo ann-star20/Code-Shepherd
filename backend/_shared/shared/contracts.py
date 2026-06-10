@@ -102,6 +102,9 @@ class M3VerifyResponse(BaseModel):
     agent: Literal["test_verification", "performance"]
     issues: list[IssueItem] = Field(default_factory=list)
     summary: IssueSummary = Field(default_factory=IssueSummary)
+    # 측정 지표(선택, additive) — test_verification 은 커버리지 등을 담는다.
+    # 코멘트 '📊 지표 줄'용. 미설정(None)이면 소비자는 그냥 무시 → 하위호환.
+    metrics: dict | None = None
     execution_ms: int = 0
 
 

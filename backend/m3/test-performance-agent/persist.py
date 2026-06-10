@@ -8,11 +8,14 @@ scan_executions 행은 Dev1이 생성; Dev3는 주어진 scan_id로 자식 행�
 from __future__ import annotations
 
 import json
+import logging
 import os
 import sqlite3
 import sys
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+
+log = logging.getLogger(__name__)
 
 DB_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), "dev3_demo.db")
 
@@ -174,6 +177,145 @@ def get_review(owner, repo, pr_number):
 
 
 # ════════════════════════════════════════════════════════════════════
+# review_issue 적재 — dev4 공용 테이블. m3는 자기 분석 이슈(test_verification·
+# performance)만 한 행씩 넣는다. 풍부한 필드(keyword/code_snippet/
+# name_of_function/framework…)는 run() 의 list[AgentOutput] Issue 에만 살아있으므로
+# enrich 끝난 그 outputs 를 그대로 받는다(IssueItem 응답은 버려서 못 씀).
+#
+# 컬럼 매핑(review_issue ← m3 Issue/AgentOutput): id/pull_request_id/user_id/
+# created_at 은 m3가 넣지 않음(dev4·DB 기본값). 나머지 12개 내용 컬럼만 INSERT.
+# severity 는 REVIEW_SEVERITY_MAP 한 곳에서만 매핑(dev4 합의 시 여기만 수정).
+# ════════════════════════════════════════════════════════════════════
+
+# 실 GCP review_issue CHECK 허용값 = critical/high/medium/low. m3 3단계 → 그 4단계로 매핑.
+# (Critical→critical, Major→high, Minor→medium. dev4 합의 시 이 dict 한 곳만 수정.)
+REVIEW_SEVERITY_MAP = {"Critical": "critical", "Major": "high", "Minor": "medium"}
+
+# 로컬·테스트용 스키마: id/created_at 은 DB 기본값, pull_request_id/user_id 는 NULL 허용.
+REVIEW_ISSUE_SCHEMA = """
+CREATE TABLE IF NOT EXISTS review_issue (
+    id                   TEXT PRIMARY KEY DEFAULT (lower(hex(randomblob(16)))),
+    pull_request_id      TEXT,
+    user_id              TEXT,
+    github_id            TEXT,
+    agent                TEXT,
+    severity             TEXT,
+    keyword              TEXT,
+    sub_category         TEXT,
+    code_context         TEXT,
+    code_snippet         TEXT,
+    suggestion           TEXT,
+    programming_language TEXT,
+    framework            TEXT,
+    framework_version    TEXT,
+    name_of_function     TEXT,
+    created_at           TEXT DEFAULT (datetime('now'))
+);
+"""
+
+# id/pull_request_id/user_id/created_at 은 생략 → DB 기본값/NULL. 12개 내용 컬럼만.
+_REVIEW_ISSUE_COLUMNS = (
+    "github_id", "agent", "severity", "keyword", "sub_category",
+    "code_context", "code_snippet", "suggestion", "programming_language",
+    "framework", "framework_version", "name_of_function",
+)
+
+
+def _review_issue_row(agent: str, i) -> tuple:
+    """한 Issue → review_issue INSERT 값 12개(_REVIEW_ISSUE_COLUMNS 순서)."""
+    return (
+        i.github_id,
+        agent,
+        REVIEW_SEVERITY_MAP.get(i.severity, i.severity),
+        i.keyword,
+        i.sub_category,
+        i.code_context,
+        i.code_snippet,
+        i.suggestion,
+        i.programming_language,
+        i.framework,
+        i.framework_version,
+        i.name_of_function,
+    )
+
+
+def persist_review_issue(outputs) -> None:
+    """review_issue 적재(로컬 SQLite). outputs 안 모든 issue 를 각각 한 행으로.
+
+    정직성: DB 미가용·예외 시 적재만 조용히 skip(예외를 위로 던지지 않음, 로그만).
+    가짜 행을 만들지 않는다. 파라미터 바인딩(?)만 — f-string SQL 금지.
+    """
+    placeholders = ",".join("?" * len(_REVIEW_ISSUE_COLUMNS))
+    sql = (
+        "INSERT INTO review_issue ("
+        + ",".join(_REVIEW_ISSUE_COLUMNS)
+        + ") VALUES (" + placeholders + ")"
+    )
+    try:
+        conn = sqlite3.connect(DB_PATH)
+        try:
+            conn.execute(REVIEW_ISSUE_SCHEMA)
+            for out in outputs:
+                for i in out.issues:
+                    conn.execute(sql, _review_issue_row(out.agent, i))
+            conn.commit()
+        finally:
+            conn.close()
+    except Exception as exc:  # noqa: BLE001 — 적재만 정직하게 skip
+        log.warning("review_issue persist skipped: %s: %s",
+                    type(exc).__name__, exc)
+
+
+def persist_review_issue_pg(outputs, github_pr_number, conn=None) -> None:
+    """GCP Postgres review_issue 적재 — persist_pg 와 같은 형태(파라미터 %s).
+
+    pull_request_id·user_id 는 m3가 내부 번호를 모르므로 직접 넣지 않고,
+    아는 GitHub PR 번호(github_pr_number)로 dev4 pull_requests 행을 찾아
+    그 행의 id(→pull_request_id)·user_id 를 서브쿼리로 채운다(dev4 합의).
+      → 매칭 행이 없으면(아직 미등록 PR) 0행 INSERT = 고아 행을 만들지 않음(정직).
+    id·created_at 은 DB 기본값. conn 주입 시 커밋은 호출자가 제어(테스트 rollback).
+    정직성: DB 미가용·예외 시 적재만 skip(예외 안 던짐, 로그만).
+
+    ※ dev4 스키마 확정 시 아래 SQL 의 식별자만 수정:
+       테이블 pull_requests / PK pr.id / pr.user_id / 매칭 pr.github_pr_number.
+    """
+    content_ph = ",".join(["%s"] * len(_REVIEW_ISSUE_COLUMNS))
+    insert_sql = (
+        "INSERT INTO review_issue (pull_request_id,user_id,"
+        + ",".join(_REVIEW_ISSUE_COLUMNS) + ") "
+        "SELECT pr.id, pr.user_id, " + content_ph + " "
+        "FROM pull_requests pr WHERE pr.github_pr_number = %s"
+    )
+    # 멱등: 재적재 시 중복 행 방지 — 그 PR·그 agent 기존 행을 먼저 지운다
+    # (scan_issues 의 DELETE WHERE scan_id,agent 패턴과 동일). review_issue 엔 dedup 키가 없음.
+    delete_sql = (
+        "DELETE FROM review_issue WHERE agent = %s AND pull_request_id = "
+        "(SELECT pr.id FROM pull_requests pr WHERE pr.github_pr_number = %s)"
+    )
+    own = conn is None
+    try:
+        if own:
+            import psycopg2  # noqa: PLC0415
+            conn = psycopg2.connect(_pg_url(), connect_timeout=10)
+        with conn.cursor() as cur:
+            for out in outputs:
+                cur.execute(delete_sql, (out.agent, github_pr_number))
+                for i in out.issues:
+                    cur.execute(
+                        insert_sql,
+                        _review_issue_row(out.agent, i) + (github_pr_number,),
+                    )
+        if own:
+            conn.commit()
+    except Exception as exc:  # noqa: BLE001 — 적재만 정직하게 skip
+        log.warning("review_issue persist_pg skipped: %s: %s",
+                    type(exc).__name__, exc)
+    finally:
+        if own and conn is not None:
+            conn.close()
+
+
+# ════════════════════════════════════════════════════════════════════
 # GCP 운영 경로 — PostgreSQL (psycopg2). POSTGRES_URL(.env)로 연결.
 # scan_executions 행 생성 안 함(Dev1 책임). 주어진 scan_id로 자식 행만.
 # conn 주입 시 커밋은 호출자가 제어(테스트는 rollback 가능).
@@ -277,6 +419,7 @@ if __name__ == "__main__":
                         "tests", "fixtures", "sample_repo")
     outputs = asyncio.run(run(inp, repo_path=repo, store=False))
     persist(inp.scan_id, outputs)
+    persist_review_issue(outputs)  # scan_issues 저장 옆에 review_issue 저장 (같은 outputs)
     issues, summaries = _readback(inp.scan_id)
     print(f"[DB readback] scan_id={inp.scan_id}  ({DB_PATH})")
     print(f"-- scan_issues ({len(issues)} rows) --")
@@ -285,3 +428,6 @@ if __name__ == "__main__":
     print(f"-- scan_summaries ({len(summaries)} rows) --")
     for r in summaries:
         print("  ", r)
+    ri = sqlite3.connect(DB_PATH).execute(
+        "SELECT count(*) FROM review_issue").fetchone()[0]
+    print(f"-- review_issue ({ri} rows) --")

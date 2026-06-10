@@ -9,11 +9,11 @@ AST 후보 탐지 + LLM 교차검증:
 부정 케이스 (잡으면 안 됨) : 5개  ← 긍정 못지않게 많아야 함 (PRD §5.4)
 """
 import textwrap
-from unittest.mock import patch
+from unittest.mock import MagicMock, patch
 
 import pytest
 
-from performance.memory_leak import detect, LeakVerification
+from performance.memory_leak import detect, LeakVerification, _llm_verify_leak
 
 
 # ────────────────────────────────────────────
@@ -170,3 +170,25 @@ def test_llm_says_no_leak_zero_issues(tmp_path, monkeypatch):
         """)
 
     assert len(issues) == 0
+
+
+# ─── 신 SDK(google.genai) 세임 테스트 (8-0a) ─────────────────────────────────
+
+def test_llm_verify_leak_uses_new_sdk_client(monkeypatch):
+    """_llm_verify_leak이 genai.Client(api_key=...) 신 SDK를 호출한다."""
+    monkeypatch.setenv("GOOGLE_API_KEY", "test-key-leak")
+    mock_resp = MagicMock()
+    mock_resp.text = '{"is_leak": true, "confidence": 0.9, "reason": "unclosed file handle"}'
+    mock_client = MagicMock()
+    mock_client.models.generate_content.return_value = mock_resp
+
+    with patch("google.genai.Client", return_value=mock_client) as MockClient:
+        result = _llm_verify_leak(
+            "open() called without with-statement", "open('data.txt')"
+        )
+
+    MockClient.assert_called_once_with(api_key="test-key-leak")
+    mock_client.models.generate_content.assert_called_once()
+    assert result.is_leak is True
+    assert result.confidence == 0.9
+    assert "unclosed" in result.reason

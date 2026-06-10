@@ -79,6 +79,77 @@ describe("ReviewPage", () => {
     );
   });
 
+  it("renders the '사내 규칙' (rag_context) column with quote + optional source link", async () => {
+    server.use(
+      http.get(`${M3_BASE}/review/:owner/:repo/:pr`, ({ params }) =>
+        HttpResponse.json({
+          owner: params.owner,
+          repo: params.repo,
+          pr_number: Number(params.pr),
+          found: true,
+          verdict: "rework",
+          comment: "## 🤖 자동 리뷰 (rework)\n\n본문",
+          issues: [
+            {
+              severity: "Major",
+              file: "src/payment.py",
+              line: 8,
+              message: "N+1 쿼리: 루프 안에서 DB 호출이 반복됩니다.",
+              rule_id: "PERF-002",
+              suggestion: "selectinload() 로 루프 밖에서 조회하세요.",
+              rag_context: "ORM 가이드: 루프 안에서 개별 DB 호출을 하지 마세요.",
+              source_url: "https://wiki.example.com/orm",
+            },
+            {
+              severity: "Minor",
+              file: "src/payment.py",
+              line: 21,
+              message: "O(n^2) 시간복잡도: 2중 중첩 루프.",
+              rule_id: "PERF-001",
+              suggestion: "해시맵으로 복잡도를 낮추세요.",
+              rag_context: "복잡도 가이드: 중첩 루프 대신 해시맵을 쓰세요.",
+            },
+            {
+              severity: "Minor",
+              file: null,
+              line: null,
+              message: "사내 규칙 인용이 없는 이슈.",
+              rule_id: null,
+              suggestion: null,
+            },
+          ],
+        })
+      )
+    );
+    const user = userEvent.setup();
+    renderReviewPage();
+    await user.click(await screen.findByTestId("review-pr-42"));
+
+    const issues = await screen.findByTestId("review-issues");
+    // 사내 규칙(📖) 영역이 이슈마다 렌더된다(카드 레이아웃 — 칸 헤더가 아닌 카드별 박스).
+    expect(within(issues).getAllByText("📖 사내 규칙").length).toBeGreaterThan(0);
+
+    // 이슈 0 — 인용 텍스트 + 출처 링크
+    const rag0 = await screen.findByTestId("issue-rag-0");
+    expect(rag0).toHaveTextContent(
+      "ORM 가이드: 루프 안에서 개별 DB 호출을 하지 마세요."
+    );
+    const link = within(rag0).getByRole("link");
+    expect(link).toHaveAttribute("href", "https://wiki.example.com/orm");
+
+    // 이슈 1 — 인용 텍스트만(가짜 링크 금지)
+    const rag1 = screen.getByTestId("issue-rag-1");
+    expect(rag1).toHaveTextContent(
+      "복잡도 가이드: 중첩 루프 대신 해시맵을 쓰세요."
+    );
+    expect(within(rag1).queryByRole("link")).not.toBeInTheDocument();
+
+    // 이슈 2 — 인용 없으면 '—'
+    const rag2 = screen.getByTestId("issue-rag-2");
+    expect(rag2).toHaveTextContent("—");
+    expect(within(rag2).queryByRole("link")).not.toBeInTheDocument();
+  });
+
   it("shows an empty state when the team has no PRs", async () => {
     server.use(
       http.get(`${BASE}/teams/:id/prs`, () =>

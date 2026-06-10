@@ -34,6 +34,11 @@ _DEV3_MODS = ("contracts", "main", "config", "config.settings")
 # pr-comment-agent 도 contracts/config 를 가짐 → 같은 격리로 import 한다.
 _PRC_MODS = ("contracts", "config", "config.settings", "main",
              "aggregator", "llm_refiner", "github_poster")
+# test-performance-agent 의 rag(검색·포맷)를 동명 충돌 없이 import 하기 위한 격리 대상.
+# _PRC(pr-comment-agent)와 '동명'인 모듈만 비운다 — 이것들만 _TP/_PRC 어디로 풀리느냐가 갈린다.
+# rag.*·persist 는 _TP 에만 있어 충돌하지 않으므로 비우지 않는다(특히 rag.embedder 는 BGE-M3
+# 모델을 모듈 캐시로 들고 있어, 비우면 이슈마다 수 GB 모델을 재로딩하게 된다).
+_TP_MODS = ("contracts", "config", "config.settings", "main")
 
 # pr_diff(=diff 본문) fetch 방어 — m1은 보통 본문을 보내지만 URL(.diff)이 올 수도 있다.
 _DIFF_FETCH_TIMEOUT_S = 15
@@ -183,10 +188,14 @@ def _build_response(payload: M3VerifyRequest, agent: str) -> M3VerifyResponse:
     outputs = _analyze_pr(payload)
 
     issues: list[IssueItem] = []
+    metrics: dict | None = None
     if outputs:
         for o in outputs:
             if o.agent != agent:
                 continue
+            # 측정 지표(커버리지 등)는 IssueItem 엔 안 들어가므로 응답 레벨로 실어 보낸다(7D).
+            if getattr(o, "metrics", None):
+                metrics = o.metrics
             for i in o.issues:
                 # IssueItem 계약 필드만 매핑 — keyword/code_context/rag_context 등은 버린다.
                 issues.append(
@@ -209,6 +218,7 @@ def _build_response(payload: M3VerifyRequest, agent: str) -> M3VerifyResponse:
         agent=agent,
         issues=issues,
         summary=IssueSummary(**counts),
+        metrics=metrics,
         execution_ms=int((time.time() - t0) * 1000),
     )
 
@@ -275,6 +285,28 @@ def _prc_isolation():
             sys.modules.pop(m, None)
 
 
+@contextlib.contextmanager
+def _tp_isolation():
+    """test-performance-agent 의 rag 모듈(retriever·augment)을 동명 충돌 없이 import.
+
+    _prc_isolation 의 거울상 — _TP 를 sys.path 맨 앞으로 강제하고 동명 모듈을 비워
+    'from config import settings'·'import persist'·'from rag ...' 가 _PRC 가 아니라
+    _TP 로 풀리게 한다. _review_aggregate(_prc_isolation)가 _PRC 를 앞에 꽂아둔 뒤라도 안전.
+    POSTGRES_URL 등은 형제 .env 에서 로드(키/URL 은 코드·깃에 없음).
+    """
+    for m in _TP_MODS:
+        sys.modules.pop(m, None)
+    while _TP in sys.path:
+        sys.path.remove(_TP)
+    sys.path.insert(0, _TP)
+    _load_env_file(os.path.join(_TP, ".env"))
+    try:
+        yield
+    finally:
+        for m in _TP_MODS:
+            sys.modules.pop(m, None)
+
+
 def _collect_outputs(payload: M3ReviewRequest) -> list[dict]:
     """4개 모듈 결과(M2/M3 Response)를 {agent, issues[]} 평면 dict 목록으로 변환."""
     outputs: list[dict] = []
@@ -338,18 +370,89 @@ def _review_aggregate(outputs: list[dict]) -> tuple[str, list[dict]]:
         return verdict, combined_dicts
 
 
-def _review_refine(combined: list[dict], verdict: str, skill_level: str) -> str:
-    """pr-comment-agent llm_refiner 재사용 → 코멘트 본문. LLM 키 없으면 휴리스틱 fallback."""
+def _rag_search(message: str) -> list[dict]:
+    """검색 seam — test-performance-agent rag.retriever.search_convention 재사용(_TP 격리).
+
+    7A 검색기를 그대로 호출한다(retriever 로직 중복 구현 금지). 테스트에서 monkeypatch 대상.
+    검색기 자체도 DB 미설정/예외 시 [] 를 주지만, import 실패 등 어떤 오류든 여기서 정직하게
+    [] 로 막는다(가짜 인용 금지). 반환: [{content, doc_title, source_url, score}, ...].
+    """
+    try:
+        with _tp_isolation():
+            from rag.retriever import search_convention
+
+            return search_convention(message)
+    except Exception as exc:  # noqa: BLE001 — import/검색 실패 → 빈 결과(가짜 인용 금지)
+        log.warning("m3.review.rag_search_failed", error=f"{type(exc).__name__}: {exc}")
+        return []
+
+
+def _format_rag_docs(docs: list[dict]) -> str:
+    """포맷 seam — test-performance-agent rag.augment.format_context 재사용(중복 구현 금지)."""
+    if not docs:
+        return ""
+    with _tp_isolation():
+        from rag.augment import format_context
+
+        return format_context(docs)
+
+
+def _review_augment_rag(combined: list[dict]) -> None:
+    """코멘트 생성 직전, 각 combined 이슈의 message 로 사내규칙을 검색해 rag_context 를 채운다(제자리).
+
+    - RAG_ENABLED 꺼짐 → 스킵. docker-compose 기본 ON; 테스트는 conftest _rag_off 로 격리.
+    - 검색/포맷은 7A retriever·augment 재사용. DB 미설정·검색 예외 → 빈 인용으로 남김(가짜 금지).
+    - combined 는 refine(코멘트)·persist(리뷰 페이지) 공용 → 둘 다에 📖 가 반영된다.
+    - 어떤 실패든 /review 흐름을 막지 않는다(이슈 1건 실패가 전체 코멘트를 막지 않게).
+    """
+    if not os.getenv("RAG_ENABLED"):
+        return
+    for c in combined:
+        try:
+            docs = _rag_search(c.get("message", ""))
+            c["rag_context"] = _format_rag_docs(docs)
+        except Exception as exc:  # noqa: BLE001 — 한 이슈 검색/포맷 실패가 전체를 막지 않게
+            log.warning("m3.review.rag_issue_skip", error=f"{type(exc).__name__}: {exc}")
+
+
+def _review_metrics(payload: M3ReviewRequest) -> dict:
+    """코멘트 '📊 지표 줄'용 측정값을 응답에서 추출 — 측정된 것만(가짜 숫자 금지) — 7D.
+
+    - test_verification.metrics.coverage_line(0~1) → coverage_pct(0~100, 반올림).
+    - performance.metrics.max_complexity 가 있으면(향후 산출 시) 그대로 전달.
+    측정값이 없으면 빈 dict → 렌더가 지표 줄을 통째로 생략한다.
+    """
+    metrics: dict = {}
+    tv = payload.test_verification
+    if tv is not None and tv.metrics:
+        cov = tv.metrics.get("coverage_line")
+        if cov is not None:
+            metrics["coverage_pct"] = round(cov * 100)
+    perf = payload.performance
+    if perf is not None and perf.metrics:
+        mc = perf.metrics.get("max_complexity")
+        if mc is not None:
+            metrics["max_complexity"] = mc
+    return metrics
+
+
+def _review_refine(
+    combined: list[dict], verdict: str, skill_level: str, metrics: dict | None = None
+) -> str:
+    """pr-comment-agent llm_refiner 재사용 → 코멘트 본문. LLM 키 없으면 휴리스틱 fallback.
+
+    metrics(선택)가 있으면 헤더 아래 '📊 지표 줄'로 렌더된다(7D).
+    """
     with _prc_isolation():
         from contracts import CombinedIssue
         from llm_refiner import _heuristic_refine, refine
 
         issues = [CombinedIssue(**c) for c in combined]
         try:
-            return refine(issues, verdict, skill_level)
+            return refine(issues, verdict, skill_level, metrics=metrics)
         except Exception as exc:  # noqa: BLE001 — LLM 호출 실패는 휴리스틱으로 정직하게 fallback
             log.warning("m3.review.refine_fallback", error=f"{type(exc).__name__}: {exc}")
-            return _heuristic_refine(issues, verdict)
+            return _heuristic_refine(issues, verdict, metrics=metrics)
 
 
 def _gh_post(owner: str, repo: str, pr_number: int, body: str) -> dict:
@@ -424,8 +527,12 @@ async def review(payload: M3ReviewRequest) -> M3ReviewResponse:
     outputs = _collect_outputs(payload)
     verdict, combined = _review_aggregate(outputs)
 
+    # 코멘트 직전, 합쳐진 이슈에 사내규칙(rag_context)을 채운다 — RAG_ENABLED 이면 실행(기본 ON).
+    _review_augment_rag(combined)
+
+    metrics = _review_metrics(payload)  # 📊 지표 줄용 측정값(없으면 빈 dict → 줄 생략) — 7D
     skill = payload.developer.skill_level if payload.developer else "junior"
-    comment_body = _review_refine(combined, verdict, skill)
+    comment_body = _review_refine(combined, verdict, skill, metrics)
 
     post = _review_post_comment(owner, repo, payload.pr_number, comment_body)
     persisted = _review_persist(

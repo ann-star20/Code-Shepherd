@@ -50,6 +50,8 @@ class Issue(BaseModel):
     programming_language: str = ""   # "python" 등 (requirements 감지)
     framework: str = ""              # django/flask/fastapi 등 (requirements 파싱)
     framework_version: str = ""      # 프레임워크 핀 버전 (있을 때만)
+    name_of_function: str = ""       # 이슈를 감싸는 함수 이름 (AST=사실, 못 찾으면 빈 값) — review_issue
+    complexity_depth: Optional[int] = None  # 복잡도 이슈의 중첩 루프 깊이(없으면 None) — perf metrics(max_complexity) 집계용
 
 
 class SummaryCount(BaseModel):

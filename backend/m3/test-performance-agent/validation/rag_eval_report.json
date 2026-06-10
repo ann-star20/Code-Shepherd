@@ -1,0 +1,190 @@
+{
+  "meta": {
+    "n_cases": 12,
+    "ragas_version": "0.4.3",
+    "embed_model": "BAAI/bge-m3",
+    "top_k": 3,
+    "judge": "gemini-2.5-flash-lite",
+    "judge_embeddings": "—",
+    "tier_b_status": "skip (ChatGoogleGenerativeAIError: Error calling model 'gemini-2.5-flash-lite' (RESOURCE_EXHAUSTED): 429 RESOURCE_EXHAUSTED. {'error': {'code': 429, 'messa)"
+  },
+  "summary": {
+    "n_cases": 12,
+    "n_empty_citation": 1,
+    "metrics": {
+      "non_llm_context_precision_with_reference": {
+        "mean": 0.999999999930303,
+        "n_scored": 11,
+        "n_skipped": 1
+      },
+      "non_llm_context_recall": {
+        "mean": 0.9166666666666666,
+        "n_scored": 12,
+        "n_skipped": 0
+      },
+      "faithfulness": {
+        "mean": null,
+        "n_scored": 0,
+        "n_skipped": 12
+      },
+      "answer_relevancy": {
+        "mean": null,
+        "n_scored": 0,
+        "n_skipped": 12
+      }
+    },
+    "citation_label": {
+      "correct": 4,
+      "judged": 11,
+      "accuracy": 0.36363636363636365
+    }
+  },
+  "rows": [
+    {
+      "id": "TEST-001-msg",
+      "rule_id": "TEST-001",
+      "query": "테스트 라인 커버리지 45.0% < 기준 80%.",
+      "has_citation": true,
+      "scores": {
+        "non_llm_context_precision_with_reference": 0.9999999999,
+        "non_llm_context_recall": 1.0
+      },
+      "top1": "1) 테스트 커버리지 가이드 — TEST-001 (커버 (0.63)",
+      "label_ok": true
+    },
+    {
+      "id": "TEST-001-para",
+      "rule_id": "TEST-001",
+      "query": "테스트 커버리지가 사내 기준에 못 미칩니다. 어떤 테스트부터 추가해야 하나요?",
+      "has_citation": true,
+      "scores": {
+        "non_llm_context_precision_with_reference": 0.99999999995,
+        "non_llm_context_recall": 1.0
+      },
+      "top1": "1) 테스트 커버리지 가이드 — TEST-001 (커버 (0.60)",
+      "label_ok": true
+    },
+    {
+      "id": "PERF-002-msg",
+      "rule_id": "PERF-002",
+      "query": "N+1 쿼리: 루프 안에서 DB 호출이 반복됩니다.",
+      "has_citation": true,
+      "scores": {
+        "non_llm_context_precision_with_reference": 0.99999999995,
+        "non_llm_context_recall": 1.0
+      },
+      "top1": "4) N+1 쿼리 가이드 — PERF-002 (N+1  (0.67)",
+      "label_ok": true
+    },
+    {
+      "id": "PERF-002-para",
+      "rule_id": "PERF-002",
+      "query": "반복문 안에서 매번 DB를 조회합니다. 한 번에 모아서 가져오도록 바꿔야 합니다.",
+      "has_citation": true,
+      "scores": {
+        "non_llm_context_precision_with_reference": 0.9999999999,
+        "non_llm_context_recall": 1.0
+      },
+      "top1": "4) N+1 쿼리 가이드 — PERF-002 (N+1  (0.63)",
+      "label_ok": true
+    },
+    {
+      "id": "PERF-001-msg",
+      "rule_id": "PERF-001",
+      "query": "O(n^3) 이상의 시간복잡도: 3중 중첩 루프가 감지되었습니다.",
+      "has_citation": true,
+      "scores": {
+        "non_llm_context_precision_with_reference": 0.9999999999,
+        "non_llm_context_recall": 1.0
+      },
+      "top1": "4) N+1 쿼리 가이드 — PERF-002 (N+1  (0.60)",
+      "label_ok": false
+    },
+    {
+      "id": "PERF-001-para",
+      "rule_id": "PERF-001",
+      "query": "중첩 루프가 너무 깊어서 데이터가 커지면 급격히 느려집니다.",
+      "has_citation": true,
+      "scores": {
+        "non_llm_context_precision_with_reference": 0.99999999995,
+        "non_llm_context_recall": 1.0
+      },
+      "top1": "4) N+1 쿼리 가이드 — PERF-002 (N+1  (0.75)",
+      "label_ok": false
+    },
+    {
+      "id": "PERF-003-msg",
+      "rule_id": "PERF-003",
+      "query": "메모리 누수 가능: global collection 'EVENTS' grows unboundedly via append()",
+      "has_citation": true,
+      "scores": {
+        "non_llm_context_precision_with_reference": 0.9999999999,
+        "non_llm_context_recall": 1.0
+      },
+      "top1": "4) N+1 쿼리 가이드 — PERF-002 (N+1  (0.51)",
+      "label_ok": false
+    },
+    {
+      "id": "PERF-003-para",
+      "rule_id": "PERF-003",
+      "query": "전역 캐시에 값이 계속 쌓이기만 하고 만료나 최대 크기가 없습니다.",
+      "has_citation": true,
+      "scores": {
+        "non_llm_context_precision_with_reference": 0.9999999999,
+        "non_llm_context_recall": 1.0
+      },
+      "top1": "4) N+1 쿼리 가이드 — PERF-002 (N+1  (0.57)",
+      "label_ok": false
+    },
+    {
+      "id": "TEST-004-msg",
+      "rule_id": "TEST-004",
+      "query": "함수 'create_order'에 대한 테스트 실행 흔적이 없습니다.",
+      "has_citation": false,
+      "scores": {
+        "non_llm_context_recall": 0.0,
+        "non_llm_context_precision_with_reference": null,
+        "faithfulness": null,
+        "answer_relevancy": null
+      },
+      "top1": "",
+      "label_ok": null
+    },
+    {
+      "id": "TEST-004-para",
+      "rule_id": "TEST-004",
+      "query": "외부에서 쓰는 public 함수인데 단위 테스트가 하나도 없습니다.",
+      "has_citation": true,
+      "scores": {
+        "non_llm_context_precision_with_reference": 0.99999999995,
+        "non_llm_context_recall": 1.0
+      },
+      "top1": "1) 테스트 커버리지 가이드 — TEST-001 (커버 (0.59)",
+      "label_ok": false
+    },
+    {
+      "id": "TEST-003-msg",
+      "rule_id": "TEST-003",
+      "query": "함수 'apply_discount': 빠진 엣지케이스 — None 입력, 빈 리스트, 0·음수 경계",
+      "has_citation": true,
+      "scores": {
+        "non_llm_context_precision_with_reference": 0.9999999999666667,
+        "non_llm_context_recall": 1.0
+      },
+      "top1": "1) 테스트 커버리지 가이드 — TEST-001 (커버 (0.61)",
+      "label_ok": false
+    },
+    {
+      "id": "TEST-003-para",
+      "rule_id": "TEST-003",
+      "query": "정상 입력만 테스트했고 None·빈 리스트·음수 같은 경계값은 검증하지 않았습니다.",
+      "has_citation": true,
+      "scores": {
+        "non_llm_context_precision_with_reference": 0.9999999999666667,
+        "non_llm_context_recall": 1.0
+      },
+      "top1": "1) 테스트 커버리지 가이드 — TEST-001 (커버 (0.59)",
+      "label_ok": false
+    }
+  ]
+}

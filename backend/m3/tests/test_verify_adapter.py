@@ -81,6 +81,32 @@ async def test_analyze_performance_maps_performance_only(client, monkeypatch):
 
 
 @pytest.mark.asyncio
+async def test_verify_tests_carries_coverage_metrics(client, monkeypatch):
+    """7D: test_verification AgentOutput.metrics(커버리지)가 M3VerifyResponse.metrics 로 실려야
+    /review 까지 흘러 지표 줄을 채울 수 있다(이전엔 경계에서 버려졌다)."""
+    tv = SimpleNamespace(agent="test_verification", metrics={"coverage_line": 0.72}, issues=[
+        _issue("Minor", "src/a.py", 10, "커버리지 72% < 80%", "TEST-001", "테스트 추가"),
+    ])
+    monkeypatch.setattr(appmain, "_analyze_pr", lambda payload: [tv], raising=False)
+    resp = await client.post("/verify/tests", json=PAYLOAD)
+    assert resp.status_code == 200
+    assert resp.json()["metrics"] == {"coverage_line": 0.72}
+
+
+@pytest.mark.asyncio
+async def test_analyze_performance_carries_complexity_metrics(client, monkeypatch):
+    """7D 후속: performance AgentOutput.metrics(max_complexity)가 M3VerifyResponse.metrics 로
+    실려 /review 지표 줄('최대 복잡도 N')을 채울 수 있다."""
+    perf = SimpleNamespace(agent="performance", metrics={"max_complexity": 3}, issues=[
+        _issue("Major", "src/b.py", 20, "O(n^3) 3중 중첩 루프", "PERF-001", "자료구조 변경"),
+    ])
+    monkeypatch.setattr(appmain, "_analyze_pr", lambda payload: [perf], raising=False)
+    resp = await client.post("/analyze/performance", json=PAYLOAD)
+    assert resp.status_code == 200
+    assert resp.json()["metrics"] == {"max_complexity": 3}
+
+
+@pytest.mark.asyncio
 async def test_no_repo_returns_empty_issues_200(client):
     payload = {"task_id": "t-101", "pr_id": "78", "pr_diff": "diff --git ..."}  # clone_url 없음
     resp = await client.post("/verify/tests", json=payload)

@@ -11,6 +11,8 @@ from __future__ import annotations
 import re
 from pathlib import Path
 
+from harness import instrument
+
 # 우선순위 순서 (앞이 우선)
 FRAMEWORKS = ["django", "fastapi", "flask"]
 
@@ -52,6 +54,7 @@ def detect(repo_path: str) -> tuple[str, str, str]:
     return "python", framework, version
 
 
+@instrument("framework")
 def augment_issues(issues: list, repo_path: str) -> None:
     """모든 이슈에 programming_language·framework·framework_version을 채운다(제자리 수정)."""
     language, framework, version = detect(repo_path)

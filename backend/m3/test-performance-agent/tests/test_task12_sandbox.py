@@ -226,3 +226,68 @@ def test_run_sandbox_uses_normalized_command_in_docker(tmp_path):
     docker_cmd = mock_run.call_args[0][0]
     full_cmd = " ".join(docker_cmd)
     assert "python -m pytest" in full_cmd
+
+
+# ──────────────────────────────────────────────
+# Test 11~13: 도커 미가용 → work_dir 에서 pytest 직접 실행 fallback (SESSION E)
+#   컨테이너 안(docker compose)에선 'docker' 명령이 없어 샌드박스를 못 띄운다 →
+#   격리 없이 work_dir 에서 직접 측정하는 fallback. 현업 CI(러너 직접 실행)와 동일 방식.
+# ──────────────────────────────────────────────
+
+def _direct_ok(returncode: int = 0, stdout: bytes = b"direct pytest output") -> MagicMock:
+    """fallback(직접 pytest) 실행 성공 모킹."""
+    m = MagicMock()
+    m.returncode = returncode
+    m.stdout = stdout
+    m.stderr = b""
+    return m
+
+
+def test_run_sandbox_falls_back_to_direct_when_docker_missing(tmp_path):
+    """docker 명령이 없으면(FileNotFoundError) work_dir 에서 pytest 를 직접 실행하고
+    coverage.json 을 읽어 동일 반환형으로 돌려준다(컨테이너 안 docker-in-docker 불가 대응)."""
+    # 직접 실행 경로가 읽을 coverage.json 을 미리 둔다(pytest --cov-report=json 이 남기는 파일)
+    (tmp_path / "coverage.json").write_text(json.dumps(SAMPLE_COV), encoding="utf-8")
+
+    with patch(
+        "prepare.sandbox.subprocess.run",
+        side_effect=[FileNotFoundError(2, "No such file or directory", "docker"), _direct_ok()],
+    ) as mock_run:
+        result = run_sandbox(str(tmp_path), test_command="pytest --cov=src tests/")
+
+    # 1st = docker(없음→FNF), 2nd = 직접 pytest
+    assert mock_run.call_count == 2
+    direct_cmd = mock_run.call_args_list[1][0][0]
+    direct_str = " ".join(direct_cmd) if isinstance(direct_cmd, (list, tuple)) else str(direct_cmd)
+    assert "pytest" in direct_str
+    assert "-m" in direct_str            # python -m pytest
+    assert "docker" not in direct_str    # 도커 안 부름
+
+    # coverage 회수 + 반환형 동일({returncode, stdout, coverage})
+    assert result["coverage"] is not None
+    assert result["coverage"]["totals"]["percent_covered"] == 20.0
+    assert result["returncode"] == 0
+
+
+def test_run_sandbox_direct_runs_in_work_dir(tmp_path):
+    """직접 실행 fallback 은 work_dir(cwd)에서 돈다."""
+    with patch(
+        "prepare.sandbox.subprocess.run",
+        side_effect=[FileNotFoundError(2, "x", "docker"), _direct_ok()],
+    ) as mock_run:
+        run_sandbox(str(tmp_path), test_command="pytest --cov=src tests/")
+
+    direct_kwargs = mock_run.call_args_list[1][1]
+    assert direct_kwargs.get("cwd") == str(tmp_path)
+
+
+def test_run_sandbox_direct_coverage_none_when_no_file(tmp_path):
+    """직접 실행인데 coverage.json 이 없으면 coverage=None(가짜 커버리지 금지) + returncode 전달."""
+    with patch(
+        "prepare.sandbox.subprocess.run",
+        side_effect=[FileNotFoundError(2, "x", "docker"), _direct_ok(returncode=1, stdout=b"FAILED")],
+    ):
+        result = run_sandbox(str(tmp_path), test_command="pytest --cov=src tests/")
+
+    assert result["coverage"] is None
+    assert result["returncode"] == 1

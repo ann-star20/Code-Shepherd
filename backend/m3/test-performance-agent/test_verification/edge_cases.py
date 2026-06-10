@@ -5,7 +5,7 @@
               함수 소스 → LLM 구조화 출력(Pydantic) → 누락 엣지케이스 목록
   휴리스틱 : 키 없을 때 인자명 기반 규칙 → 메시지에 [heuristic] 접두사
 
-★ main.run()에는 연결 안 함 (eval 골든 라벨 보호, TECH_SPEC §6)
+탐지기 6개 중 하나 — main.run()에서 test_verification 쪽으로 연결됨
 """
 from __future__ import annotations
 
@@ -82,14 +82,11 @@ def _llm_detect_missing(func_source: str) -> list[str]:
 
     try:
         import json  # noqa: PLC0415
-        import google.generativeai as genai  # noqa: PLC0415
+        from google import genai  # noqa: PLC0415
+        from google.genai import types  # noqa: PLC0415
         from config.settings import LLM_MODEL  # noqa: PLC0415
 
-        genai.configure(api_key=api_key)
-        model = genai.GenerativeModel(
-            LLM_MODEL,
-            generation_config={"response_mime_type": "application/json"},
-        )
+        client = genai.Client(api_key=api_key)
         prompt = (
             "You are a code reviewer. Analyze the function and list edge cases "
             "that should be tested but appear to be missing. Focus on: null/None "
@@ -97,7 +94,11 @@ def _llm_detect_missing(func_source: str) -> list[str]:
             "conditions. Respond as JSON: {\"missing\": [\"case1\", \"case2\"]}\n\n"
             f"Function:\n{func_source}"
         )
-        resp = model.generate_content(prompt)
+        resp = client.models.generate_content(
+            model=LLM_MODEL,
+            contents=prompt,
+            config=types.GenerateContentConfig(response_mime_type="application/json"),
+        )
         data = json.loads(resp.text)
         return list(data.get("missing", []))
     except Exception:

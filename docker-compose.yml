@@ -15,6 +15,7 @@ services:
     volumes:
       - ./backend/_shared:/app/_shared:ro
       - ./backend/api-core:/app/service
+      - /app/service/.venv   # 호스트(윈도우) venv 가 컨테이너 리눅스 venv 를 덮지 않게 격리
     networks:
       - code-shepherd
     restart: unless-stopped
@@ -30,6 +31,7 @@ services:
     volumes:
       - ./backend/_shared:/app/_shared:ro
       - ./backend/m1:/app/service
+      - /app/service/.venv   # 호스트(윈도우) venv 가 컨테이너 리눅스 venv 를 덮지 않게 격리
     networks:
       - code-shepherd
     restart: unless-stopped
@@ -45,6 +47,7 @@ services:
     volumes:
       - ./backend/_shared:/app/_shared:ro
       - ./backend/m0:/app/service
+      - /app/service/.venv   # 호스트(윈도우) venv 가 컨테이너 리눅스 venv 를 덮지 않게 격리
     networks:
       - code-shepherd
     restart: unless-stopped
@@ -60,6 +63,7 @@ services:
     volumes:
       - ./backend/_shared:/app/_shared:ro
       - ./backend/m2:/app/service
+      - /app/service/.venv   # 호스트(윈도우) venv 가 컨테이너 리눅스 venv 를 덮지 않게 격리
     networks:
       - code-shepherd
     restart: unless-stopped
@@ -72,9 +76,17 @@ services:
     ports:
       - "8004:8004"
     env_file: .env
+    environment:
+      RAG_ENABLED: "1"   # 기본 ON — 실 분석 시 rag_context 채움. 테스트는 conftest _rag_off 로 격리.
     volumes:
       - ./backend/_shared:/app/_shared:ro
       - ./backend/m3:/app/service
+      # 익명 볼륨: 호스트(윈도우) .venv 가 컨테이너 리눅스 venv 를 덮어쓰지 않게 격리.
+      # (프론트의 - /app/node_modules 와 동일 패턴) 없으면 uv가 마운트된 윈도우 FS 에
+      # torch 재설치를 시도하다 I/O 에러 → 크래시 루프.
+      - /app/service/.venv
+      # HuggingFace 캐시 볼륨: recreate 마다 BGE-M3 재다운로드 방지 (수 GB 모델).
+      - hf_cache:/root/.cache/huggingface
     networks:
       - code-shepherd
     restart: unless-stopped
@@ -90,6 +102,7 @@ services:
     volumes:
       - ./backend/_shared:/app/_shared:ro
       - ./backend/m4:/app/service
+      - /app/service/.venv   # 호스트(윈도우) venv 가 컨테이너 리눅스 venv 를 덮지 않게 격리
     networks:
       - code-shepherd
     restart: unless-stopped
@@ -120,6 +133,7 @@ services:
     volumes:
       - ./backend/_shared:/app/_shared:ro
       - ./backend/m5:/app/service
+      - /app/service/.venv   # 호스트(윈도우) venv 가 컨테이너 리눅스 venv 를 덮지 않게 격리
     networks:
       - code-shepherd
     depends_on:
@@ -145,3 +159,4 @@ services:
 
 volumes:
   neo4j_data:
+  hf_cache:   # BGE-M3 모델 캐시 — m3 recreate 마다 재다운로드 방지

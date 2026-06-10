@@ -136,3 +136,141 @@ def test_run_issues_routed_to_correct_agent(tmp_path):
     assert "TEST-004" in tv_rule_ids
     assert "PERF-002" in perf_rule_ids
     assert "PERF-001" in perf_rule_ids
+
+
+# ──────────────────────────────────────────
+# performance metrics — max_complexity 집계 (7D 후속)
+# ──────────────────────────────────────────
+
+
+def test_run_performance_metrics_max_complexity(tmp_path):
+    """복잡도 이슈들의 depth(metric_value) 중 최댓값이 performance metrics 로 집계된다."""
+    cx_minor = Issue(
+        severity="Minor", file="src/foo.py", line=1, message="O(n^2)",
+        rule_id="PERF-001", complexity_depth=2,
+    )
+    cx_major = Issue(
+        severity="Major", file="src/foo.py", line=1, message="O(n^3)",
+        rule_id="PERF-001", complexity_depth=3,
+    )
+    inp = _make_input()
+    with (
+        patch("main.coverage.measure", return_value=([], None)),
+        patch("main.missing_funcs.detect", return_value=[]),
+        patch("main.nplus1.detect", return_value=[]),
+        patch("main.complexity.detect", return_value=[cx_minor, cx_major]),
+    ):
+        outputs = run(inp, str(tmp_path))
+
+    perf = next(o for o in outputs if o.agent == "performance")
+    assert perf.metrics == {"max_complexity": 3}
+
+
+def test_run_performance_metrics_none_without_complexity(tmp_path):
+    """복잡도 이슈 0건 → max_complexity 없음(metrics None, 가짜 숫자 금지)."""
+    n1_issue = Issue(
+        severity="Major", file="src/foo.py", line=1, message="n+1", rule_id="PERF-002"
+    )
+    inp = _make_input()
+    with (
+        patch("main.coverage.measure", return_value=([], None)),
+        patch("main.missing_funcs.detect", return_value=[]),
+        patch("main.nplus1.detect", return_value=[n1_issue]),
+        patch("main.complexity.detect", return_value=[]),
+    ):
+        outputs = run(inp, str(tmp_path))
+
+    perf = next(o for o in outputs if o.agent == "performance")
+    assert perf.metrics is None
+
+
+# ──────────────────────────────────────────
+# 탐지기 6개 — edge_cases / memory_leak 연결 (8-0b)
+# ──────────────────────────────────────────
+
+
+def test_run_edge_cases_routed_to_test_verification(tmp_path):
+    """edge_cases.detect 결과(TEST-003)가 test_verification 출력에 포함된다."""
+    ec_issue = Issue(
+        severity="Minor", file="src/foo.py", line=1,
+        message="[heuristic] 빠진 엣지케이스", rule_id="TEST-003",
+    )
+    inp = _make_input()
+    with (
+        patch("main.coverage.measure", return_value=([], None)),
+        patch("main.missing_funcs.detect", return_value=[]),
+        patch("main.nplus1.detect", return_value=[]),
+        patch("main.complexity.detect", return_value=[]),
+        patch("main.edge_cases.detect", return_value=[ec_issue]),
+        patch("main.memory_leak.detect", return_value=[]),
+    ):
+        outputs = run(inp, str(tmp_path))
+
+    tv = next(o for o in outputs if o.agent == "test_verification")
+    assert any(i.rule_id == "TEST-003" for i in tv.issues)
+
+
+def test_run_memory_leak_routed_to_performance(tmp_path):
+    """memory_leak.detect 결과(PERF-003)가 performance 출력에 포함된다."""
+    ml_issue = Issue(
+        severity="Minor", file="src/foo.py", line=1,
+        message="[heuristic] 메모리 누수", rule_id="PERF-003",
+    )
+    inp = _make_input()
+    with (
+        patch("main.coverage.measure", return_value=([], None)),
+        patch("main.missing_funcs.detect", return_value=[]),
+        patch("main.nplus1.detect", return_value=[]),
+        patch("main.complexity.detect", return_value=[]),
+        patch("main.edge_cases.detect", return_value=[]),
+        patch("main.memory_leak.detect", return_value=[ml_issue]),
+    ):
+        outputs = run(inp, str(tmp_path))
+
+    perf = next(o for o in outputs if o.agent == "performance")
+    assert any(i.rule_id == "PERF-003" for i in perf.issues)
+
+
+def test_run_edge_cases_exception_graceful(tmp_path):
+    """edge_cases.detect 예외 → TEST-003 없고 나머지(TEST-004) 정상 산출."""
+    mf_issue = Issue(
+        severity="Minor", file="src/foo.py", line=1, message="mf", rule_id="TEST-004",
+    )
+    inp = _make_input()
+    with (
+        patch("main.coverage.measure", return_value=([], None)),
+        patch("main.missing_funcs.detect", return_value=[mf_issue]),
+        patch("main.nplus1.detect", return_value=[]),
+        patch("main.complexity.detect", return_value=[]),
+        patch("main.edge_cases.detect", side_effect=RuntimeError("edge fail")),
+        patch("main.memory_leak.detect", return_value=[]),
+    ):
+        outputs = run(inp, str(tmp_path))
+
+    assert len(outputs) == 2
+    tv = next(o for o in outputs if o.agent == "test_verification")
+    assert all(i.rule_id != "TEST-003" for i in tv.issues)
+    assert any(i.rule_id == "TEST-004" for i in tv.issues)
+
+
+def test_run_memory_leak_exception_graceful(tmp_path):
+    """memory_leak.detect 예외 → PERF-003 없고 나머지(PERF-001) 정상 산출."""
+    cx_issue = Issue(
+        severity="Minor", file="src/foo.py", line=1, message="cx",
+        rule_id="PERF-001", complexity_depth=2,
+    )
+    inp = _make_input()
+    with (
+        patch("main.coverage.measure", return_value=([], None)),
+        patch("main.missing_funcs.detect", return_value=[]),
+        patch("main.nplus1.detect", return_value=[]),
+        patch("main.complexity.detect", return_value=[cx_issue]),
+        patch("main.edge_cases.detect", return_value=[]),
+        patch("main.memory_leak.detect", side_effect=RuntimeError("mem fail")),
+    ):
+        outputs = run(inp, str(tmp_path))
+
+    assert len(outputs) == 2
+    perf = next(o for o in outputs if o.agent == "performance")
+    assert all(i.rule_id != "PERF-003" for i in perf.issues)
+    assert any(i.rule_id == "PERF-001" for i in perf.issues)

@@ -56,3 +56,18 @@ def test_rag_augment_skipped_when_disabled(tmp_path, monkeypatch):
                         lambda issues: calls.__setitem__("n", 1))
     _run(tmp_path)
     assert calls["n"] == 0
+
+
+def test_rag_off_without_explicit_env(tmp_path, monkeypatch):
+    """conftest _rag_off autouse 가 RAG_ENABLED 을 unset 해두므로
+    테스트에서 명시적으로 setenv 하지 않으면 augment 가 호출되지 않는다.
+
+    docker-compose 에 RAG_ENABLED=1 이 있어도 이 보호가 유지돼야
+    단위테스트가 BGE-M3·GCP 를 실제로 때리지 않는다.
+    """
+    # conftest _rag_off autouse 이미 unset → 여기서 추가 monkeypatch 없음
+    calls = {"n": 0}
+    monkeypatch.setattr(main.rag_augment, "augment_issues",
+                        lambda issues: calls.__setitem__("n", 1))
+    _run(tmp_path)
+    assert calls["n"] == 0

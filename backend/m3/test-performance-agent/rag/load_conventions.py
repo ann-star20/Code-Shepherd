@@ -120,6 +120,71 @@ def embed_and_store(records: list[dict], conn, embed=None) -> int:
     return len(rows)
 
 
+def load_conventions_to_chunks(dir_path: str, conn, embed=None) -> int:
+    """A1 fix: 각 .md 가이드 → documents(1) + parent chunk(1) + child chunks(N) + embeddings(N).
+
+    기존 embed_and_store(→convention_embeddings)와 독립. retriever가 사용하는
+    chunks/chunk_embeddings/documents 테이블에 직접 적재.
+
+    - section_header = 프론트매터 rule_id (없으면 doc_title) → 인용 라벨 정합성 수정.
+    - source_url = 'file:///conventions/{파일명}' (식별·재적재 전용, A2 전 placeholder).
+    - parent chunk은 가이드 전문(임베딩 없음), child chunk은 문단별 임베딩.
+
+    반환: 삽입된 child chunk(=임베딩 행) 수.
+    """
+    if embed is None:
+        embed = embedder.embed
+
+    total = 0
+    for md_path in sorted(Path(dir_path).glob("*.md")):
+        raw = md_path.read_text(encoding="utf-8")
+        meta, body = _split_frontmatter(raw)
+
+        rule_id: str = (meta.get("rule_id") or "") if meta else ""
+        doc_title: str = _doc_title(body, md_path.stem)
+        section_hdr: str = rule_id or doc_title
+        source_url: str = f"file:///conventions/{md_path.name}"
+
+        # 1) documents
+        with conn.cursor() as cur:
+            cur.execute(
+                "INSERT INTO documents (title, source_url) VALUES (%s, %s) RETURNING doc_id",
+                (doc_title, source_url),
+            )
+            (doc_id,) = cur.fetchone()
+
+        # 2) parent chunk (전문, 임베딩 없음 — 검색은 child가 처리)
+        with conn.cursor() as cur:
+            cur.execute(
+                "INSERT INTO chunks (doc_id, content, section_header, parent_chunk_id) "
+                "VALUES (%s, %s, %s, %s) RETURNING chunk_id",
+                (doc_id, body, section_hdr, None),
+            )
+            (parent_id,) = cur.fetchone()
+
+        # 3) child chunks (문단 분리) + embeddings
+        children = [c.strip() for c in body.split("\n\n") if c.strip()]
+        if not children:
+            continue
+        vectors = embed(children)
+        for text, vec in zip(children, vectors):
+            with conn.cursor() as cur:
+                cur.execute(
+                    "INSERT INTO chunks (doc_id, content, section_header, parent_chunk_id) "
+                    "VALUES (%s, %s, %s, %s) RETURNING chunk_id",
+                    (doc_id, text, section_hdr, parent_id),
+                )
+                (child_id,) = cur.fetchone()
+            with conn.cursor() as cur:
+                cur.execute(
+                    "INSERT INTO chunk_embeddings (chunk_id, embedding) VALUES (%s, %s::vector)",
+                    (child_id, store.to_vector_literal(vec)),
+                )
+            total += 1
+
+    return total
+
+
 if __name__ == "__main__":
     # 실제 적재 — conventions/*.md → BGE-M3 임베딩 → convention_embeddings.
     # 전체 새로고침(DELETE 후 재적재)이라 재실행 안전. 성공 시에만 커밋.
@@ -137,19 +202,41 @@ if __name__ == "__main__":
         print("POSTGRES_URL 없음 — 적재 불가")
         raise SystemExit(1)
 
-    print(f"컨벤션 적재 시작: {conv_dir}")
+    print(f"컨벤션 재청킹 적재 시작: {conv_dir}")
     print("(첫 실행이면 BGE-M3 ~2GB 다운로드 — 수 분 걸릴 수 있음)")
     conn = psycopg2.connect(url, connect_timeout=20)
     try:
-        store.ensure_convention_table(conn)
+        # 기존 convention 항목 삭제 (source_url 패턴으로 식별)
+        _PREFIX = "file:///conventions/%"
         with conn.cursor() as cur:
-            cur.execute("DELETE FROM convention_embeddings")  # 전체 새로고침
-        n = load_from_dir(conv_dir, conn)  # 실제 공유 embedder(BGE-M3)
+            cur.execute(
+                "DELETE FROM chunk_embeddings WHERE chunk_id IN ("
+                "  SELECT c.chunk_id FROM chunks c"
+                "  JOIN documents d ON d.doc_id = c.doc_id"
+                "  WHERE d.source_url LIKE %s)",
+                (_PREFIX,),
+            )
+        with conn.cursor() as cur:
+            cur.execute(
+                "DELETE FROM chunks WHERE doc_id IN ("
+                "  SELECT doc_id FROM documents WHERE source_url LIKE %s)",
+                (_PREFIX,),
+            )
+        with conn.cursor() as cur:
+            cur.execute("DELETE FROM documents WHERE source_url LIKE %s", (_PREFIX,))
+
+        n = load_conventions_to_chunks(conv_dir, conn)  # 공유 embedder(BGE-M3)
         conn.commit()
         with conn.cursor() as cur:
-            cur.execute("SELECT count(*) FROM convention_embeddings")
+            cur.execute(
+                "SELECT count(*) FROM chunk_embeddings ce"
+                " JOIN chunks c ON c.chunk_id = ce.chunk_id"
+                " JOIN documents d ON d.doc_id = c.doc_id"
+                " WHERE d.source_url LIKE %s",
+                (_PREFIX,),
+            )
             total = cur.fetchone()[0]
-        print(f"적재 완료: {n}청크 INSERT, 테이블 총 {total}행")
+        print(f"재청킹 적재 완료: {n}개 child chunk INSERT, 현재 총 {total}행")
     except Exception as e:
         conn.rollback()
         print("적재 실패(롤백):", type(e).__name__, "|", str(e)[:140])

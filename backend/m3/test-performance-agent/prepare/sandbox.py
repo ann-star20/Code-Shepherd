@@ -12,10 +12,12 @@ from __future__ import annotations
 
 import json
 import subprocess
+import sys
 from pathlib import Path
 from typing import Any
 
 from config import settings
+from harness import instrument
 
 _COV_MARKER = "@@@DEV3COVJSON@@@"
 
@@ -24,6 +26,7 @@ _COV_MARKER = "@@@DEV3COVJSON@@@"
 # Public API
 # ──────────────────────────────────────────────
 
+@instrument("sandbox")
 def run_sandbox(
     work_dir: str,
     test_command: str = "pytest --cov=src --cov-report=json",
@@ -74,7 +77,14 @@ def run_sandbox(
         "sh", "-c", sh_cmd,
     ]
 
-    result = subprocess.run(cmd, capture_output=True, timeout=timeout)
+    try:
+        result = subprocess.run(cmd, capture_output=True, timeout=timeout)
+    except FileNotFoundError:
+        # 'docker' 명령이 없음 — 예: m3 가 컨테이너 안(docker compose)에서 실행 → docker-in-docker 불가.
+        # 격리 샌드박스를 못 띄우므로 work_dir 에서 pytest 를 '직접' 실행해 커버리지를 측정한다.
+        # 트레이드오프: PR 테스트가 m3 프로세스 환경에서 직접 돈다(격리 약함). 내/팀 레포 전용이라 허용 —
+        # 불특정 외부 PR 서비스가 되면 재검토(범위 밖). 현업 CI(러너 직접 실행)와 동일한 방식.
+        return _run_direct(work_dir, normalized_cmd, install_cmd, timeout)
 
     stdout_str = result.stdout.decode(errors="replace")
     coverage_data = _extract_coverage(stdout_str)
@@ -101,6 +111,47 @@ def run_sandbox(
     return {
         "returncode": result.returncode,
         "stdout": stdout_str,
+        "coverage": coverage_data,
+    }
+
+
+def _run_direct(
+    work_dir: str,
+    normalized_cmd: str,
+    install_cmd: str | None,
+    timeout: int,
+) -> dict[str, Any]:
+    """도커 미가용 시 fallback — work_dir 에서 pytest 를 '직접' 실행하고 coverage.json 을 읽어 회수.
+
+    격리 없음(현업 CI 가 깨끗한 러너에서 직접 돌리는 방식과 동일). docker 샌드박스 경로와 반환형 동일:
+        {"returncode": int, "stdout": str, "coverage": dict | None}
+    """
+    # 의존성 설치(있으면) — best-effort. 실패해도 테스트는 시도한다(정직).
+    if install_cmd:
+        try:
+            subprocess.run(install_cmd.split(), cwd=work_dir, capture_output=True, timeout=timeout)
+        except Exception:  # noqa: BLE001 — 설치 실패해도 정직하게 진행
+            pass
+
+    # 'python -m pytest ...' → 현재 인터프리터로 치환(venv/컨테이너 안정성)
+    parts = normalized_cmd.split()
+    if parts and parts[0] == "python":
+        parts = [sys.executable, *parts[1:]]
+
+    result = subprocess.run(parts, cwd=work_dir, capture_output=True, timeout=timeout)
+
+    # pytest --cov-report=json 이 work_dir 에 남긴 coverage.json 을 읽는다(없으면 None — 가짜 금지).
+    coverage_data: dict | None = None
+    cov_path = Path(work_dir) / "coverage.json"
+    if cov_path.exists():
+        try:
+            coverage_data = json.loads(cov_path.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError):
+            coverage_data = None
+
+    return {
+        "returncode": result.returncode,
+        "stdout": result.stdout.decode(errors="replace"),
         "coverage": coverage_data,
     }
 

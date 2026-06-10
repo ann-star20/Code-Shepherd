@@ -8,11 +8,11 @@
 부정 케이스 (잡으면 안 됨) : 5개  ← 긍정 못지않게 많아야 함 (PRD §5.4)
 """
 import textwrap
-from unittest.mock import patch
+from unittest.mock import MagicMock, patch
 
 import pytest
 
-from test_verification.edge_cases import detect
+from test_verification.edge_cases import detect, _llm_detect_missing
 
 
 # ────────────────────────────────────────────
@@ -151,3 +151,22 @@ def test_llm_returns_empty_zero_issues(tmp_path, monkeypatch):
         """)
 
     assert len(issues) == 0
+
+
+# ─── 신 SDK(google.genai) 세임 테스트 (8-0a) ─────────────────────────────────
+
+def test_llm_detect_missing_uses_new_sdk_client(monkeypatch):
+    """_llm_detect_missing이 genai.Client(api_key=...) 신 SDK를 호출한다."""
+    monkeypatch.setenv("GOOGLE_API_KEY", "test-key-edge")
+    mock_resp = MagicMock()
+    mock_resp.text = '{"missing": ["null input", "negative value"]}'
+    mock_client = MagicMock()
+    mock_client.models.generate_content.return_value = mock_resp
+
+    with patch("google.genai.Client", return_value=mock_client) as MockClient:
+        result = _llm_detect_missing("def calc(price):\n    return price * 2")
+
+    MockClient.assert_called_once_with(api_key="test-key-edge")
+    mock_client.models.generate_content.assert_called_once()
+    assert "null input" in result
+    assert "negative value" in result

@@ -32,6 +32,9 @@ LANGCHAIN_PROJECT: str = os.getenv("LANGCHAIN_PROJECT", "dev3-test-performance")
 
 # --- 검증 ---
 FALSE_ALARM_THRESHOLD: float = float(os.getenv("FALSE_ALARM_THRESHOLD", "0.10"))
+# rule별 P/R/F1 합격선 (SESSION 8B) — 회귀 기준선
+OVERALL_F1_PASS_THRESHOLD: float = float(os.getenv("OVERALL_F1_PASS_THRESHOLD", "0.70"))
+RULE_F1_MIN_THRESHOLD: float = float(os.getenv("RULE_F1_MIN_THRESHOLD", "0.50"))
 SANDBOX_IMAGE: str = os.getenv("SANDBOX_IMAGE", "dev3-sandbox")
 
 # --- RAG (사내 컨벤션 검색 — B안: Dev3 직접 임베딩·pgvector 검색) ---

@@ -11,7 +11,7 @@ LLM 교차검증 (키 있으면):
   LLM 모드  : API 키(OPENAI_API_KEY / ANTHROPIC_API_KEY / GOOGLE_API_KEY) 있을 때
   휴리스틱 : 키 없을 때 AST 후보 그대로 → 메시지에 [heuristic] 접두사
 
-★ main.run()에는 연결 안 함 (eval 골든 라벨 보호, TECH_SPEC §6)
+탐지기 6개 중 하나 — main.run()에서 performance 쪽으로 연결됨
 """
 from __future__ import annotations
 
@@ -113,21 +113,22 @@ def _llm_verify_leak(candidate_desc: str, source_context: str) -> LeakVerificati
 
     try:
         import json  # noqa: PLC0415
-        import google.generativeai as genai  # noqa: PLC0415
+        from google import genai  # noqa: PLC0415
+        from google.genai import types  # noqa: PLC0415
         from config.settings import LLM_MODEL  # noqa: PLC0415
 
-        genai.configure(api_key=api_key)
-        model = genai.GenerativeModel(
-            LLM_MODEL,
-            generation_config={"response_mime_type": "application/json"},
-        )
+        client = genai.Client(api_key=api_key)
         prompt = (
             "You are a memory leak expert. Determine if the given code pattern "
             "represents a genuine memory leak. Respond as JSON: "
             "{\"is_leak\": true/false, \"confidence\": 0.0-1.0, \"reason\": \"...\"}\n\n"
             f"Candidate pattern: {candidate_desc}\n\nCode:\n{source_context}"
         )
-        resp = model.generate_content(prompt)
+        resp = client.models.generate_content(
+            model=LLM_MODEL,
+            contents=prompt,
+            config=types.GenerateContentConfig(response_mime_type="application/json"),
+        )
         data = json.loads(resp.text)
         return LeakVerification(
             is_leak=bool(data.get("is_leak", False)),

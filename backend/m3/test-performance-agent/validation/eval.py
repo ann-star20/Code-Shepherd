@@ -21,7 +21,11 @@ _ROOT = Path(__file__).parent.parent
 if str(_ROOT) not in sys.path:
     sys.path.insert(0, str(_ROOT))
 
-from config.settings import FALSE_ALARM_THRESHOLD  # noqa: E402
+from config.settings import (  # noqa: E402
+    FALSE_ALARM_THRESHOLD,
+    OVERALL_F1_PASS_THRESHOLD,
+    RULE_F1_MIN_THRESHOLD,
+)
 from contracts import AgentOutput  # noqa: E402
 
 _RECALL_PASS_THRESHOLD = 0.9
@@ -72,6 +76,123 @@ def evaluate(outputs: list[AgentOutput], expected_path: str) -> dict:
         "total_expected": total_expected,
         "total_output": total_output,
         "total_matched": total_matched,
+        "pass": passed,
+    }
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# SESSION 8B — rule별 Precision / Recall / F1 채점기 (다건·양성+음성)
+# ─────────────────────────────────────────────────────────────────────────────
+
+def _flatten_expected(expected: dict) -> Counter:
+    """expected_output.json → (rule_id, file) 멀티셋."""
+    c: Counter = Counter()
+    for agent_key in _AGENT_KEYS:
+        for exp in expected.get(agent_key, {}).get("expected_issues", []):
+            c[(exp["rule_id"], exp.get("file", "(전체)"))] += 1
+    return c
+
+
+def _flatten_output(outputs: list[AgentOutput]) -> Counter:
+    """AgentOutput 목록 → (rule_id, file) 멀티셋."""
+    c: Counter = Counter()
+    for output in outputs:
+        for issue in output.issues:
+            c[(issue.rule_id, issue.file)] += 1
+    return c
+
+
+def _prf(tp: int, fp: int, fn: int) -> dict:
+    """tp/fp/fn → precision·recall·f1(조화평균). 분모 0 이면 0.0(정직)."""
+    precision = tp / (tp + fp) if (tp + fp) > 0 else 0.0
+    recall = tp / (tp + fn) if (tp + fn) > 0 else 0.0
+    f1 = (2 * precision * recall / (precision + recall)) if (precision + recall) > 0 else 0.0
+    return {
+        "tp": tp,
+        "fp": fp,
+        "fn": fn,
+        "precision": round(precision, 4),
+        "recall": round(recall, 4),
+        "f1": round(f1, 4),
+    }
+
+
+def evaluate_prf(
+    cases: list[dict],
+    *,
+    overall_f1_pass: float | None = None,
+    rule_f1_min: float | None = None,
+) -> dict:
+    """다건 케이스(양성+음성)를 rule별 + 전체 Precision/Recall/F1 로 채점.
+
+    Args:
+        cases: [{"name": str, "outputs": list[AgentOutput], "expected": dict}, ...]
+        overall_f1_pass: 전체 F1 합격선(None → settings 기본)
+        rule_f1_min: rule별 F1 최소선(None → settings 기본)
+
+    매칭: 기존 evaluate() 와 동일한 (rule_id, file) 멀티셋, 케이스 안에서만 매칭.
+    음성 케이스(expected 0)에서 output 이 나오면 그 rule 의 FP 로 잡혀 precision 하락.
+    """
+    agg: dict[str, dict[str, int]] = {}
+    fp_list: list[dict] = []
+    fn_list: list[dict] = []
+    n_positive = 0
+    n_negative = 0
+
+    for case in cases:
+        name = case.get("name", "?")
+        exp = _flatten_expected(case["expected"])
+        out = _flatten_output(case["outputs"])
+
+        if sum(exp.values()) > 0:
+            n_positive += 1
+        else:
+            n_negative += 1
+
+        for rule_id, file in set(exp) | set(out):
+            e = exp.get((rule_id, file), 0)
+            o = out.get((rule_id, file), 0)
+            matched = min(e, o)
+            fp = o - matched
+            fn = e - matched
+
+            bucket = agg.setdefault(rule_id, {"tp": 0, "fp": 0, "fn": 0})
+            bucket["tp"] += matched
+            bucket["fp"] += fp
+            bucket["fn"] += fn
+
+            for _ in range(fp):
+                fp_list.append({"case": name, "rule_id": rule_id, "file": file})
+            for _ in range(fn):
+                fn_list.append({"case": name, "rule_id": rule_id, "file": file})
+
+    per_rule: dict[str, dict] = {}
+    tot_tp = tot_fp = tot_fn = 0
+    for rule_id, c in sorted(agg.items()):
+        per_rule[rule_id] = _prf(c["tp"], c["fp"], c["fn"])
+        tot_tp += c["tp"]
+        tot_fp += c["fp"]
+        tot_fn += c["fn"]
+
+    overall = _prf(tot_tp, tot_fp, tot_fn)
+
+    if overall_f1_pass is None:
+        overall_f1_pass = OVERALL_F1_PASS_THRESHOLD
+    if rule_f1_min is None:
+        rule_f1_min = RULE_F1_MIN_THRESHOLD
+
+    passed = overall["f1"] >= overall_f1_pass and all(
+        r["f1"] >= rule_f1_min for r in per_rule.values()
+    )
+
+    return {
+        "per_rule": per_rule,
+        "overall": overall,
+        "fp_list": fp_list,
+        "fn_list": fn_list,
+        "n_cases": len(cases),
+        "n_positive": n_positive,
+        "n_negative": n_negative,
         "pass": passed,
     }
 

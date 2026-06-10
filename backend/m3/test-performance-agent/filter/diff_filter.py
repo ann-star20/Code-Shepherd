@@ -15,12 +15,14 @@ import re
 from pathlib import Path
 
 from contracts import Issue
+from harness import instrument
 
 
 # ──────────────────────────────────────────
 # parse_diff
 # ──────────────────────────────────────────
 
+@instrument("parse_diff")
 def parse_diff(pr_diff: str) -> dict[str, set[int]]:
     """Unified diff 파싱 → 신규 파일별 추가된 줄 번호 집합 반환."""
     changed: dict[str, set[int]] = {}

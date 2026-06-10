@@ -7,6 +7,7 @@
 from __future__ import annotations
 
 from contracts import Issue
+from harness import instrument
 from rag.retriever import search_convention
 
 
@@ -24,6 +25,7 @@ def format_context(docs: list[dict]) -> str:
     return "\n\n".join(blocks)
 
 
+@instrument("rag")
 def augment_issues(issues: list[Issue], search=search_convention) -> None:
     """각 이슈 message로 사내 가이드를 검색해 issue.rag_context를 채운다(제자리 수정).
 
