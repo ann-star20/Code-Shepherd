@@ -371,7 +371,7 @@ const CONCEPT_ROW_Y = [175, 135];
 function getConceptStyle(domains: string[] | undefined) {
   const d = domains ?? [];
   const s = d.includes("security"), p = d.includes("performance");
-  if (s && p) return { fill: "#FEF3C7", stroke: "#D97706", text: "#D97706" };
+  if (s && p) return { fill: "#EEF2FF", stroke: "#4F46E5", text: "#4F46E5" };
   if (s)      return { fill: "#FEF2F2", stroke: "#B91C1C", text: "#B91C1C" };
   if (p)      return { fill: "#F0FDF4", stroke: "#0F766E", text: "#0F766E" };
   return             { fill: "#F5F3FF", stroke: "#7C3AED", text: "#7C3AED" };
@@ -1267,7 +1267,7 @@ export function MainPage() {
                         )}
                         <circle cx={c.cx} cy={c.cy} r={CONCEPT_R}
                           fill={c.state === "DRAFT" ? "#FFFCF5" : style.fill}
-                          stroke={style.stroke}
+                          stroke={c.state === "DRAFT" ? "#D97706" : style.stroke}
                           strokeWidth={c.state === "DRAFT" ? "2" : "1.5"}
                           strokeDasharray={c.state === "DRAFT" ? "5,3" : undefined}
                         />
