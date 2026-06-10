@@ -197,12 +197,17 @@ async def _do_extract(session_id: str, doc_id: str, chunks: list[str]) -> None:
     try:
         async with pool.acquire() as db_conn:
             registered = await get_registered_domains(db_conn)
-            all_concepts = []
-            for i, chunk in enumerate(chunks):
-                if i > 0 and _USE_REAL_LLM:
-                    await asyncio.sleep(4)  # 무료 티어 20 req/min → 청크 간 4초 간격
-                concepts = await client.extract_concepts(chunk, doc_id, {})
-                all_concepts.extend(concepts)
+            if _USE_REAL_LLM:
+                all_concepts = []
+                for i, chunk in enumerate(chunks):
+                    if i > 0:
+                        await asyncio.sleep(4)  # 무료 티어 20 req/min → 청크 간 4초 간격
+                    concepts = await client.extract_concepts(chunk, doc_id, {})
+                    all_concepts.extend(concepts)
+            else:
+                # MockClient는 청크 내용과 무관하게 llm_response.json(또는 내장 _MOCK_CONCEPTS)을
+                # 그대로 반환하므로, 청크 수만큼 반복하면 동일 컨셉이 중복 적재된다 → 1회만 호출.
+                all_concepts = await client.extract_concepts(chunks[0] if chunks else "", doc_id, {})
             await write_staging_draft(session_id, doc_id, all_concepts, db_conn, registered)
 
         # 3-Factor 하이브리드 점수 선행 계산 → staging 영속화
