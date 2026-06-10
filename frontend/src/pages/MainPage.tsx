@@ -884,8 +884,13 @@ export function MainPage() {
     docIdRef.current = null;
   }
 
-  const filteredConcepts = concepts.filter((c) =>
-    activeTab === "all" || (c.domains ?? []).includes(activeTab),
+  const filteredConcepts = concepts.filter(
+    (c) => c.state !== "DRAFT" && (activeTab === "all" || (c.domains ?? []).includes(activeTab)),
+  );
+
+  // 링크 추출(Resolver) 단계에서 도출된 실제 DRAFT 개념 — 도메인 필터 적용
+  const draftConcepts = concepts.filter(
+    (c) => c.state === "DRAFT" && (activeTab === "all" || (c.domains ?? []).includes(activeTab)),
   );
 
   // MERGE 분기 DRAFT 개념은 별도 노드가 아닌 타겟 노드에 오버레이 배지로 표시
@@ -900,23 +905,23 @@ export function MainPage() {
 
   const apiConceptNodes = useMemo(() => {
     const fromApi = apiGraph.nodes.filter((n) => n.label === "Concept") as (GraphNode & { name: string; cwe_id: string; domains: string[] })[];
+    // 링크 추출(Resolver) 결과의 실제 DRAFT 개념 — MERGE 분기는 타겟 노드에 오버레이로만 표시
+    const draftNewConcepts = concepts.filter(
+      (c) => c.state === "DRAFT" && c.infer_action !== "MERGE",
+    ) as unknown as typeof fromApi;
+
     if (fromApi.length > 0) {
-      // MERGE DRAFT 제외 — 타겟 노드에 오버레이로만 표시
+      const apiNames = new Set(fromApi.map((n) => n.name));
       return layoutConceptNodes([
         ...fromApi,
-        ...(showDraft ? [DRAFT_CONCEPT as unknown as typeof fromApi[0]] : []),
+        ...(showDraft ? draftNewConcepts.filter((c) => !apiNames.has(c.name)) : []),
       ]);
     }
     // 로컬 개념 목록: MERGE DRAFT 개념은 노드로 렌더링하지 않음
     const nonMergeDrafts = concepts.filter(
       (c) => !(c.state === "DRAFT" && c.infer_action === "MERGE"),
     );
-    return layoutConceptNodes([
-      ...nonMergeDrafts,
-      ...(showDraft && !nonMergeDrafts.some((c) => c.name === DRAFT_CONCEPT.name)
-        ? [DRAFT_CONCEPT as typeof INITIAL_CONCEPTS[0]]
-        : []),
-    ]);
+    return layoutConceptNodes(nonMergeDrafts);
   }, [apiGraph, concepts, showDraft]);
 
   const allConceptNodes = apiConceptNodes;
@@ -1366,18 +1371,20 @@ export function MainPage() {
                       </button>
                     );
                   })}
-                  {showDraft && (
-                    <button onClick={() => setSelectedConcept(DRAFT_CONCEPT)}
-                      className={`w-full text-left p-3 rounded-xl border border-dashed transition-all ${selectedConcept?.name === DRAFT_CONCEPT.name ? "bg-amber-50 border-amber-400" : "border-amber-300 hover:bg-amber-50/50"}`}
+                  {showDraft && draftConcepts.map((c) => (
+                    <button key={c.name} onClick={() => setSelectedConcept(c)}
+                      className={`w-full text-left p-3 rounded-xl border border-dashed transition-all ${selectedConcept?.name === c.name ? "bg-amber-50 border-amber-400" : "border-amber-300 hover:bg-amber-50/50"}`}
                     >
                       <div className="flex items-center justify-between">
-                        <span className="text-sm font-bold text-amber-800 truncate mr-1">{DRAFT_CONCEPT.name}</span>
-                        <span className="shrink-0 text-[11px] px-1.5 py-0.5 rounded-md font-bold uppercase bg-amber-50 text-amber-700 border border-amber-200">draft</span>
+                        <span className="text-sm font-bold text-amber-800 truncate mr-1">{c.name}</span>
+                        <span className="shrink-0 text-[11px] px-1.5 py-0.5 rounded-md font-bold uppercase bg-amber-50 text-amber-700 border border-amber-200">
+                          {c.infer_action === "MERGE" ? "merge" : "draft"}
+                        </span>
                       </div>
                       <div className="flex items-center justify-between mt-2">
-                        <span className="text-xs text-stone-400">{DRAFT_CONCEPT.cwe_id}</span>
+                        <span className="text-xs text-stone-400">{c.cwe_id}</span>
                         <div className="flex gap-1">
-                          {DRAFT_CONCEPT.domains.map((d) => (
+                          {(c.domains ?? []).map((d) => (
                             <span key={d} className="text-[10px] px-1 rounded-md font-bold"
                               style={{ color: DOMAIN_REGISTRY[d]?.color_hex ?? "#7C3AED", background: DOMAIN_REGISTRY[d]?.bg_hex ?? "#F5F3FF", border: `1px solid ${DOMAIN_REGISTRY[d]?.border_hex ?? "#C7D2FE"}` }}
                             >{DOMAIN_REGISTRY[d]?.label_ko ?? "기타"}</span>
@@ -1385,7 +1392,7 @@ export function MainPage() {
                         </div>
                       </div>
                     </button>
-                  )}
+                  ))}
                 </div>
 
                 {/* 상세 */}
