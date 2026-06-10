@@ -14,8 +14,8 @@ import pathlib
 from app.domain.models import ConceptExtractionSchema
 from app.infrastructure.llm.interface import ILLMClient
 
-# backend/llm_response.json → Docker 마운트 시 /app/llm_response.json
-_JSON_PATH = pathlib.Path(__file__).parents[3] / "llm_response.json"
+# backend/app/infrastructure/llm/llm_response.json (이 파일과 같은 디렉터리)
+_JSON_PATH = pathlib.Path(__file__).parent / "llm_response.json"
 
 logger = logging.getLogger(__name__)
 
