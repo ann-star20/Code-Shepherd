@@ -1,0 +1,31 @@
+{
+  "case_id": "m3_mixed_002_profile_service",
+  "module": "M3",
+  "source": "Task-Link Custom",
+  "domain": "유저 프로필",
+  "expected_issues": [
+    {
+      "id": "TEST-003",
+      "title": "Edge case missing",
+      "severity": "Minor",
+      "target_file": "app/profile_service.py",
+      "target_function": "get_profile, update_bio",
+      "evidence": "None, 0, 음수, 빈 문자열, 과도한 길이 입력에 대한 테스트 없음."
+    },
+    {
+      "id": "TEST-004",
+      "title": "Untested functions",
+      "severity": "Major",
+      "target_file": "app/profile_service.py",
+      "target_function": "update_avatar, delete_account",
+      "evidence": "두 함수에 대한 테스트가 전혀 존재하지 않음."
+    },
+    {
+      "id": "PERF-003",
+      "title": "Memory leak — global list accumulation",
+      "severity": "Major",
+      "target_file": "app/profile_service.py",
+      "evidence": "_request_log 전역 리스트에 요청마다 데이터가 누적되어 메모리가 무한 증가."
+    }
+  ]
+}

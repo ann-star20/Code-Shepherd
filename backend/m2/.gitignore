@@ -1,0 +1,85 @@
+# Secrets & credentials
+.env
+.env.local
+.env.*.local
+secrets/
+*.pem
+sa-key.json
+**/sa-key.json
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+.venv/
+venv/
+env/
+*.egg-info/
+dist/
+build/
+.pytest_cache/
+.coverage
+htmlcov/
+.ruff_cache/
+
+# uv
+.uv/
+
+# Local DB / runtime data (예: dev3_demo.db — 리뷰 결과 런타임 저장)
+*.db
+*.sqlite3
+
+# Node / frontend
+node_modules/
+dist/
+frontend/dist/
+.pnp
+.pnp.js
+coverage/
+
+# Vitest / Playwright
+test-results/
+playwright-report/
+
+# Claude Code (개인 설정 — 공유 안 함)
+.claude/skills/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Docker
+*.dockerignore
+
+# Alembic
+# (alembic.ini는 커밋, 실제 migrations만 커밋)
+
+# Logs
+*.log
+logs/
+
+# Local docs (not for remote)
+prompt.md
+PRD_조직지식관리_온보딩_플랫폼.md
+Project_REPORT.md
+
+# 성능 평가 문서 (검증 완료 후 별도 PR)
+backend/m0/tests/eval/
+
+# 발표 자료
+presentation/
+
+# TypeScript build info
+*.tsbuildinfo
+frontend/vite.config.d.ts
+
+# KMS 사내문서 (git 제외)
+backend/m4/data/kms/

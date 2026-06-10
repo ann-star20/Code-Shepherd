@@ -1,0 +1,16 @@
+{
+  "case_id": "m3_custom_complexity_001",
+  "module": "M3",
+  "source": "Task-Link Custom",
+  "expected_issues": [
+    {
+      "id": "PERF-001",
+      "title": "Time complexity issue",
+      "severity": "Minor",
+      "target_file": "app/report_service.py",
+      "target_function": "find_duplicate_pairs",
+      "evidence": "Nested loops over the same users collection create O(n^2) behavior.",
+      "recommendation": "Use a dictionary or set to reduce lookup complexity."
+    }
+  ]
+}

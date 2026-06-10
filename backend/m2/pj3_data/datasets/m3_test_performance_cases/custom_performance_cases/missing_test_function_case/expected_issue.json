@@ -1,0 +1,15 @@
+{
+  "case_id": "m3_custom_missing_test_function_001",
+  "module": "M3",
+  "source": "Task-Link Custom",
+  "expected_issues": [
+    {
+      "id": "TEST-004",
+      "title": "Function missing test coverage",
+      "severity": "Minor",
+      "target_file": "app/user_metrics.py",
+      "target_functions": ["normalize_score", "grade_user"],
+      "evidence": "Function bodies are not executed by tests."
+    }
+  ]
+}

@@ -1,0 +1,39 @@
+{
+  "case_id": "m3_mixed_006_dashboard_service",
+  "module": "M3",
+  "source": "Task-Link Custom",
+  "domain": "대시보드 분석",
+  "expected_issues": [
+    {
+      "id": "PERF-001",
+      "title": "Time complexity issue — nested loop O(n²)",
+      "severity": "Minor",
+      "target_file": "app/dashboard_service.py",
+      "target_function": "rank_users",
+      "evidence": "metrics 리스트를 이중 루프로 순회하여 상대 순위를 계산."
+    },
+    {
+      "id": "PERF-002",
+      "title": "N+1 query pattern",
+      "severity": "Major",
+      "target_file": "app/dashboard_service.py",
+      "target_function": "load_metrics",
+      "evidence": "for 루프 안에서 repo.find_by_user() DB 호출 반복."
+    },
+    {
+      "id": "TEST-004",
+      "title": "Untested functions",
+      "severity": "Major",
+      "target_file": "app/dashboard_service.py",
+      "target_function": "export_pdf, archive_dashboard",
+      "evidence": "두 함수에 대한 테스트가 전혀 존재하지 않음."
+    },
+    {
+      "id": "PERF-003",
+      "title": "Memory leak — global list accumulation",
+      "severity": "Major",
+      "target_file": "app/dashboard_service.py",
+      "evidence": "_event_log 전역 리스트에 모든 액션이 누적되어 메모리 무한 증가."
+    }
+  ]
+}
