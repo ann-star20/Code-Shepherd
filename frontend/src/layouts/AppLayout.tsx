@@ -54,7 +54,7 @@ const COMMON_NAV: NavItem[] = [
     label: "정적 분석 · 보안",
     path: "/security",
     icon: <ShieldAlert size={16} />,
-    requiresTeam: true,
+    requiresTeam: false,
     testId: "nav-item-security",
   },
   {

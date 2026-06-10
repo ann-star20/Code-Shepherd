@@ -3,12 +3,54 @@
  * PR 목록에서 선택하면 M2 파이프라인 시각화 + 이슈 결과를 보여준다.
  */
 
-import { useEffect, useState } from "react";
+import { useEffect, useState, useRef } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { GitPullRequest, Loader2 } from "lucide-react";
 import { reviewApi } from "../../lib/api";
 import { useTeamContext } from "../../contexts/TeamContext";
-import { M2PipelineFlow } from "../../components/M2PipelineFlow";
+import { M2PipelineFlow, M2StageTrace } from "../../components/M2PipelineFlow";
+
+const PIPELINE_STAGES: M2StageTrace["key"][] = ["run_tools", "vector_search", "llm_judge", "store"];
+const STAGE_MS = [1200, 800, 1500, 400]; // 각 단계 소요 시간 시뮬레이션
+
+// ── 더미 데이터 (mixed_case 데이터셋 기반) ─────────────────────────────────
+const DUMMY_PRS: TeamPR[] = [
+  { id: "pr-1", author_login: "dev_alice", github_pr_number: 101, github_pr_url: null, status: "reviewed", submitted_at: "2024-06-01T10:00:00Z" },
+  { id: "pr-2", author_login: "dev_bob",   github_pr_number: 102, github_pr_url: null, status: "reviewed", submitted_at: "2024-06-03T14:30:00Z" },
+  { id: "pr-3", author_login: "dev_carol", github_pr_number: 103, github_pr_url: null, status: "reviewed", submitted_at: "2024-06-05T09:15:00Z" },
+];
+
+const DUMMY_REVIEWS: Record<string, ReviewResult> = {
+  "pr-1": {
+    found: true, verdict: "rework",
+    comment: "보안 취약점 2건(Critical) 및 정적 분석 이슈 3건이 발견되었습니다. 수정 후 재요청 바랍니다.",
+    issues: [
+      { severity: "Critical", file: "vulnerable.py", line: 4,  message: "DATABASE_URL과 API_KEY가 소스코드에 하드코딩되어 있습니다. 자격증명이 노출될 위험이 있습니다.", rule_id: "SEC-006", suggestion: "환경변수 또는 시크릿 매니저를 사용하세요." },
+      { severity: "Critical", file: "vulnerable.py", line: 18, message: "f-string으로 SQL을 동적 조합하여 SQL 인젝션에 취약합니다.", rule_id: "SEC-001", suggestion: "파라미터 바인딩(플레이스홀더)을 사용하세요." },
+      { severity: "Major",    file: "vulnerable.py", line: 17, message: "MD5는 암호학적으로 취약한 알고리즘입니다. 비밀번호 해시에 사용하면 안 됩니다.", rule_id: "SEC-005", suggestion: "bcrypt, argon2, scrypt 중 하나를 사용하세요." },
+      { severity: "Major",    file: "vulnerable.py", line: 8,  message: "함수 'query'의 반환값 타입 힌트가 없습니다.", rule_id: "SA-C0116", suggestion: "pylint: missing-function-docstring" },
+      { severity: "Minor",    file: "vulnerable.py", line: 1,  message: "모듈 수준 상수는 UPPER_CASE 명명 규칙을 따라야 합니다.", rule_id: "SA-C0103", suggestion: "pylint: invalid-name" },
+    ],
+  },
+  "pr-2": {
+    found: true, verdict: "escalate",
+    comment: "Critical 보안 이슈가 다수 발견되어 시니어 검토가 필요합니다.",
+    issues: [
+      { severity: "Critical", file: "api/upload.py", line: 20, message: "사용자 입력이 셸 명령어에 직접 전달되어 명령어 인젝션에 취약합니다.", rule_id: "SEC-004", suggestion: "subprocess.run()에 shell=False를 사용하고 입력을 검증하세요." },
+      { severity: "Major",    file: "api/upload.py", line: 17, message: "경로 탐색 공격에 취약한 파일 경로 처리가 감지되었습니다.", rule_id: "SEC-003", suggestion: "os.path.abspath()와 화이트리스트 검증을 사용하세요." },
+      { severity: "Major",    file: "api/auth.py",   line: 25, message: "인증 없이 관리자 엔드포인트에 접근 가능합니다.", rule_id: "AUTH-001", suggestion: "모든 관리자 라우트에 인증 미들웨어를 적용하세요." },
+      { severity: "Minor",    file: "api/auth.py",   line: 10, message: "미사용 import: os", rule_id: "SA-W0611", suggestion: "pylint: unused-import" },
+    ],
+  },
+  "pr-3": {
+    found: true, verdict: "lgtm",
+    comment: "분석 결과 심각한 이슈가 없습니다. 승인 가능합니다.",
+    issues: [
+      { severity: "Minor", file: "utils/helper.py", line: 12, message: "변수명 'x'가 너무 짧습니다. 의미있는 이름을 사용하세요.", rule_id: "SA-C0103", suggestion: "pylint: invalid-name" },
+      { severity: "Minor", file: "utils/helper.py", line: 20, message: "함수에 docstring이 없습니다.", rule_id: "SA-C0116", suggestion: "pylint: missing-function-docstring" },
+    ],
+  },
+};
 
 interface TeamPR {
   id: string;
@@ -55,6 +97,8 @@ function formatDate(iso: string) {
   return Number.isNaN(d.getTime()) ? iso : d.toLocaleDateString();
 }
 
+const USE_DUMMY = true; // 더미 모드: true=더미데이터, false=실API
+
 export default function SecurityPage() {
   const { currentTeamId, currentTeam, teamsLoading } = useTeamContext();
   const [selectedPr, setSelectedPr] = useState<TeamPR | null>(null);
@@ -63,8 +107,10 @@ export default function SecurityPage() {
   const { data: prsData, isLoading: prsLoading, isError: prsError } =
     useQuery<{ prs: TeamPR[] }>({
       queryKey: ["security-prs", currentTeamId],
-      queryFn: () => reviewApi.getTeamPRs(currentTeamId as string).then(r => r.data),
-      enabled: !!currentTeamId,
+      queryFn: USE_DUMMY
+        ? () => Promise.resolve({ prs: DUMMY_PRS })
+        : () => reviewApi.getTeamPRs(currentTeamId as string).then(r => r.data),
+      enabled: USE_DUMMY || !!currentTeamId,
     });
 
   const prs = prsData?.prs ?? [];
@@ -73,13 +119,41 @@ export default function SecurityPage() {
 
   const { data: review, isLoading: reviewLoading } =
     useQuery<ReviewResult>({
-      queryKey: ["security-review", owner, repo, selectedPr?.github_pr_number],
-      queryFn: () =>
-        reviewApi.getReview(owner, repo, selectedPr!.github_pr_number).then(r => r.data),
-      enabled: !!selectedPr && !!owner && !!repo,
+      queryKey: ["security-review", owner, repo, selectedPr?.id],
+      queryFn: USE_DUMMY
+        ? () => Promise.resolve(DUMMY_REVIEWS[selectedPr!.id] ?? { found: false, verdict: null, comment: "", issues: [] })
+        : () => reviewApi.getReview(owner, repo, selectedPr!.github_pr_number).then(r => r.data),
+      enabled: !!selectedPr,
     });
 
   const [activeTab, setActiveTab] = useState<"static" | "security">("static");
+  const [pipelineStages, setPipelineStages] = useState<M2StageTrace[]>([]);
+  const [pipelineRunning, setPipelineRunning] = useState(false);
+  const timerRef = useRef<ReturnType<typeof setTimeout>[]>([]);
+
+  // PR 선택 시 파이프라인 애니메이션 실행
+  useEffect(() => {
+    timerRef.current.forEach(clearTimeout);
+    timerRef.current = [];
+    if (!selectedPr) { setPipelineStages([]); setPipelineRunning(false); return; }
+
+    setPipelineRunning(true);
+    setPipelineStages(PIPELINE_STAGES.map(key => ({ key, status: "pending" as const })));
+
+    let elapsed = 0;
+    PIPELINE_STAGES.forEach((key, i) => {
+      // running 시작
+      timerRef.current.push(setTimeout(() => {
+        setPipelineStages(prev => prev.map(s => s.key === key ? { ...s, status: "running" } : s));
+      }, elapsed));
+      elapsed += STAGE_MS[i];
+      // success
+      timerRef.current.push(setTimeout(() => {
+        setPipelineStages(prev => prev.map(s => s.key === key ? { ...s, status: "success", ms: STAGE_MS[i] } : s));
+        if (i === PIPELINE_STAGES.length - 1) setPipelineRunning(false);
+      }, elapsed));
+    });
+  }, [selectedPr]);
 
   const isStatic = (i: ReviewIssue) => i.rule_id?.startsWith("SA-") || i.rule_id?.startsWith("JS-");
   const isSecurity = (i: ReviewIssue) => i.rule_id?.startsWith("SEC-") || i.rule_id?.startsWith("OWASP-");
@@ -98,7 +172,7 @@ export default function SecurityPage() {
     Minor:    m2Issues.filter(i => i.severity === "Minor").length,
   };
 
-  if (!teamsLoading && !currentTeamId) {
+  if (!USE_DUMMY && !teamsLoading && !currentTeamId) {
     return (
       <div className="max-w-6xl mx-auto px-6 py-8">
         <h1 className="text-2xl font-semibold text-notion-text mb-2">정적 분석 · 보안 스캔</h1>
@@ -262,8 +336,9 @@ export default function SecurityPage() {
             <>
               <M2PipelineFlow
                 found={!!review?.found}
-                isLoading={reviewLoading}
-                result={review?.found ? { staticIssues, securityIssues } : undefined}
+                isLoading={pipelineRunning}
+                stages={pipelineStages}
+                result={!pipelineRunning && review?.found ? { staticIssues, securityIssues } : undefined}
               />
 
               {/* 이슈 테이블 */}
