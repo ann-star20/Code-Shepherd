@@ -187,6 +187,9 @@ def _build_response(payload: M3VerifyRequest, agent: str) -> M3VerifyResponse:
     t0 = time.time()
     outputs = _analyze_pr(payload)
 
+    # IssueItem 으로 strip 하기 전, rich 필드가 살아있는 지금 GCP에 적재
+    _save_rich_outputs_pg(outputs, payload.pr_id, payload.clone_url or "", agent)
+
     issues: list[IssueItem] = []
     metrics: dict | None = None
     if outputs:
@@ -488,8 +491,79 @@ def _review_post_comment(owner: str, repo: str, pr_number: int, body: str) -> di
     return {"posted": False, "url": None, "reason": reason}
 
 
+def _repo_full_name_from_clone_url(clone_url: str | None) -> str:
+    """clone_url 에서 'owner/repo' 추출 — pull_requests.repository_full_name 매칭용.
+
+    예: https://github.com/kskt1234-netizen/-dev3-demo.git → kskt1234-netizen/-dev3-demo
+    호스트/스킴/.git 를 떼고 마지막 두 경로 세그먼트를 합친다. 비정상 값이면 빈 문자열
+    (가짜 매칭 금지 — 빈 repo 면 서브쿼리가 0행 → 적재 skip).
+    """
+    if not clone_url:
+        return ""
+    s = clone_url.strip()
+    if s.endswith(".git"):
+        s = s[:-4]
+    s = s.rstrip("/")
+    # SSH(git@github.com:owner/repo) / https 둘 다 대응 — '/' 또는 ':' 기준 마지막 2조각.
+    parts = s.replace(":", "/").split("/")
+    parts = [p for p in parts if p]
+    if len(parts) < 2:
+        return ""
+    return f"{parts[-2]}/{parts[-1]}"
+
+
+def _save_rich_outputs_pg(outputs, pr_id: str, clone_url: str,
+                          agent_filter: str) -> None:
+    """분석 직후 rich AgentOutput 을 GCP review_issue 에 적재.
+
+    _build_response 에서 IssueItem 으로 strip 하기 전에 호출 →
+    keyword·sub_category·code_snippet 등 rich 필드가 살아있는 상태로 저장.
+    pr_id(str) = GitHub PR 번호 문자열 → int 변환, clone_url → repository_full_name.
+    둘로 pull_requests 행을 정확히 1개 매칭(레포마다 PR 번호 중복 → 레포까지 봐야 함).
+    pr_id 비정수·outputs 없음·DB 미설정 → 정직하게 skip.
+    """
+    if not outputs:
+        return
+    try:
+        github_pr_number = int(pr_id)
+    except (ValueError, TypeError):
+        log.info("m3.verify.pg_skip", reason="pr_id 가 정수 아님", pr_id=pr_id)
+        return
+    repo_full_name = _repo_full_name_from_clone_url(clone_url)
+    if not repo_full_name:
+        log.info("m3.verify.pg_skip", reason="clone_url 에서 repo 추출 실패",
+                 clone_url=clone_url)
+        return
+    filtered = [o for o in outputs if o.agent == agent_filter]
+    if not filtered:
+        return
+    if _TP not in sys.path:
+        sys.path.insert(0, _TP)
+    try:
+        import persist as dev3_persist
+
+        dev3_persist.persist_review_issue_pg(
+            filtered, github_pr_number, repo_full_name
+        )
+        log.info(
+            "m3.verify.pg_persisted",
+            agent=agent_filter,
+            pr_number=github_pr_number,
+            repository=repo_full_name,
+            count=sum(len(o.issues) for o in filtered),
+        )
+    except Exception as exc:  # noqa: BLE001
+        log.warning("m3.verify.pg_failed", error=f"{type(exc).__name__}: {exc}")
+    finally:
+        sys.modules.pop("persist", None)
+
+
 def _review_persist(owner, repo, pr_number, verdict, comment, issues) -> bool:
-    """test-performance-agent persist 재사용 → review_results 저장. 실패해도 예외 안 터뜨림."""
+    """test-performance-agent persist 재사용 → review_results(SQLite) 저장.
+
+    GCP review_issue 적재는 _build_response(_save_rich_outputs_pg) 에서 rich 필드로 이미 완료됨.
+    실패해도 예외 안 터뜨림.
+    """
     if _TP not in sys.path:
         sys.path.insert(0, _TP)
     try:
@@ -502,6 +576,57 @@ def _review_persist(owner, repo, pr_number, verdict, comment, issues) -> bool:
         return False
     finally:
         sys.modules.pop("persist", None)
+
+
+def _get_rich_issues(owner: str, repo: str, pr_number: int) -> list[dict]:
+    """리뷰 페이지용 rich 행(함수명·코드조각·한줄설명…) — persist.get_review_issues_pg 재사용.
+
+    매칭 기준은 적재와 동일(GitHub PR 번호 + 'owner/repo'). 실패 시 빈 목록(정직).
+    """
+    if _TP not in sys.path:
+        sys.path.insert(0, _TP)
+    try:
+        import persist as dev3_persist
+
+        return dev3_persist.get_review_issues_pg(pr_number, f"{owner}/{repo}")
+    except Exception as exc:  # noqa: BLE001 — 조회 실패는 빈 목록(페이지는 계속 뜬다)
+        log.warning("m3.review.rich_fetch_failed", error=f"{type(exc).__name__}: {exc}")
+        return []
+    finally:
+        sys.modules.pop("persist", None)
+
+
+def _verdict_reason(verdict: str | None, issues: list[dict]) -> str:
+    """판정 근거 한 줄 — 심각도 카운트 + 임계값(판정과 같은 출처)으로 설명.
+
+    예: "Major 2건 ≥ 기준 2건 → 수정 요청". 알 수 없는 판정/이슈 없음 → 빈 문자열.
+    """
+    if not verdict:
+        return ""
+    counts = {"Critical": 0, "Major": 0, "Minor": 0}
+    for i in issues or []:
+        sev = i.get("severity")
+        if sev in counts:
+            counts[sev] += 1
+    try:
+        with _prc_isolation():
+            from config.settings import (
+                CRITICAL_ESCALATE_THRESHOLD,
+                MAJOR_REWORK_THRESHOLD,
+            )
+    except Exception as exc:  # noqa: BLE001 — 임계값 import 실패 시 근거만 생략(정직)
+        log.warning("m3.review.reason_skipped", error=f"{type(exc).__name__}: {exc}")
+        return ""
+    if verdict == "escalate":
+        return (f"Critical {counts['Critical']}건 ≥ 기준 "
+                f"{CRITICAL_ESCALATE_THRESHOLD}건 → 시니어 검토")
+    if verdict == "rework":
+        return (f"Major {counts['Major']}건 ≥ 기준 "
+                f"{MAJOR_REWORK_THRESHOLD}건 → 수정 요청")
+    if verdict == "lgtm":
+        return (f"Critical 0건 · Major {counts['Major']}건 "
+                f"(기준 {MAJOR_REWORK_THRESHOLD}건 미만) → 통과")
+    return ""
 
 
 def _get_stored_review(owner: str, repo: str, pr_number: int):
@@ -560,9 +685,19 @@ async def review(payload: M3ReviewRequest) -> M3ReviewResponse:
 
 @app.get("/review/{owner}/{repo}/{pr_number}")
 async def get_review(owner: str, repo: str, pr_number: int):
-    """저장된 {verdict, comment, issues} 반환. 없으면 found=False 빈 결과(200)."""
+    """저장된 {verdict, comment, issues} + rich_issues·verdict_reason 반환.
+
+    rich_issues = GCP review_issue 의 그 PR 행(함수명·코드조각·한줄설명…) — 리뷰
+    페이지 '함수별 상세'용. verdict_reason = 판정 근거 한 줄. 없으면 빈 값(정직).
+    """
     stored = _get_stored_review(owner, repo, pr_number)
     base = {"owner": owner, "repo": repo, "pr_number": pr_number}
     if not stored:
-        return {**base, "found": False, "verdict": None, "comment": "", "issues": []}
-    return {**base, "found": True, **stored}
+        return {**base, "found": False, "verdict": None, "comment": "",
+                "issues": [], "rich_issues": [], "verdict_reason": ""}
+    return {
+        **base, "found": True, **stored,
+        "rich_issues": _get_rich_issues(owner, repo, pr_number),
+        "verdict_reason": _verdict_reason(stored.get("verdict"),
+                                          stored.get("issues") or []),
+    }

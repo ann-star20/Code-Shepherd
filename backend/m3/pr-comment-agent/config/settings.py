@@ -2,8 +2,10 @@
 import os
 
 # ── verdict 판정 임계값 ──
+# F3: m3 탐지기는 Critical 을 만들지 않아(전부 Major/Minor) Major 2건 실결함 PR이
+# 임계 3에서 lgtm 으로 샜다(8C 실측 80%, 불일치 2건 모두 이 패턴) → 2로 보정.
 CRITICAL_ESCALATE_THRESHOLD: int = 1
-MAJOR_REWORK_THRESHOLD: int = 3
+MAJOR_REWORK_THRESHOLD: int = 2
 
 # ── 개발자 스킬 레벨 ──
 SKILL_LEVELS: frozenset[str] = frozenset({"junior", "mid", "senior"})

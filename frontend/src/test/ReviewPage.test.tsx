@@ -150,6 +150,82 @@ describe("ReviewPage", () => {
     expect(within(rag2).queryByRole("link")).not.toBeInTheDocument();
   });
 
+  it("renders verdict reason, severity counts, and rich function-detail cards", async () => {
+    server.use(
+      http.get(`${M3_BASE}/review/:owner/:repo/:pr`, ({ params }) =>
+        HttpResponse.json({
+          owner: params.owner,
+          repo: params.repo,
+          pr_number: Number(params.pr),
+          found: true,
+          verdict: "rework",
+          verdict_reason: "Major 2건 ≥ 기준 2건 → 수정 요청",
+          comment: "본문",
+          issues: [
+            {
+              severity: "Major",
+              file: "src/cart.py",
+              line: 8,
+              message: "N+1 쿼리",
+              rule_id: "PERF-002",
+              suggestion: "고치세요",
+            },
+            {
+              severity: "Major",
+              file: "(전체)",
+              line: null,
+              message: "커버리지 미충족",
+              rule_id: "TEST-001",
+              suggestion: null,
+            },
+          ],
+          rich_issues: [
+            {
+              agent: "performance",
+              severity: "high",
+              keyword: "N+1 쿼리",
+              sub_category: "루프 쿼리",
+              code_context: "장바구니 항목을 불러오는 함수",
+              code_snippet: "def load_cart_items(uid):\n    for x in items:\n        db.query(x)",
+              suggestion: "selectinload 사용",
+              name_of_function: "load_cart_items",
+              programming_language: "python",
+              framework: "",
+            },
+          ],
+        })
+      )
+    );
+    const user = userEvent.setup();
+    renderReviewPage();
+    await user.click(await screen.findByTestId("review-pr-42"));
+
+    // 판정 근거 한 줄
+    expect(await screen.findByTestId("review-verdict-reason")).toHaveTextContent(
+      "Major 2건 ≥ 기준 2건 → 수정 요청"
+    );
+    // 심각도 카운트 칩 (issues 에서 집계)
+    const counts = screen.getByTestId("review-severity-counts");
+    expect(counts).toHaveTextContent("Major 2");
+    expect(counts).toHaveTextContent("Critical 0");
+
+    // 함수별 상세 카드 — 함수명·분류·한줄설명·고칠 방향·코드 조각
+    const rich = await screen.findByTestId("review-rich-0");
+    expect(rich).toHaveTextContent("load_cart_items");
+    expect(rich).toHaveTextContent("N+1 쿼리");
+    expect(rich).toHaveTextContent("장바구니 항목을 불러오는 함수");
+    expect(rich).toHaveTextContent("selectinload 사용");
+    expect(within(rich).getByText(/def load_cart_items/)).toBeInTheDocument();
+  });
+
+  it("hides the rich section when rich_issues is empty (no fake content)", async () => {
+    const user = userEvent.setup();
+    renderReviewPage();
+    await user.click(await screen.findByTestId("review-pr-42"));
+    await screen.findByTestId("review-issues");
+    expect(screen.queryByTestId("review-rich-section")).not.toBeInTheDocument();
+  });
+
   it("shows an empty state when the team has no PRs", async () => {
     server.use(
       http.get(`${BASE}/teams/:id/prs`, () =>

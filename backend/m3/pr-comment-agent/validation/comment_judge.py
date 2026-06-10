@@ -207,11 +207,11 @@ def _issues_summary(issue_tuples: list[tuple[str, str, str]]) -> str:
 _JUDGE_PLAN: list[tuple[str, str]] = [
     ("ext_sqli_critical", "senior"),            # escalate, senior
     ("ext_three_nplus1", "mid"),                # rework, mid
-    ("pos_perf_nplus1_complexity", "junior"),   # lgtm, junior (실제 N+1+O(n³))
-    ("pos_coverage_sample", "mid"),             # lgtm, mid
-    ("ext_critical_plus_majors", "junior"),     # escalate, junior
-    ("pos_memleak", "senior"),                  # lgtm, senior
+    ("pos_perf_nplus1_complexity", "junior"),   # rework, junior (F3 보정: Major 2 → rework)
     ("ext_minor_only", "mid"),                  # lgtm, mid
+    ("ext_critical_plus_majors", "junior"),     # escalate, junior
+    ("pos_memleak", "senior"),                  # senior
+    ("pos_coverage_sample", "mid"),             # mid (F3 후 Major 수에 따라 rework 가능)
     ("ext_many_minor", "junior"),               # lgtm, junior
     ("pos_perf_nplus1_complexity", "senior"),   # skill 변형
     ("ext_sqli_critical", "mid"),               # skill 변형

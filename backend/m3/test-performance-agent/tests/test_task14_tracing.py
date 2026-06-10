@@ -151,15 +151,18 @@ psycopg2 = pytest.importorskip("psycopg2", reason="psycopg2 미설치 — 통합
 
 
 def _pg_url():
+    import persist as _p
     url = os.getenv("POSTGRES_URL")
-    if url:
+    if url and not _p._is_placeholder_url(url):
         return url
     env = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), ".env")
     if os.path.exists(env):
         for line in open(env, encoding="utf-8"):
             line = line.strip()
             if line.startswith("POSTGRES_URL="):
-                return line.split("=", 1)[1]
+                val = line.split("=", 1)[1]
+                if not _p._is_placeholder_url(val):
+                    return val
     return None
 
 

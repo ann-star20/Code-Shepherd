@@ -75,12 +75,14 @@ def _enclosing_function(source: str, line: int) -> tuple[str, str]:
     return ast.get_source_segment(source, best[2]) or "", best[2].name
 
 
-def augment_issues(issues: list[Issue], repo_path: str, describe=None) -> None:
+def augment_issues(issues: list[Issue], repo_path: str, describe=None,
+                   with_llm: bool = True) -> None:
     """각 이슈가 가리키는 함수를 추출해 code_snippet·name_of_function·code_context를 채운다(제자리).
 
     - code_snippet     = 함수 전체 소스 (AST=사실). LLM 키 없이도 항상 채움.
     - name_of_function = 그 함수 이름 (AST=사실). LLM 키 없이도 항상 채움.
-    - code_context     = 그 함수의 한 줄 LLM 설명. 키 있을 때만 채움(없으면 빈 값).
+    - code_context     = 그 함수의 한 줄 LLM 설명. with_llm=True이고 키 있을 때만 채움.
+    with_llm=False 이면 code_context는 건드리지 않음 (test 이슈용).
     describe 주입 가능(테스트용); 미주입 시 모듈의 describe_function 사용.
     함수 못 찾으면 둘 다 빈 값으로 남음. 같은 함수의 설명은 1회만 호출(캐시).
     """
@@ -101,7 +103,11 @@ def augment_issues(issues: list[Issue], repo_path: str, describe=None) -> None:
             continue
         issue.code_snippet = func_source       # AST=사실, 키 없이도 항상
         issue.name_of_function = func_name     # AST=사실, 키 없이도 항상
-        if has_key:                            # LLM 설명은 키 있을 때만
+        if with_llm and has_key:               # LLM 설명은 with_llm=True이고 키 있을 때만
             if func_source not in cache:
                 cache[func_source] = describe(func_source)
-            issue.code_context = cache[func_source]
+            # LLM 실패(빈 문자열, 예: 크레딧 소진 429) → 라벨 폴백(빈 칸 금지)
+            issue.code_context = (cache[func_source]
+                                  or issue.sub_category or issue.keyword or "")
+        else:                                  # 키 없거나 with_llm=False → 결정적 라벨
+            issue.code_context = issue.sub_category or issue.keyword or ""

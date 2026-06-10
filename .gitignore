@@ -77,6 +77,15 @@ backend/m0/tests/eval/
 # 발표 자료
 presentation/
 
+# m3 세션 문서 (로컬 작업 노트 — 공유 안 함)
+backend/m3/SESSION_*.md
+backend/m3/발표자료_*.md
+backend/m3/발표_플로우차트/
+backend/m3/SESSION_B_*.md
+backend/m3/we
+docs/NEXT_SESSION_*.md
+docs/데모_*.md
+
 # TypeScript build info
 *.tsbuildinfo
 frontend/vite.config.d.ts

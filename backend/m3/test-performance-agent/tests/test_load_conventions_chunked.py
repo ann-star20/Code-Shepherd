@@ -3,7 +3,7 @@
 문제: 6개 사내 가이드가 DB에 2개의 과대 청크로 적재됨 → doc_title 4/6 오라벨.
 해결: 가이드별로 documents(1) + parent chunk(1, NULL parent) + child chunks(N) + embeddings(N).
 
-고립: embed·conn 모두 Mock. 기존 embed_and_store(→convention_embeddings) 는 건드리지 않음.
+고립: embed·conn 모두 Mock. (옛 목업 convention_embeddings 적재 코드는 제거됨.)
 
 주의: content split("\n\n") 기준이므로, 1 child 원하면 이중개행 없는 텍스트 사용.
       예) "# G\n\npara" → child 2개 ("# G", "para")
@@ -205,3 +205,43 @@ def test_default_embedder_is_shared(tmp_path, monkeypatch):
     conn = _FakeConn((1,), (10,), (100,), None)
     load_conventions.load_conventions_to_chunks(str(tmp_path), conn)
     assert used["n"] == 1
+
+
+# ─── F1/9A: conventions 파일 rule_id 프론트매터 검증 ─────────────────────────
+
+def test_all_conventions_have_rule_id_frontmatter():
+    """실제 conventions/*.md 6개 모두 프론트매터 rule_id를 가진다 — SESSION F1 9A."""
+    import os
+    from pathlib import Path
+
+    conv_dir = Path(os.path.dirname(__file__)).parent / "conventions"
+    md_files = sorted(conv_dir.glob("*.md"))
+    assert len(md_files) == 6, f"conventions 파일 수 이상: {len(md_files)}"
+
+    for md_path in md_files:
+        raw = md_path.read_text(encoding="utf-8")
+        _, meta, _ = _parse_fm(raw)
+        assert meta is not None and "rule_id" in meta, (
+            f"{md_path.name}: 프론트매터 rule_id 없음 — 재청킹 후 인용 라벨 틀림"
+        )
+
+
+def _parse_fm(content: str):
+    """(has_fm, meta_dict|None, body) — 테스트 헬퍼."""
+    if not content.startswith("---"):
+        return False, None, content
+    lines = content.splitlines()
+    end = None
+    for i in range(1, len(lines)):
+        if lines[i].strip() == "---":
+            end = i
+            break
+    if end is None:
+        return False, None, content
+    import yaml
+    try:
+        meta = yaml.safe_load("\n".join(lines[1:end]))
+    except Exception:
+        return True, None, content
+    body = "\n".join(lines[end + 1:]).lstrip("\n")
+    return True, meta, body

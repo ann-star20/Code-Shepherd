@@ -183,21 +183,71 @@ class TestPersistSQLite:
         assert len(summaries) == 1
 
 
+# ─── _pg_url() placeholder 감지 ────────────────────────────────────────────────
+
+def test_pg_url_ignores_placeholder_env(monkeypatch):
+    """루트 .env의 placeholder POSTGRES_URL은 무시하고 형제 .env가 없으면 None.
+
+    컨테이너가 루트 .env placeholder로 뜰 때 실 GCP 대신 None 반환해야 함.
+    형제 .env도 없는 격리 환경으로 테스트.
+    """
+    import persist as p
+    monkeypatch.setenv("POSTGRES_URL", "postgresql://user:password@host:5432/dbname")
+    # 형제 .env가 없는 것처럼 — os.path.exists가 False 반환
+    monkeypatch.setattr(p.os.path, "exists", lambda path: False)
+    result = p._pg_url()
+    assert result is None  # placeholder → None (실 URL 아님)
+
+
+def test_is_placeholder_url():
+    """_is_placeholder_url: placeholder 패턴 감지."""
+    import persist as p
+    assert p._is_placeholder_url("postgresql://user:password@host:5432/dbname") is True
+    assert p._is_placeholder_url("postgresql://postgres:secret@34.22.101.111:5432/tasklink") is False
+    assert p._is_placeholder_url("") is False
+
+
+def test_pg_url_accepts_real_url(monkeypatch):
+    """실 GCP URL(IP 포함)은 그대로 반환해야 한다."""
+    import persist as p
+    real = "postgresql://postgres:secret%21@34.22.101.111:5432/tasklink"
+    monkeypatch.setenv("POSTGRES_URL", real)
+    assert p._pg_url() == real
+
+
+def test_pg_url_empty_env_falls_back_to_dotenv(monkeypatch, tmp_path):
+    """POSTGRES_URL env가 없으면 형제 .env에서 읽어야 한다."""
+    import persist as p
+    monkeypatch.delenv("POSTGRES_URL", raising=False)
+    fake_env = tmp_path / ".env"
+    real = "postgresql://postgres:x@1.2.3.4:5432/db"
+    fake_env.write_text(f"POSTGRES_URL={real}\n", encoding="utf-8")
+    # .env 경로 반환을 fake_env 경로로 치환
+    import unittest.mock as mock
+    orig_join = os.path.join
+    with mock.patch.object(p.os.path, "join", side_effect=lambda *a: str(fake_env) if a and a[-1] == ".env" else orig_join(*a)):
+        result = p._pg_url()
+    assert result == real
+
+
 # ─── 통합 테스트 (GCP Postgres, 트랜잭션+롤백) ───────────────────────────────────
 
 psycopg2 = pytest.importorskip("psycopg2", reason="psycopg2 미설치 — 통합 테스트 스킵")
 
 
 def _pg_url():
+    import persist as _p
     url = os.getenv("POSTGRES_URL")
-    if url:
+    if url and not _p._is_placeholder_url(url):
         return url
     env = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), ".env")
     if os.path.exists(env):
         for line in open(env, encoding="utf-8"):
             line = line.strip()
             if line.startswith("POSTGRES_URL="):
-                return line.split("=", 1)[1]
+                val = line.split("=", 1)[1]
+                if not _p._is_placeholder_url(val):
+                    return val
     return None
 
 

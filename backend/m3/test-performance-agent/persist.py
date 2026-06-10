@@ -266,31 +266,37 @@ def persist_review_issue(outputs) -> None:
                     type(exc).__name__, exc)
 
 
-def persist_review_issue_pg(outputs, github_pr_number, conn=None) -> None:
+def persist_review_issue_pg(outputs, github_pr_number,
+                            repository_full_name, conn=None) -> None:
     """GCP Postgres review_issue 적재 — persist_pg 와 같은 형태(파라미터 %s).
 
     pull_request_id·user_id 는 m3가 내부 번호를 모르므로 직접 넣지 않고,
-    아는 GitHub PR 번호(github_pr_number)로 dev4 pull_requests 행을 찾아
-    그 행의 id(→pull_request_id)·user_id 를 서브쿼리로 채운다(dev4 합의).
+    아는 GitHub PR 번호(github_pr_number) + 레포 풀네임(repository_full_name)으로
+    dev4 pull_requests 행을 찾아 그 행의 id(→pull_request_id)·user_id 를 서브쿼리로 채운다.
+      ★ PR 번호는 레포마다 중복되므로(예: 데모 #2, 다른레포 #2 동시 존재) repository_full_name
+        까지 매칭해야 정확히 1행 = 엉뚱한 레포 PR 에 붙는 오매칭 방지.
       → 매칭 행이 없으면(아직 미등록 PR) 0행 INSERT = 고아 행을 만들지 않음(정직).
     id·created_at 은 DB 기본값. conn 주입 시 커밋은 호출자가 제어(테스트 rollback).
     정직성: DB 미가용·예외 시 적재만 skip(예외 안 던짐, 로그만).
 
     ※ dev4 스키마 확정 시 아래 SQL 의 식별자만 수정:
-       테이블 pull_requests / PK pr.id / pr.user_id / 매칭 pr.github_pr_number.
+       테이블 pull_requests / PK pr.id / pr.user_id /
+       매칭 pr.github_pr_number · pr.repository_full_name.
     """
     content_ph = ",".join(["%s"] * len(_REVIEW_ISSUE_COLUMNS))
     insert_sql = (
         "INSERT INTO review_issue (pull_request_id,user_id,"
         + ",".join(_REVIEW_ISSUE_COLUMNS) + ") "
         "SELECT pr.id, pr.user_id, " + content_ph + " "
-        "FROM pull_requests pr WHERE pr.github_pr_number = %s"
+        "FROM pull_requests pr "
+        "WHERE pr.github_pr_number = %s AND pr.repository_full_name = %s"
     )
-    # 멱등: 재적재 시 중복 행 방지 — 그 PR·그 agent 기존 행을 먼저 지운다
+    # 멱등: 재적재 시 중복 행 방지 — 그 PR·레포·agent 기존 행을 먼저 지운다
     # (scan_issues 의 DELETE WHERE scan_id,agent 패턴과 동일). review_issue 엔 dedup 키가 없음.
     delete_sql = (
-        "DELETE FROM review_issue WHERE agent = %s AND pull_request_id = "
-        "(SELECT pr.id FROM pull_requests pr WHERE pr.github_pr_number = %s)"
+        "DELETE FROM review_issue WHERE agent = %s AND pull_request_id IN "
+        "(SELECT pr.id FROM pull_requests pr "
+        " WHERE pr.github_pr_number = %s AND pr.repository_full_name = %s)"
     )
     own = conn is None
     try:
@@ -299,11 +305,15 @@ def persist_review_issue_pg(outputs, github_pr_number, conn=None) -> None:
             conn = psycopg2.connect(_pg_url(), connect_timeout=10)
         with conn.cursor() as cur:
             for out in outputs:
-                cur.execute(delete_sql, (out.agent, github_pr_number))
+                cur.execute(
+                    delete_sql,
+                    (out.agent, github_pr_number, repository_full_name),
+                )
                 for i in out.issues:
                     cur.execute(
                         insert_sql,
-                        _review_issue_row(out.agent, i) + (github_pr_number,),
+                        _review_issue_row(out.agent, i)
+                        + (github_pr_number, repository_full_name),
                     )
         if own:
             conn.commit()
@@ -313,6 +323,51 @@ def persist_review_issue_pg(outputs, github_pr_number, conn=None) -> None:
     finally:
         if own and conn is not None:
             conn.close()
+
+
+# 리뷰 페이지용 rich 행 조회 컬럼 — review_issue 에서 그대로 SELECT 하는 순서.
+_REVIEW_ISSUE_FETCH_COLUMNS = (
+    "agent", "severity", "keyword", "sub_category", "code_context",
+    "code_snippet", "suggestion", "name_of_function",
+    "programming_language", "framework",
+)
+
+
+def get_review_issues_pg(github_pr_number, repository_full_name,
+                         conn=None) -> list[dict]:
+    """리뷰 페이지용 — 그 PR의 m3 rich 행(review_issue)을 dict 목록으로 조회.
+
+    매칭 기준은 적재(persist_review_issue_pg)와 동일: pull_requests 의
+    github_pr_number + repository_full_name. m3 소유 agent 행만.
+    정직성: DB 미가용·예외 시 빈 목록 반환(예외 안 던짐, 로그만).
+    """
+    sql = (
+        "SELECT " + ",".join(f"ri.{c}" for c in _REVIEW_ISSUE_FETCH_COLUMNS) + " "
+        "FROM review_issue ri "
+        "JOIN pull_requests pr ON pr.id = ri.pull_request_id "
+        "WHERE pr.github_pr_number = %s AND pr.repository_full_name = %s "
+        "AND ri.agent IN ('test_verification','performance') "
+        "ORDER BY ri.agent, ri.created_at"
+    )
+    own = conn is None
+    try:
+        if own:
+            import psycopg2  # noqa: PLC0415
+            conn = psycopg2.connect(_pg_url(), connect_timeout=10)
+        with conn.cursor() as cur:
+            cur.execute(sql, (github_pr_number, repository_full_name))
+            rows = cur.fetchall()
+        return [dict(zip(_REVIEW_ISSUE_FETCH_COLUMNS, r)) for r in rows]
+    except Exception as exc:  # noqa: BLE001 — 조회만 정직하게 빈 목록
+        log.warning("review_issue fetch skipped: %s: %s",
+                    type(exc).__name__, exc)
+        return []
+    finally:
+        if own and conn is not None:
+            try:
+                conn.close()
+            except Exception:  # noqa: BLE001
+                pass
 
 
 # ════════════════════════════════════════════════════════════════════
@@ -336,16 +391,25 @@ CREATE TABLE IF NOT EXISTS scan_summaries (
 """
 
 
+_PLACEHOLDER_MARKERS = ("@host:", "password@host", "user:password")
+
+
+def _is_placeholder_url(url: str) -> bool:
+    return any(m in url for m in _PLACEHOLDER_MARKERS)
+
+
 def _pg_url() -> str | None:
     url = os.getenv("POSTGRES_URL")
-    if url:
+    if url and not _is_placeholder_url(url):
         return url
     env = os.path.join(os.path.dirname(os.path.abspath(__file__)), ".env")
     if os.path.exists(env):
         for line in open(env, encoding="utf-8"):
             line = line.strip()
             if line.startswith("POSTGRES_URL="):
-                return line.split("=", 1)[1]
+                val = line.split("=", 1)[1]
+                if not _is_placeholder_url(val):
+                    return val
     return None
 
 

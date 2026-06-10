@@ -11,8 +11,9 @@ class TestThresholds:
     def test_critical_escalate_threshold_is_1(self):
         assert CRITICAL_ESCALATE_THRESHOLD == 1
 
-    def test_major_rework_threshold_is_3(self):
-        assert MAJOR_REWORK_THRESHOLD == 3
+    def test_major_rework_threshold_is_2(self):
+        """F3: m3 탐지기는 Critical 을 안 만들어, Major 2건 실결함 PR이 임계 3에서 샜다 → 2로 보정."""
+        assert MAJOR_REWORK_THRESHOLD == 2
 
 
 class TestSkillLevels:

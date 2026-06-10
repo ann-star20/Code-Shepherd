@@ -166,6 +166,20 @@ def test_query_param_bound_on_chunk_tables(monkeypatch):
     assert "parent_chunk_id" in sql
 
 
+def test_cites_only_convention_category(monkeypatch):
+    """KMS 문서 중 분류가 '코딩컨벤션'인 문서만 인용 — 회고·인사규정·강의노트 인용 금지.
+
+    실측: KMS 코퍼스엔 취업규칙·회고·강의노트 등 잡문서가 섞여 있어 코드리뷰 인용에
+    엉뚱한 문서가 잡힘 → documents.category 필터(파라미터 바인딩)로 차단.
+    """
+    conn = _setup(monkeypatch, [])
+    retriever.search_convention("q")
+    sql, params = conn.log[0]
+    assert "category" in sql          # documents.category 필터가 SQL에 존재
+    assert "코딩컨벤션" in params      # 값은 파라미터로만 전달
+    assert "코딩컨벤션" not in sql     # f-string SQL 금지
+
+
 def test_connection_closed(monkeypatch):
     conn = _setup(monkeypatch, [])
     retriever.search_convention("q")

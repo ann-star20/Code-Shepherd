@@ -22,8 +22,12 @@ import persist
 from config import settings
 from rag import embedder, store
 
+# 인용 허용 문서 분류 — KMS 코퍼스엔 취업규칙·회고·강의노트 등 잡문서가 섞여 있어
+# 코드리뷰 인용은 사내 코딩컨벤션 문서로만 제한한다(그 외 문서 인용 금지).
+CITE_CATEGORY = "코딩컨벤션"
+
 # child 임베딩으로 정밀 매칭 → 부모 본문(small-to-big)·문서 메타를 한 쿼리로 join.
-# 부모/문서는 LEFT JOIN (부모 없음·문서 메타 누락 시에도 child 로 동작).
+# 부모는 LEFT JOIN (부모 없음 시 child 로 동작). 문서는 분류 필터 때문에 INNER JOIN.
 _SEARCH_SQL = (
     "SELECT "
     "p.content AS parent_content, "
@@ -36,7 +40,8 @@ _SEARCH_SQL = (
     "FROM chunk_embeddings ce "
     "JOIN chunks c ON c.chunk_id = ce.chunk_id "
     "LEFT JOIN chunks p ON p.chunk_id = c.parent_chunk_id "
-    "LEFT JOIN documents d ON d.doc_id = c.doc_id "
+    "JOIN documents d ON d.doc_id = c.doc_id "
+    "WHERE d.category = %s "
     "ORDER BY ce.embedding <=> %s::vector "
     "LIMIT %s"
 )
@@ -67,7 +72,7 @@ def search_convention(query_text: str, top_k: int = 3) -> list[dict]:
             return []
         qlit = store.to_vector_literal(vec[0])
         with conn.cursor() as cur:
-            cur.execute(_SEARCH_SQL, (qlit, qlit, top_k))
+            cur.execute(_SEARCH_SQL, (qlit, CITE_CATEGORY, qlit, top_k))
             rows = cur.fetchall()
     except Exception:
         return []  # 모델/DB 실패 → 빈 결과 (가짜 문서 지어내지 않음)

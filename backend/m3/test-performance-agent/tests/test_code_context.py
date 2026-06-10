@@ -158,7 +158,7 @@ def test_code_snippet_filled_without_key(tmp_path, monkeypatch):
     assert issue.code_context == ""
 
 
-# ─── 7c) main.run: code_context·code_snippet 둘 다 성능(PERF) 이슈에만 ─────────
+# ─── 7c) main.run: code_context(LLM설명)은 성능(PERF) 이슈에만, code_snippet·name_of_function은 함수 단위 이슈 모두 ─────────
 def test_main_run_enriches_perf_only(monkeypatch):
     from enrich import code_context
     from main import run
@@ -172,17 +172,134 @@ def test_main_run_enriches_perf_only(monkeypatch):
     )
     outputs = run(inp, str(SAMPLE_REPO))
 
-    # test_verification 이슈는 절대 안 채워짐 (성능 한정)
+    # test_verification 이슈: code_context = LLM 설명 아닌 결정적 라벨(sub_category/keyword)
+    # LLM 설명("설명됨")은 절대 test 이슈에 들어가면 안 됨
     for o in outputs:
         if o.agent == "test_verification":
             for i in o.issues:
-                assert i.code_context == ""
-                assert i.code_snippet == ""
+                assert i.code_context != "설명됨", f"TEST 이슈엔 LLM 설명이 들어가면 안 됨: {i.rule_id}"
 
-    # performance 이슈 중 함수 안에 있는 건 둘 다 채워짐
+    # performance 이슈 중 함수 안에 있는 건 code_snippet·code_context 둘 다 채워짐
     perf_issues = [i for o in outputs if o.agent == "performance" for i in o.issues]
     assert any(i.code_snippet for i in perf_issues), "PERF 함수 이슈엔 code_snippet"
     assert any(i.code_context == "설명됨" for i in perf_issues), "PERF 함수 이슈엔 code_context"
+
+
+# ─── 7d) main.run: test 이슈의 name_of_function·code_snippet (함수 가리키는 경우) ──
+def test_main_run_test_issues_get_function_name(monkeypatch):
+    """TEST-004(테스트 누락)처럼 특정 함수 줄을 가리키는 test 이슈는
+    name_of_function·code_snippet이 채워져야 한다.
+    TEST-001(커버리지)처럼 line=None인 이슈는 빈값 유지(정직).
+    """
+    from enrich import code_context
+    from main import run
+    monkeypatch.setattr(code_context, "_has_llm_key", lambda: False)  # code_context(LLM)는 안 씀
+
+    diff = (SAMPLE_REPO.parent / "sample_pr.diff").read_text(encoding="utf-8")
+    inp = Dev3Input(
+        task_id="t", scan_id=1, pr_id="P", pr_diff=diff,
+        repo=RepoInfo(clone_url="", commit_sha=""), developer=Developer(id="d"),
+    )
+    outputs = run(inp, str(SAMPLE_REPO))
+
+    tv_issues = [i for o in outputs if o.agent == "test_verification" for i in o.issues]
+    assert tv_issues, "test_verification 이슈가 있어야 함"
+
+    # line=None(TEST-001 커버리지)은 빈값 — 정직
+    no_line = [i for i in tv_issues if i.line is None]
+    for i in no_line:
+        assert i.name_of_function == "", f"line=None 이슈는 name_of_function 빈값: {i.rule_id}"
+        assert i.code_snippet == "", f"line=None 이슈는 code_snippet 빈값: {i.rule_id}"
+
+    # line 있는 이슈(TEST-004 등)는 함수 가리키면 name_of_function 채워짐
+    with_line = [i for i in tv_issues if i.line is not None]
+    if with_line:
+        # 함수 안을 가리키는 이슈가 있으면 적어도 하나는 name_of_function이 채워져야 함
+        fn_filled = [i for i in with_line if i.name_of_function]
+        assert fn_filled, "함수 가리키는 TEST 이슈엔 name_of_function이 채워져야 함"
+
+
+# ─── (D) code_context = 결정적 라벨 (sub_category → keyword 우선순위) ─────────────
+def test_code_context_label_uses_sub_category_first(tmp_path, monkeypatch):
+    """sub_category가 있으면 code_context에 그대로 채움 (LLM 없이, 항상 결정적)."""
+    from enrich import code_context
+    monkeypatch.setattr(code_context, "_has_llm_key", lambda: False)
+    repo = _write(tmp_path, """
+        def load_cart(uid):
+            for x in items:
+                db.query(x)
+    """)
+    issue = Issue(severity="Major", file="src/f.py", line=3,
+                  message="N+1", rule_id="PERF-002",
+                  sub_category="N+1 쿼리", keyword="성능")
+    code_context.augment_issues([issue], repo)
+    assert issue.code_context == "N+1 쿼리"  # sub_category 우선
+
+
+def test_code_context_label_falls_back_to_keyword(tmp_path, monkeypatch):
+    """sub_category 없으면 keyword로 폴백."""
+    from enrich import code_context
+    monkeypatch.setattr(code_context, "_has_llm_key", lambda: False)
+    repo = _write(tmp_path, """
+        def check_auth(req):
+            user = db.query(req.id)
+            return user
+    """)
+    issue = Issue(severity="Major", file="src/f.py", line=3,
+                  message="쿼리 문제", rule_id="PERF-002",
+                  sub_category="", keyword="authentication")
+    code_context.augment_issues([issue], repo)
+    assert issue.code_context == "authentication"  # sub_category 없으니 keyword
+
+
+def test_code_context_label_empty_when_no_sub_or_keyword(tmp_path, monkeypatch):
+    """sub_category도 keyword도 없으면 code_context 빈값(가짜 금지)."""
+    from enrich import code_context
+    monkeypatch.setattr(code_context, "_has_llm_key", lambda: False)
+    repo = _write(tmp_path, """
+        def compute(x):
+            return x * 2
+    """)
+    issue = Issue(severity="Minor", file="src/f.py", line=2,
+                  message="복잡도", rule_id="PERF-001",
+                  sub_category="", keyword="")
+    code_context.augment_issues([issue], repo)
+    assert issue.code_context == ""  # 둘 다 없으면 빈값(정직)
+
+
+def test_code_context_label_not_overwritten_by_llm_key(tmp_path, monkeypatch):
+    """LLM 키가 있어도 perf 이슈가 아닌 경우(with_llm=False) 결정적 라벨 사용."""
+    from enrich import code_context
+    monkeypatch.setattr(code_context, "_has_llm_key", lambda: True)
+    repo = _write(tmp_path, """
+        def missing_test(uid):
+            return db.query(uid)
+    """)
+    issue = Issue(severity="Minor", file="src/f.py", line=2,
+                  message="테스트 없음", rule_id="TEST-004",
+                  sub_category="함수 테스트 누락", keyword="coverage")
+    code_context.augment_issues([issue], repo, with_llm=False)
+    assert issue.code_context == "함수 테스트 누락"  # with_llm=False → 결정적 라벨
+
+
+def test_llm_failure_falls_back_to_label(tmp_path, monkeypatch):
+    """LLM 호출 실패(빈 문자열) 시 code_context를 비워두지 않고 결정적 라벨로 폴백.
+
+    실측: 유료 키 크레딧 소진(429)이면 perf 행 code_context가 ∅로 적재됨 →
+    라벨(sub_category/keyword)로라도 채운다. LLM 복구 시 자동으로 설명이 우선.
+    """
+    from enrich import code_context
+    monkeypatch.setattr(code_context, "_has_llm_key", lambda: True)
+    repo = _write(tmp_path, """
+        def load_cart(uid):
+            for x in items:
+                db.query(x)
+    """)
+    issue = Issue(severity="Major", file="src/f.py", line=3,
+                  message="N+1", rule_id="PERF-002",
+                  sub_category="", keyword="N+1 쿼리")
+    code_context.augment_issues([issue], repo, describe=lambda s: "")  # LLM 실패 모사
+    assert issue.code_context == "N+1 쿼리"  # 빈값 대신 라벨 폴백
 
 
 # ─── 8) 로컬 SQLite persist 라운드트립 ─────────────────────────────────────────

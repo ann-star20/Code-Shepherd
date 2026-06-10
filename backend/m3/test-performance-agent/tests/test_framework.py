@@ -59,9 +59,27 @@ def test_detect_priority(tmp_path):
     assert ver == "0.110.0"
 
 
-# ─── 4) requirements 없음 → 전부 빈 값 ────────────────────────────────────────
-def test_detect_no_requirements(tmp_path):
+# ─── 4) requirements 없음 + .py 파일 없음 → 전부 빈 값 ──────────────────────────
+def test_detect_no_requirements_no_py(tmp_path):
     from enrich.framework import detect
+    lang, fw, ver = detect(str(tmp_path))
+    assert (lang, fw, ver) == ("", "", "")
+
+
+# ─── 4b) requirements 없지만 .py 파일 있음 → language=python (폴백) ───────────
+def test_detect_no_requirements_but_py_file(tmp_path):
+    from enrich.framework import detect
+    (tmp_path / "app.py").write_text("x = 1\n", encoding="utf-8")
+    lang, fw, ver = detect(str(tmp_path))
+    assert lang == "python"
+    assert fw == ""    # 의존성 없으면 framework 빈값(정직)
+    assert ver == ""   # 버전도 빈값
+
+
+# ─── 4c) requirements 없고 .py 파일도 없음(다른 확장자) → 전부 빈 값 ─────────────
+def test_detect_no_py_file_no_requirements(tmp_path):
+    from enrich.framework import detect
+    (tmp_path / "main.js").write_text("// js\n", encoding="utf-8")
     lang, fw, ver = detect(str(tmp_path))
     assert (lang, fw, ver) == ("", "", "")
 

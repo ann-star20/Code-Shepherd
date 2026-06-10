@@ -44,12 +44,37 @@ interface ReviewIssue {
   source_url?: string | null;
 }
 
+// 함수별 상세(rich) — 백엔드가 GCP review_issue 에서 가져오는 m3 분석 행.
+// 없으면 빈 배열 — 섹션을 숨긴다(가짜로 채우지 않음).
+interface RichIssue {
+  agent: string;
+  severity: string; // DB 4단계: critical | high | medium | low
+  keyword: string | null;
+  sub_category: string | null;
+  code_context: string | null; // 함수 한줄설명 (LLM 또는 라벨)
+  code_snippet: string | null; // 함수 전체 소스 (접기/펼치기)
+  suggestion: string | null;
+  name_of_function: string | null;
+  programming_language: string | null;
+  framework: string | null;
+}
+
 interface ReviewResult {
   found: boolean;
   verdict: Verdict | null;
+  verdict_reason?: string; // 판정 근거 한 줄 (예: "Major 2건 ≥ 기준 2건 → 수정 요청")
   comment: string;
   issues: ReviewIssue[];
+  rich_issues?: RichIssue[];
 }
+
+// rich severity(DB 4단계) → 칩 색상
+const RICH_SEV_CLS: Record<string, string> = {
+  critical: "bg-red-50 text-red-700 border-red-200",
+  high: "bg-yellow-50 text-yellow-700 border-yellow-200",
+  medium: "bg-blue-50 text-blue-700 border-blue-200",
+  low: "bg-notion-bg-secondary text-notion-text-secondary border-notion-border",
+};
 
 const VERDICT_STYLE: Record<
   Verdict,
@@ -217,6 +242,26 @@ function ReviewDetail({
         </div>
       </div>
 
+      {/* 판정 근거 + 심각도 카운트 — 헤더 바로 아래 고정 줄 */}
+      <div className="flex flex-wrap items-center gap-x-3 gap-y-1 pb-3 lg:shrink-0">
+        {review.verdict_reason && (
+          <span
+            data-testid="review-verdict-reason"
+            className="text-xs text-notion-text-secondary"
+          >
+            ⚖️ {review.verdict_reason}
+          </span>
+        )}
+        <span
+          data-testid="review-severity-counts"
+          className="text-xs text-notion-text-secondary"
+        >
+          🔴 Critical {review.issues.filter((i) => i.severity === "Critical").length}
+          {" · "}🟡 Major {review.issues.filter((i) => i.severity === "Major").length}
+          {" · "}🔵 Minor {review.issues.filter((i) => i.severity === "Minor").length}
+        </span>
+      </div>
+
       {/* 스크롤 영역 — 이슈 카드 + 코멘트만 독립적으로 내려간다(위 헤더는 고정). */}
       <div className="space-y-5 lg:flex-1 lg:min-h-0 lg:overflow-y-auto lg:pr-1">
       {/* 이슈 목록 — 이슈 하나당 카드 한 장. 텍스트가 길어도 세로로 늘어나 레이아웃이 안 깨진다. */}
@@ -303,6 +348,75 @@ function ReviewDetail({
           </div>
         )}
       </div>
+
+      {/* 함수별 상세 분석 (rich) — GCP review_issue 의 m3 행. 없으면 섹션 숨김(정직). */}
+      {review.rich_issues && review.rich_issues.length > 0 && (
+        <div data-testid="review-rich-section">
+          <h3 className="text-sm font-medium text-notion-text mb-2">
+            함수별 상세 분석 {review.rich_issues.length}건
+          </h3>
+          <div className="space-y-3">
+            {review.rich_issues.map((ri, i) => (
+              <div
+                key={i}
+                data-testid={`review-rich-${i}`}
+                className="bg-white border border-notion-border rounded-lg p-4"
+              >
+                {/* 상단: 함수명 · 분류(keyword) · 심각도 · 언어 */}
+                <div className="flex flex-wrap items-center gap-2 mb-2">
+                  {ri.name_of_function && (
+                    <span className="font-mono text-xs font-semibold text-notion-text bg-notion-bg-secondary border border-notion-border px-1.5 py-0.5 rounded">
+                      {ri.name_of_function}()
+                    </span>
+                  )}
+                  {ri.keyword && (
+                    <span className="text-xs text-notion-text-secondary border border-notion-border px-1.5 py-0.5 rounded">
+                      {ri.keyword}
+                    </span>
+                  )}
+                  {ri.severity && (
+                    <span
+                      className={`inline-block text-[11px] font-medium px-1.5 py-0.5 rounded border ${RICH_SEV_CLS[ri.severity] ?? RICH_SEV_CLS.low}`}
+                    >
+                      {ri.severity}
+                    </span>
+                  )}
+                  {ri.programming_language && (
+                    <span className="font-mono text-[11px] text-notion-text-secondary">
+                      {ri.programming_language}
+                      {ri.framework ? ` · ${ri.framework}` : ""}
+                    </span>
+                  )}
+                </div>
+
+                {/* 한줄설명(code_context) · 고칠 방향 */}
+                {ri.code_context && (
+                  <p className="text-sm text-notion-text break-words">
+                    {ri.code_context}
+                  </p>
+                )}
+                {ri.suggestion && (
+                  <p className="text-xs text-notion-text-secondary mt-1 break-words">
+                    💡 {ri.suggestion}
+                  </p>
+                )}
+
+                {/* 코드 조각 — 접기/펼치기 (길어도 레이아웃 안 깨짐) */}
+                {ri.code_snippet && (
+                  <details className="mt-2">
+                    <summary className="text-xs text-notion-text-secondary cursor-pointer select-none">
+                      코드 보기
+                    </summary>
+                    <pre className="mt-1 text-xs bg-notion-bg-secondary border border-notion-border rounded p-2 overflow-x-auto whitespace-pre-wrap break-words">
+                      {ri.code_snippet}
+                    </pre>
+                  </details>
+                )}
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
 
       {/* LLM 코멘트 본문 (마크다운 원문을 보존해 표시) */}
       {review.comment && (

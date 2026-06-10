@@ -13,6 +13,7 @@ from fastapi import APIRouter, BackgroundTasks, Header, HTTPException, Request, 
 from shared.config import get_settings
 from shared.contracts import (
     AnalysisContext,
+    DeveloperProfile,
     DocumentTriggerPayload,
     M0IngestRequest,
     M2AnalyzeRequest,
@@ -212,6 +213,7 @@ async def _process_pr_webhook(body: bytes, trace_id: str) -> None:
             commit_sha=commit_sha,
             context=AnalysisContext(),
             trace_id=trace_id,
+            developer=DeveloperProfile(id=author_login) if author_login else None,
         )
 
         # 결정적 라우팅: m2(static)+m2(security)+m3(tests)+m3(perf) → m3(review).

@@ -45,13 +45,26 @@ def _parse_framework(text: str) -> tuple[str, str]:
     return "", ""
 
 
+def _has_py_files(repo_path: str) -> bool:
+    """레포 루트에 .py 파일이 1개 이상 있으면 True (재귀 탐색 없음 — 루트 직접 자식만)."""
+    repo = Path(repo_path)
+    return any(repo.glob("*.py")) or any(repo.rglob("*.py"))
+
+
 def detect(repo_path: str) -> tuple[str, str, str]:
-    """(programming_language, framework, framework_version). 의존성 파일 없으면 모두 빈 값."""
+    """(programming_language, framework, framework_version).
+
+    의존성 파일(requirements.txt/pyproject.toml) 있으면 언어+프레임워크+버전 파싱.
+    없지만 .py 파일이 있으면 language="python" 폴백(사실), framework/version은 빈값(정직).
+    둘 다 없으면 모두 빈 값.
+    """
     text = _read_dependency_text(repo_path)
-    if text is None:
-        return "", "", ""
-    framework, version = _parse_framework(text)
-    return "python", framework, version
+    if text is not None:
+        framework, version = _parse_framework(text)
+        return "python", framework, version
+    if _has_py_files(repo_path):
+        return "python", "", ""
+    return "", "", ""
 
 
 @instrument("framework")

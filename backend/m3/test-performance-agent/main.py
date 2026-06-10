@@ -75,8 +75,8 @@ def run(dev3_input: Dev3Input, repo_path: str) -> list[AgentOutput]:
     test_issues = filter_issues(cov_issues + mf_issues + ec_issues, changed, repo_path)
     perf_issues = filter_issues(n1_issues + cx_issues + ml_issues, changed, repo_path)
 
-    # ── code_snippet(AST)·code_context(LLM) 채움 — 성능(PERF) 이슈만 (Dev4 요청) ──
-    # 테스트 이슈엔 채우지 않음: Dev4가 성능 분석에만 함수 소스/설명을 사용.
+    # ── code_snippet·name_of_function(AST=사실) — test·perf 모두. code_context(LLM)은 perf만 ──
+    code_context.augment_issues(test_issues, repo_path, with_llm=False)
     code_context.augment_issues(perf_issues, repo_path)
 
     # ── programming_language·framework·framework_version 채움 (레포 단위, 모든 이슈) ──

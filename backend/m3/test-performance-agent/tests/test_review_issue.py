@@ -199,11 +199,13 @@ class _FakeConn:
         return _FakeCursor(self.calls)
 
 
-def test_pg_insert_links_pr_via_github_pr_number():
-    """PG 경로: pull_request_id·user_id 를 pull_requests 에서 github_pr_number 로 링크.
+def test_pg_insert_links_pr_via_github_pr_number_and_repo():
+    """PG 경로: pull_request_id·user_id 를 pull_requests 에서 (github_pr_number + repo)로 링크.
 
-    m3는 내부 pull_request_id 를 모르지만, 아는 GitHub PR 번호로 pull_requests 행을
-    찾아 그 행의 id(→pull_request_id)·user_id 를 서브쿼리로 채운다(dev4 합의).
+    m3는 내부 pull_request_id 를 모르지만, 아는 GitHub PR 번호 + 레포 풀네임으로
+    pull_requests 행을 찾아 그 행의 id(→pull_request_id)·user_id 를 서브쿼리로 채운다.
+    ★ PR 번호는 레포마다 중복되므로(데모 #2, Mock-Test #2 동시 존재) repository_full_name
+       까지 매칭해야 정확히 1행 = 오매칭 방지.
     """
     conn = _FakeConn()
     issue = Issue(
@@ -214,7 +216,10 @@ def test_pg_insert_links_pr_via_github_pr_number():
     out = AgentOutput(
         task_id="t", scan_id=3, pr_id="P", agent="performance", issues=[issue],
     )
-    p.persist_review_issue_pg([out], github_pr_number=42, conn=conn)
+    p.persist_review_issue_pg(
+        [out], github_pr_number=42,
+        repository_full_name="kskt1234-netizen/-dev3-demo", conn=conn,
+    )
 
     inserts = [(sql, prm) for sql, prm in conn.calls
                if sql.strip().upper().startswith("INSERT")]
@@ -226,23 +231,87 @@ def test_pg_insert_links_pr_via_github_pr_number():
     assert "user_id" in low
     assert "pull_requests" in low
     assert "github_pr_number" in low
+    assert "repository_full_name" in low   # ★ 레포까지 매칭(오매칭 방지)
     # 값은 파라미터 바인딩만(%s) — f-string SQL 금지
     assert "%s" in sql
     assert "42" not in sql                  # PR 번호도 바인딩(SQL에 안 박힘)
     assert "load_cart_items" not in sql
     # id·created_at 은 여전히 DB 기본값(직접 안 넣음)
     assert "created_at" not in low
-    # severity 매핑(Major→high) + PR 번호가 파라미터에 들어감
+    # severity 매핑(Major→high) + PR 번호 + 레포가 파라미터에 들어감
     assert "high" in params
     assert "Major" not in params
     assert 42 in params
+    assert "kskt1234-netizen/-dev3-demo" in params
     assert "load_cart_items" in params
+
+
+# ════════════════════════════════════════════════════════════════════════
+# 8) get_review_issues_pg — 리뷰 페이지용 rich 행 조회 (5단계 프론트 보강)
+#    그 PR의 m3 행(함수명·keyword·code_snippet·code_context…)을 dict 목록으로.
+# ════════════════════════════════════════════════════════════════════════
+
+class _FetchCursor:
+    def __init__(self, rows, log):
+        self._rows = rows
+        self.log = log
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *a):
+        return False
+
+    def execute(self, sql, params=None):
+        self.log.append((sql, params))
+
+    def fetchall(self):
+        return self._rows
+
+
+class _FetchConn:
+    def __init__(self, rows):
+        self._rows = rows
+        self.log = []
+
+    def cursor(self):
+        return _FetchCursor(self._rows, self.log)
+
+
+def test_get_review_issues_pg_returns_dicts():
+    """그 PR의 rich 행을 dict 목록으로 — 컬럼 매핑 + 파라미터 바인딩(PR번호+레포)."""
+    rows = [("performance", "high", "N+1 쿼리", "루프 쿼리", "장바구니 로드 함수",
+             "def load(): ...", "selectinload 쓰세요", "load_cart_items",
+             "python", "")]
+    conn = _FetchConn(rows)
+    out = p.get_review_issues_pg(3, "o/r", conn=conn)
+    assert out == [{
+        "agent": "performance", "severity": "high", "keyword": "N+1 쿼리",
+        "sub_category": "루프 쿼리", "code_context": "장바구니 로드 함수",
+        "code_snippet": "def load(): ...", "suggestion": "selectinload 쓰세요",
+        "name_of_function": "load_cart_items",
+        "programming_language": "python", "framework": "",
+    }]
+    sql, params = conn.log[0]
+    low = sql.lower()
+    assert "review_issue" in low and "pull_requests" in low
+    assert params == (3, "o/r")        # 값은 바인딩만 — SQL에 안 박힘
+    assert "o/r" not in sql
+
+
+def test_get_review_issues_pg_failure_returns_empty():
+    """DB 미가용/예외 → 빈 목록(정직), 예외 안 전파."""
+    class _Boom:
+        def cursor(self):
+            raise ConnectionError("db down")
+
+    assert p.get_review_issues_pg(3, "o/r", conn=_Boom()) == []
 
 
 def test_pg_is_idempotent_delete_then_insert():
     """같은 PR·agent 를 다시 적재해도 중복 행이 안 쌓이게 — 먼저 지우고(DELETE) 넣음.
 
-    review_issue 엔 dedup 키가 없으므로(공용 테이블), 그 PR·그 agent 의 기존 행을
+    review_issue 엔 dedup 키가 없으므로(공용 테이블), 그 PR·레포·agent 의 기존 행을
     지운 뒤 INSERT 한다(scan_issues 의 DELETE WHERE scan_id,agent 패턴과 동일).
     """
     conn = _FakeConn()
@@ -251,7 +320,10 @@ def test_pg_is_idempotent_delete_then_insert():
     out = AgentOutput(
         task_id="t", scan_id=1, pr_id="P", agent="performance", issues=[issue],
     )
-    p.persist_review_issue_pg([out], github_pr_number=42, conn=conn)
+    p.persist_review_issue_pg(
+        [out], github_pr_number=42,
+        repository_full_name="kskt1234-netizen/-dev3-demo", conn=conn,
+    )
 
     kinds = [sql.strip().split()[0].upper() for sql, _ in conn.calls]
     assert "DELETE" in kinds
@@ -263,6 +335,8 @@ def test_pg_is_idempotent_delete_then_insert():
     low = del_sql.lower()
     assert "review_issue" in low
     assert "github_pr_number" in low      # 그 PR 것만 지움
+    assert "repository_full_name" in low  # ★ 그 레포 것만 지움(다른 레포 안 건드림)
     assert "agent" in low                 # 그 agent 것만
     assert "performance" in del_params
     assert 42 in del_params
+    assert "kskt1234-netizen/-dev3-demo" in del_params

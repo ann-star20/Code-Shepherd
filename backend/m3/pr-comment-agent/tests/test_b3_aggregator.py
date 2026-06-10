@@ -97,11 +97,20 @@ class TestVerdictLogic:
         assert verdict == "rework"
         assert summary.major == 3
 
-    def test_major_2_minor_5_returns_lgtm(self):
-        """Major 2 + Minor 5 → lgtm (Major 임계값 미달)."""
+    def test_major_2_returns_rework(self):
+        """F3 양성: Major 2건(예: N+1 + O(n³)) 실결함 PR → rework (임계 2)."""
         out = _make_output(issues=[
             _issue("Major", "a.py", 1, "M1"),
             _issue("Major", "a.py", 2, "M2"),
+        ])
+        _, verdict, summary = aggregate([out])
+        assert verdict == "rework"
+        assert summary.major == 2
+
+    def test_major_1_minor_5_returns_lgtm(self):
+        """F3 음성(과민 방지): Major 1 + Minor 5 → 여전히 lgtm."""
+        out = _make_output(issues=[
+            _issue("Major", "a.py", 1, "M1"),
             _issue("Minor", "b.py", 1, "N1"),
             _issue("Minor", "b.py", 2, "N2"),
             _issue("Minor", "b.py", 3, "N3"),
@@ -110,7 +119,7 @@ class TestVerdictLogic:
         ])
         _, verdict, summary = aggregate([out])
         assert verdict == "lgtm"
-        assert summary.major == 2
+        assert summary.major == 1
         assert summary.minor == 5
 
     def test_critical_beats_major_threshold(self):

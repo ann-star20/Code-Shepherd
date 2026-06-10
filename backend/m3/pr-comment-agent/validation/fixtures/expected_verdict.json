@@ -1,5 +1,5 @@
 {
-  "_note": "sample_outputs.json 4개 AgentOutput 집계 결과 — Major 3개가 MAJOR_REWORK_THRESHOLD(3)와 일치 → rework",
+  "_note": "sample_outputs.json 4개 AgentOutput 집계 결과 — Major 3개 ≥ MAJOR_REWORK_THRESHOLD(2, F3 보정) → rework",
   "verdict": "rework",
   "issue_count": {
     "critical": 0,

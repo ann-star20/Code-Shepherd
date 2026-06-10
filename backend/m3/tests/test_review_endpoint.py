@@ -371,3 +371,195 @@ async def test_review_no_metrics_passes_empty_to_refine(client, spies):
     resp = await client.post("/review", json=payload)
     assert resp.status_code == 200
     assert spies["refine"][0][3] == {}
+
+
+# ════════════════════════════════════════════════════════════════════
+# GCP review_issue 적재 — _save_rich_outputs_pg 단위 테스트
+# GCP 연결 없이 persist_review_issue_pg seam 을 mock 해 적재 경로 검증.
+# ════════════════════════════════════════════════════════════════════
+
+class _FakeIssue:
+    def __init__(self, keyword="TEST-001"):
+        self.severity = "Major"
+        self.suggestion = "고쳐"
+        self.keyword = keyword
+        self.sub_category = "coverage"
+        self.code_context = ""
+        self.code_snippet = ""
+        self.programming_language = "python"
+        self.framework = ""
+        self.framework_version = ""
+        self.name_of_function = "test_func"
+        self.github_id = ""
+
+
+class _FakeOutput:
+    def __init__(self, agent, issues=None):
+        self.agent = agent
+        self.issues = issues or [_FakeIssue()]
+
+
+def test_repo_full_name_from_clone_url_https():
+    """https clone_url → owner/repo 파싱(.git 제거). pull_requests.repository_full_name 매칭용."""
+    assert appmain._repo_full_name_from_clone_url(
+        "https://github.com/kskt1234-netizen/-dev3-demo.git"
+    ) == "kskt1234-netizen/-dev3-demo"
+
+
+def test_repo_full_name_from_clone_url_no_git_suffix():
+    """.git 없는 URL 도 파싱."""
+    assert appmain._repo_full_name_from_clone_url(
+        "https://github.com/IsabelKwon/Mock-Test"
+    ) == "IsabelKwon/Mock-Test"
+
+
+def test_repo_full_name_from_clone_url_empty_returns_empty():
+    """빈/이상 URL → 빈 문자열(가짜 매칭 금지)."""
+    assert appmain._repo_full_name_from_clone_url("") == ""
+    assert appmain._repo_full_name_from_clone_url(None) == ""
+
+
+def test_save_rich_outputs_pg_routes_to_persist():
+    """rich AgentOutput → persist_review_issue_pg 가 (pr_number, repo, agent)로 호출됨.
+    pr_id='42'(문자열)→int(42), clone_url→repo 파싱, 해당 agent 만 필터링."""
+    import sys as _sys
+    calls = []
+
+    class _FakePersist:
+        @staticmethod
+        def persist_review_issue_pg(outputs, github_pr_number,
+                                    repository_full_name, conn=None):
+            calls.append((list(outputs), github_pr_number, repository_full_name))
+
+    _sys.modules["persist"] = _FakePersist
+    try:
+        appmain._save_rich_outputs_pg(
+            [_FakeOutput("test_verification"), _FakeOutput("performance")],
+            "42",
+            "https://github.com/kskt1234-netizen/-dev3-demo.git",
+            "test_verification",
+        )
+    finally:
+        _sys.modules.pop("persist", None)
+
+    assert len(calls) == 1
+    outputs_passed, pr_number_passed, repo_passed = calls[0]
+    assert pr_number_passed == 42
+    assert repo_passed == "kskt1234-netizen/-dev3-demo"  # ★ 레포까지 전달(오매칭 방지)
+    assert len(outputs_passed) == 1
+    assert outputs_passed[0].agent == "test_verification"
+
+
+def test_save_rich_outputs_pg_skips_non_int_pr_id():
+    """pr_id 비정수(e.g. 'PR-4') → skip, 예외 없음."""
+    appmain._save_rich_outputs_pg(
+        [_FakeOutput("performance")], "PR-4",
+        "https://github.com/o/r.git", "performance",
+    )
+
+
+# ════════════════════════════════════════════════════════════════════
+# 5단계 — 리뷰 페이지 정보 밀도: GET /review 가 rich_issues(함수명·코드조각…)와
+# verdict_reason(판정 근거 한 줄)을 함께 반환한다. DB 는 seam 으로 고립.
+# ════════════════════════════════════════════════════════════════════
+
+_RICH = [{
+    "agent": "performance", "severity": "high", "keyword": "N+1 쿼리",
+    "sub_category": "루프 쿼리", "code_context": "장바구니 로드 함수",
+    "code_snippet": "def load_cart_items(): ...", "suggestion": "selectinload",
+    "name_of_function": "load_cart_items",
+    "programming_language": "python", "framework": "",
+}]
+
+
+@pytest.mark.asyncio
+async def test_get_review_includes_rich_issues_and_reason(client, monkeypatch):
+    """GET /review → rich_issues(GCP rich 행) + verdict_reason(근거 한 줄) 포함."""
+    stored = {"verdict": "rework", "comment": "본문",
+              "issues": [{"rule_id": "PERF-002", "severity": "Major"},
+                         {"rule_id": "TEST-001", "severity": "Major"}]}
+    monkeypatch.setattr(appmain, "_get_stored_review", lambda o, r, n: stored)
+    monkeypatch.setattr(appmain, "_get_rich_issues", lambda o, r, n: _RICH)
+    resp = await client.get("/review/octocat/hello/5")
+    assert resp.status_code == 200
+    data = resp.json()
+    assert data["rich_issues"] == _RICH
+    assert "Major 2건" in data["verdict_reason"]   # 근거: Major 카운트 + 임계
+    assert "수정" in data["verdict_reason"]
+
+
+@pytest.mark.asyncio
+async def test_get_review_missing_has_empty_rich_and_reason(client, monkeypatch):
+    """저장 없음 → rich_issues 빈 배열 + verdict_reason 빈 문자열 (가짜 금지)."""
+    monkeypatch.setattr(appmain, "_get_stored_review", lambda o, r, n: None)
+    resp = await client.get("/review/octocat/hello/404")
+    data = resp.json()
+    assert data["rich_issues"] == []
+    assert data["verdict_reason"] == ""
+
+
+def test_verdict_reason_escalate():
+    r = appmain._verdict_reason("escalate", [{"severity": "Critical"}])
+    assert "Critical 1건" in r and "시니어" in r
+
+
+def test_verdict_reason_lgtm():
+    r = appmain._verdict_reason(
+        "lgtm", [{"severity": "Minor"}, {"severity": "Minor"}])
+    assert "통과" in r
+
+
+def test_get_rich_issues_routes_to_persist():
+    """seam: persist.get_review_issues_pg 에 (pr번호, 'owner/repo')로 위임."""
+    import sys as _sys
+    calls = []
+
+    class _Fake:
+        @staticmethod
+        def get_review_issues_pg(pr, repo, conn=None):
+            calls.append((pr, repo))
+            return [{"agent": "performance"}]
+
+    _sys.modules["persist"] = _Fake
+    try:
+        out = appmain._get_rich_issues("octocat", "hello", 5)
+    finally:
+        _sys.modules.pop("persist", None)
+    assert calls == [(5, "octocat/hello")]
+    assert out == [{"agent": "performance"}]
+
+
+def test_get_rich_issues_failure_returns_empty():
+    """DB/import 실패 → 빈 목록(정직), 예외 안 전파."""
+    import sys as _sys
+
+    class _Broken:
+        @staticmethod
+        def get_review_issues_pg(pr, repo, conn=None):
+            raise RuntimeError("db down")
+
+    _sys.modules["persist"] = _Broken
+    try:
+        assert appmain._get_rich_issues("o", "r", 5) == []
+    finally:
+        _sys.modules.pop("persist", None)
+
+
+def test_save_rich_outputs_pg_pg_failure_does_not_raise():
+    """pg 적재 실패해도 예외 안 전파(로그만)."""
+    import sys as _sys
+
+    class _BrokenPersist:
+        @staticmethod
+        def persist_review_issue_pg(outputs, github_pr_number,
+                                    repository_full_name, conn=None):
+            raise RuntimeError("DB 연결 실패")
+
+    _sys.modules["persist"] = _BrokenPersist
+    try:
+        appmain._save_rich_outputs_pg(
+            [_FakeOutput("performance")], "7",
+            "https://github.com/o/r.git", "performance",
+        )
+    finally:
+        _sys.modules.pop("persist", None)
