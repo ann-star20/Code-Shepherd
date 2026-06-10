@@ -23,9 +23,10 @@ CREATE TABLE IF NOT EXISTS documents (
     original_url      TEXT NOT NULL,
     content_hash      CHAR(8) NOT NULL,
     etag              TEXT,
-    lang              TEXT,
-    framework         TEXT,
-    version           TEXT,
+    doc_lang          TEXT, -- 문서 원문 언어
+    lang              TEXT, -- 프로그램언어
+    framework         TEXT, -- 프레임워크
+    version           TEXT, -- 프레임워크 버전
     infer_confidence  FLOAT,                              -- 메타 추론 신뢰도 지표
     is_deprecated     BOOLEAN NOT NULL DEFAULT false,     -- 문서 소프트 딜리트 플래그
     state             TEXT NOT NULL DEFAULT 'PENDING',
@@ -34,6 +35,10 @@ CREATE TABLE IF NOT EXISTS documents (
     CONSTRAINT documents_state_check
         CHECK (state IN ('PENDING','CRAWLING','EXTRACTING','EXTRACTED','COMMITTED','FAILED'))
 );
+
+-- ── 2.1 영속 볼륨 마이그레이션: 기존 documents 테이블에 신규 컬럼 보강
+ALTER TABLE documents ADD COLUMN IF NOT EXISTS etag     TEXT;
+ALTER TABLE documents ADD COLUMN IF NOT EXISTS doc_lang TEXT;
 
 -- ── 3. 개념 마스터 테이블 (하이브리드 벡터 통합 스펙 보전)
 CREATE TABLE IF NOT EXISTS concepts (
@@ -100,3 +105,29 @@ INSERT INTO domain_registry (name, label_ko, description, color_hex) VALUES
     ('security',    '보안',    '보안 취약점 및 방어 메커니즘', '#ef4444'),
     ('performance', '성능',    '성능 안티패턴 및 최적화 기법', '#3b82f6')
 ON CONFLICT (name) DO NOTHING;
+
+CREATE TABLE IF NOT EXISTS framework_metadata (
+    framework        TEXT PRIMARY KEY,              -- 'NestJS', 'Kubernetes', 'Docker' (Canonical Key)
+    url_patterns     TEXT[] NOT NULL,               -- 🎯 [★추가] 정규식 매칭용 문자열 배열
+    supported_langs  TEXT[] NOT NULL,               -- ['typescript', 'javascript'] 다중 언어 배열
+    default_lang     TEXT NOT NULL,                 -- 우선순위 Fallback 기본 언어
+    created_at       TIMESTAMPTZ DEFAULT now()
+);
+
+-- ── 🎯 웹 프레임워크 및 클라우드 인프라 정규식 대통합 시드 적재
+INSERT INTO framework_metadata (framework, url_patterns, supported_langs, default_lang) VALUES
+('NestJS',      ARRAY['nestjs\.com', 'docs\.nestjs\.com'],             ARRAY['typescript', 'javascript'], 'typescript'),
+('Express',     ARRAY['expressjs\.com'],                               ARRAY['javascript', 'typescript'], 'javascript'),
+('Spring',      ARRAY['spring\.io', 'docs\.spring\.io'],               ARRAY['java', 'kotlin'],           'java'),
+('Django',      ARRAY['djangoproject\.com'],                           ARRAY['python'],                   'python'),
+('FastAPI',     ARRAY['fastapi\.tiangolo\.com'],                       ARRAY['python'],                   'python'),
+('ASP.NET Core',ARRAY['microsoft\.com/net', 'learn\.microsoft\.com'],  ARRAY['c#'],                       'c#'),
+('Next.js',     ARRAY['nextjs\.org', 'nextjs\.com'],                   ARRAY['typescript', 'javascript'], 'typescript'),
+('Gin',         ARRAY['gin-gonic\.com', 'github\.com/gin-gonic'],      ARRAY['go'],                       'go'),
+('Docker',      ARRAY['docker\.com', 'docs\.docker\.com', 'dockerfile'],ARRAY['dockerfile'],               'dockerfile'),
+('Kubernetes',  ARRAY['kubernetes\.io', 'k8s\.io', 'k8s'],             ARRAY['yaml', 'json'],             'yaml'),
+('Terraform',   ARRAY['terraform\.io', 'hashicorp\.com/terraform'],    ARRAY['hcl'],                      'hcl')
+ON CONFLICT (framework) DO UPDATE 
+SET url_patterns = EXCLUDED.url_patterns,
+    supported_langs = EXCLUDED.supported_langs, 
+    default_lang = EXCLUDED.default_lang;
