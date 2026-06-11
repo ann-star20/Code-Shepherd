@@ -36,6 +36,8 @@ docker compose exec backend python scripts/seed_postgres.py && docker compose ex
 docker compose exec postgres psql -U postgres -c "UPDATE documents SET state='PENDING' WHERE doc_id='EXT_https---docs-nestjs-com-security-csrf_4a05f756'"
 docker compose exec postgres psql -U postgres -c "UPDATE documents SET state='PENDING' WHERE doc_id='EXT_https---docs-djangoproject-com-en-6-0-topics-security_32450f22'"
 docker compose exec postgres psql -U postgres -c "UPDATE documents SET state='PENDING' WHERE doc_id='EXT_https---docs-nestjs-com-security-csrf_4a05f756'"
+docker compose exec postgres psql -U postgres -c "UPDATE documents SET state='PENDING' WHERE doc_id='EXT_https---react-dev-reference-react-dom-preload_5c6ba4d2'"
+docker compose exec postgres psql -U postgres -c "UPDATE documents SET state='PENDING' WHERE doc_id='EXT_https---react-dev-reference-react-dom-preloadModule_228f692f'"
 https://docs.nestjs.com/security/csrf
 # 1. Neo4j 볼륨 내 오염된 데이터 및 인덱스 잔재 영구 격리 삭제 후 재가동
 docker compose down -v
@@ -61,3 +63,29 @@ docker compose up --build --force-recreate
 docker compose down -v frontend & docker compose build --no-cache frontend;
 docker compose up
 https://docs.nestjs.com/security/csrf
+
+
+# 1. 실행 중인 celery 워커 컨테이너의 ID 또는 이름을 확인합니다.
+docker ps
+
+# 2. Celery 컨테이너 내부 쉘로 진입합니다.
+docker exec -it <celery_container_name> sh
+docker exec -it c98fd6897901 sh
+# 3. 컨테이너 내부에서 API 키 환경변수를 출력해봅니다.
+echo $GEMINI_API_KEY
+$GEMINI_API_KEY=v
+
+docker compose down backend celery_worker-1
+docker compose up -d --build --force-recreate backend celery_worker-1
+
+# 1. backend와 celery_worker 컨테이너만 지정해서 완전히 중지 및 삭제
+docker compose stop backend celery_worker
+docker compose rm -f backend celery_worker
+
+# 2. 새 .env 설정을 반영하여 두 컨테이너만 강제로 다시 만들어 백그라운드로 실행
+docker compose up -d --force-recreate backend celery_worker
+
+
+# 기본 빌드
+docker compose up --build frontend && docker compose restart celery_worker
+docker compose up frontend

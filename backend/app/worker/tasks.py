@@ -109,7 +109,15 @@ async def _do_crawl(url: str) -> tuple:
 
 
 # ── 2단계: Extractor ──────────────────────────────────────────────────────────
-
+# 수정된 데코레이터 예시
+@celery_app.task(
+    name="pipeline.extractor", 
+    bind=True, 
+    max_retries=2,
+    autoretry_for=(Exception,), # 또는 특정 에러 클래스 (ServerError 등)
+    retry_backoff=True,         # 재시도 간격을 점점 늘림 (60초 -> 120초 -> ...)
+    retry_backoff_max=600       # 최대 10분까지만 증가
+)
 @celery_app.task(name="pipeline.extractor", bind=True, max_retries=3)
 def extract_task(self, session_id: str, doc_id: str, chunks: list[str]):
     """LLM 추출 → staging_concepts DRAFT / DOMAIN_PENDING 적재.
