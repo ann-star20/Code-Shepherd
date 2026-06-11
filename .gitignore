@@ -87,3 +87,4 @@ backend/m4/data/kms/
 # 로컬 전용 파일
 .claude/settings.local.json
 backend/m2/pj3_data/
+backend/m2/sub2_new/.claude/settings.local.json
