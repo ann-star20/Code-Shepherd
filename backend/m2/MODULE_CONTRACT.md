@@ -277,6 +277,45 @@ Frontend  ── m3 GET /review/{owner}/{repo}/{pr} 하나로 m2 이슈 포함 �
 
 ---
 
+## GLOBAL_AGENT_RULE 준수 매핑
+
+> 팀 공통 강제 규칙 [`docs/GLOBAL_AGENT_RULE.md`](../../docs/GLOBAL_AGENT_RULE.md) 대비
+> 현재 m2 `app/` 스텁의 준수 현황. **PR 머지 전 이 표로 점검한다.**
+> (GLOBAL_AGENT_RULE §532 체크리스트 13항을 m2 기준으로 매핑.)
+
+| 규칙 | 상태 | m2 근거 / 비고 |
+|------|------|----------------|
+| §1 Agent/Tool 분류 | ✅ | m2 분석부는 LLM·반복·분기 없는 **결정적 Tool** → StateGraph 불요(정당) |
+| §2 Clean Architecture | ✅ | main(Presentation) / analyzer·contract(Domain+Tool) 분리 |
+| §3 PlatformState 공통 필드 | N/A | REST DTO 방식, LangGraph State 미사용 (설계안과의 차이 참조) |
+| §4 Output Contract 10필드 | ✅ | AgentResult가 task_id·trace_id·agent_name·module_id·status·issues·summary·validation_result·execution_ms·next_agent 전부 포함 |
+| §5 Validation 3단계 | ⚠️ 부분 | 1차 Pydantic·2차 business rule(validate_result) 구현, 3차 품질평가 Agent 없음(LLM 부재로 N/A) |
+| §6-1 Pydantic 모델 필수 | ✅ | 입출력 전부 BaseModel |
+| §6-3 Enum 사용 의무 | ⚠️ 부분 | 현재 `Literal` 사용 (Enum 아님 — 통합 시 공통 Enum 정렬 검토) |
+| §6-4 strict=True | ❌ | 미적용 (FastAPI 기본 검증 의존) |
+| §7 LangSmith / AgentHarness | ❌ 보류 | sub_trace_id는 생성하나 LangSmith 미전송. 아래 보류 방침 참조 |
+| §8 테스트(정상/실패/경계/타임아웃) | ✅ | test_contract·test_contract_model에 커버. HITL 케이스는 m2에 HITL 없어 N/A |
+| §9 HITL | N/A | m2는 분석 종단, HITL 판단 없음 (`status=hitl_pending`은 스키마만 보유) |
+| §10 Retry | ✅ | 도구 부재/타임아웃 graceful skip, 전체 예외 make_timeout_result (retry_rule 절 참조) |
+| §11 agent_traces 로깅 | ❌ 보류 | app/ 스텁 DB 미연결. 아래 보류 방침 참조 |
+| §12 Error Handling(에러 미삼킴) | ✅ | 전체 예외를 error_message에 기록 후 fail 반환 (삼키지 않음) |
+
+### 보류 항목 처리 방침 (통합 주간 대상)
+
+미적용(❌) 3건은 **app/ 스텁이 무상태 분석 전용**이라 발생하며, 의도적 보류다.
+누락이 아니라 통합 시점에 적용한다.
+
+| 보류 규칙 | 보류 사유 | 통합 시 적용 계획 |
+|-----------|-----------|-------------------|
+| §7 LangSmith/AgentHarness | analyze()가 LangGraph 노드가 아닌 sync 함수(to_thread)라 trace 미포착 | `_shared/shared/harness.py`의 AgentHarness로 래핑 + `LANGCHAIN_PROJECT=module2-{githubId}` |
+| §11 agent_traces 로깅 | app/ 스텁에 DB 세션 없음 (sub2_new에만 store 존재) | AgentHarness 도입 시 자동 기록(§11 11필드). DB 연결은 통합 환경에서 |
+| §6-4 strict=True | 현재 입력 신뢰 경계가 m1뿐이라 영향 적음 | 공통 Enum/strict 정책 합의 후 일괄 적용 |
+
+> 이 표는 **m2 내부 문서**다. 공통 `docs/GLOBAL_AGENT_RULE.md`는 수정하지 않는다.
+> m2 코드 변경 시 위 상태를 갱신하여 준수 현황을 항상 최신으로 유지한다.
+
+---
+
 ## 계약 변경 절차
 
 1. 본 문서 + `backend/_shared/shared/contracts.py`의 m2 DTO를 함께 수정한다.
