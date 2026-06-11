@@ -10,7 +10,7 @@
     "aliases": ["N+1 Query Problem", "NPlusOneQuery", "NPlusOneQueryProblem", "NPlus1Query", "NPlus1QueryProblem", "NPlusOneQueryAntipattern", "NPlus1QueryAntipattern", "LazyLoadingLoop", "LazyLoadingLoopAntipattern", "LazyLoadingAntipattern", "LazyLoadingProblem", "N+1 쿼리 문제", "Lazy Loading Loop"],
     "root_cause": "lazy_loading_in_iteration_loop",
     "affected_components": ["orm_layer", "database_query_layer", "api_list_endpoint"],
-    "security_mechanism": [
+    "mechanism": [
       {
         "mechanism_name": "eager_loading",
         "code_examples": [
@@ -59,7 +59,7 @@
     "aliases": ["Missing Database Index", "Full Table Scan", "MissingDatabaseIndex", "MissingIndexAntipattern", "MissingDatabaseIndexAntipattern", "FullTableScan", "FullTableScanAntipattern", "SequentialScan", "SeqScan", "DatabaseIndexMissing", "누락된 인덱스", "Seq Scan"],
     "root_cause": "unindexed_frequently_filtered_column",
     "affected_components": ["database_query_layer", "api_list_endpoint", "reporting_layer"],
-    "security_mechanism": [
+    "mechanism": [
       {
         "mechanism_name": "composite_index",
         "code_examples": [
@@ -108,7 +108,7 @@
     "aliases": ["Connection Pool Exhaustion", "DB Connection Leak", "ConnectionPoolExhaustion", "DbConnectionLeak", "ConnectionLeak", "PoolExhaustion", "ConnectionPoolLeakAntipattern", "ConnectionPoolExhaustionAntipattern", "DbConnectionLeakAntipattern", "ConnectionLeakAntipattern", "커넥션 풀 고갈"],
     "root_cause": "connection_not_returned_to_pool_or_pool_undersized",
     "affected_components": ["database_connection_pool", "http_client_pool", "api_gateway"],
-    "security_mechanism": [
+    "mechanism": [
       {
         "mechanism_name": "connection_pool_sizing",
         "code_examples": [
@@ -153,7 +153,7 @@
     "aliases": ["Memory Leak", "Heap Growth", "MemoryLeakAntipattern", "HeapGrowth", "HeapGrowthAntipattern", "OutOfMemory", "OutOfMemoryError", "OomCrash", "OomError", "메모리 누수", "OOM"],
     "root_cause": "object_reference_retained_preventing_gc",
     "affected_components": ["long_running_worker", "cache_layer", "event_listener_registry"],
-    "security_mechanism": [
+    "mechanism": [
       {
         "mechanism_name": "bounded_cache_eviction",
         "code_examples": [

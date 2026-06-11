@@ -1191,7 +1191,7 @@ export function MainPage() {
               <div className="flex items-center justify-between mb-4">
                 <div>
                   <h3 className="font-serif text-lg font-bold text-stone-900 flex items-center space-x-2">
-                    <span>지식 그래프 가시화 토폴로지 (Neo4j 실시간 연동)</span>
+                    <span>지식 그래프 토폴로지 (Neo4j 실시간 연동)</span>
                     {showDraft && <span className="px-2 py-0.5 text-xs font-bold bg-amber-100 text-amber-800 rounded-full animate-pulse">DRAFT 가상 뷰어 가동 중</span>}
                   </h3>
                   <p className="text-sm text-stone-400 mt-0.5">노드를 클릭하면 하단 인스펙터 패널에서 속성 정보와 대응 설정값을 확인할 수 있습니다.</p>
@@ -1401,7 +1401,7 @@ export function MainPage() {
 
               <div className="grid grid-cols-1 md:grid-cols-12 gap-6">
                 {/* 목록 */}
-                <div className="md:col-span-4 border-r border-stone-100 pr-4 max-h-[300px] overflow-y-auto space-y-2">
+                <div className="md:col-span-4 border-r border-stone-100 pr-4 max-h-[700px] overflow-y-auto space-y-2">
                   {filteredConcepts.map((c) => {
                     const isSelected = selectedConcept?.name === c.name;
                     return (

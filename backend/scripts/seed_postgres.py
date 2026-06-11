@@ -73,15 +73,23 @@ async def _upsert_concepts(conn: asyncpg.Connection, concepts: list[dict]) -> in
         # 🎯 owasp_category ➔ owasp_id 명칭 불일치 예외 케이스 방어벽 조립
         owasp = c.get("owasp_id") or c.get("owasp_category")
 
+        # 🎯 기존 행의 누적 aliases 조회 — name_vector 재계산 시 파이프라인이
+        # centroid shifting으로 확장한 alias 풀을 보존 (재시드 회귀 방지)
+        existing = await conn.fetchrow(
+            "SELECT aliases FROM concepts WHERE concept_name = $1", c["concept_name"]
+        )
+        existing_aliases: list[str] = list(existing["aliases"]) if existing and existing["aliases"] else []
+        seed_aliases: list[str] = c.get("aliases", [])
+        merged_aliases = list(dict.fromkeys(existing_aliases + seed_aliases))
+
         # 🎯 [BGE-M3 로컬 추론 및 L2 정규화 직렬화 연동부]
         name_vec_str: str | None = None
         desc_vec_str: str | None = None
-        
-        if _embedder is not None:
-            aliases: list[str] = c.get("aliases", [])
-            name_corpus = " ".join([c["concept_name"]] + (aliases if aliases else []))
 
-            # 1) 이름 + 동의어 융합형 키워드 풀 컨텍스트 임베딩 연산 (1024차원)
+        if _embedder is not None:
+            name_corpus = " ".join([c["concept_name"]] + merged_aliases)
+
+            # 1) 이름 + 동의어(기존 누적분 포함) 융합형 키워드 풀 컨텍스트 임베딩 연산 (1024차원)
             name_vec_str = _vec_str(_embedder.get_embedding(name_corpus))
             
             # 2) 한국어 개념 요약 설명문 시맨틱 임베딩 연산 (1024차원)
@@ -105,6 +113,9 @@ async def _upsert_concepts(conn: asyncpg.Connection, concepts: list[dict]) -> in
                 aliases        = (SELECT array(
                                     SELECT DISTINCT unnest(COALESCE(concepts.aliases, '{}') || COALESCE(EXCLUDED.aliases, '{}'))
                                   )),
+                concept_type   = COALESCE(EXCLUDED.concept_type, concepts.concept_type),
+                cwe_id         = COALESCE(EXCLUDED.cwe_id, concepts.cwe_id),
+                owasp_id       = COALESCE(EXCLUDED.owasp_id, concepts.owasp_id),
                 severity       = EXCLUDED.severity,
                 description_ko = EXCLUDED.description_ko,
                 root_cause     = EXCLUDED.root_cause,
@@ -120,7 +131,7 @@ async def _upsert_concepts(conn: asyncpg.Connection, concepts: list[dict]) -> in
             severity,
             c.get("description_ko", ""),
             c.get("root_cause", ""),
-            c.get("aliases", []),
+            seed_aliases,
             name_vec_str,
             desc_vec_str,
         )

@@ -72,10 +72,11 @@ class GraphWriterService:
         pg_written = False
 
         if result.action == MergeAction.MERGE:
-            # Centroid Shifting은 hybrid_resolve 내부에서 완료됨.
-            # Mechanism/CodeExample은 별도로 target 노드에 병합해야 함.
-            if concept.mechanisms and result.target:
-                await self._repo.merge_mechanisms(concept, result.target)
+            # Centroid Shifting + PG enrichment은 hybrid_resolve._do_merge에서 완료됨.
+            # 4-레이어 전체(domains/labels/mechanisms/code_examples/root_cause/
+            # affected_components/properties/doc_id)를 target 노드에 적용.
+            if result.target:
+                await self._repo.merge_concept_into(concept, result.target)
             log.info(
                 "[gw] MERGE '%s' → '%s' (score=%.4f)",
                 result.incoming_name, result.target, result.score,
@@ -112,9 +113,10 @@ class GraphWriterService:
                 concept, resolve_result.target, in_name_vec,
                 self._pg, self._driver, self._emb,
             )
-            # Mechanism/CodeExample을 target 노드에 병합
-            if concept.mechanisms and resolve_result.target:
-                await self._repo.merge_mechanisms(concept, resolve_result.target)
+            # 4-레이어 전체(domains/labels/mechanisms/code_examples/root_cause/
+            # affected_components/properties/doc_id)를 target 노드에 적용.
+            if resolve_result.target:
+                await self._repo.merge_concept_into(concept, resolve_result.target)
             log.info(
                 "[gw] MERGE(pre) '%s' → '%s' (score=%.4f)",
                 resolve_result.incoming_name, resolve_result.target, resolve_result.score,

@@ -64,14 +64,18 @@ class _FakeMinimalPgPool:
 
 
 class _FakeNeo4jRepo:
-    """Neo4jConceptRepo 더미 — merge_concept 호출 기록."""
+    """Neo4jConceptRepo 더미 — merge_concept/merge_concept_into 호출 기록."""
 
     def __init__(self) -> None:
         self.merge_calls: list[str] = []
+        self.merge_into_calls: list[tuple[str, str]] = []
 
     async def merge_concept(self, concept: ConceptExtractionSchema) -> str:
         self.merge_calls.append(concept.concept_name)
         return concept.concept_name
+
+    async def merge_concept_into(self, concept: ConceptExtractionSchema, master_name: str) -> None:
+        self.merge_into_calls.append((concept.concept_name, master_name))
 
     async def find_master_by_alias(self, alias: str) -> str | None:
         return None
@@ -188,7 +192,7 @@ class TestGraphWriterServiceWrite:
         Assert:
           - pg_written == False
           - PG execute_calls 비어 있음 (upsert 미호출)
-          - repo.merge_calls 비어 있음
+          - repo.merge_concept_into가 (incoming, target)으로 호출됨 (4-레이어 전체 적재)
         """
         pg = _FakeMinimalPgPool()
         repo = _FakeNeo4jRepo()
@@ -207,6 +211,9 @@ class TestGraphWriterServiceWrite:
         assert result.resolve.target == "CSRF"
         assert pg.execute_calls == [], "MERGE: _upsert_pg 미호출 → execute_calls 비어 있음"
         assert repo.merge_calls == [], "MERGE: repo.merge_concept 미호출"
+        assert repo.merge_into_calls == [("CrossSiteRequestForgery", "CSRF")], (
+            "MERGE: repo.merge_concept_into(concept, target)으로 4-레이어 전체 적재"
+        )
 
     @pytest.mark.anyio
     async def test_U02_related_to_writes_pg_and_neo4j(self) -> None:

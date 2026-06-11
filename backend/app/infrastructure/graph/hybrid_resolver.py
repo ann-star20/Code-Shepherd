@@ -246,22 +246,52 @@ async def _do_merge(
       확장된 키워드 풀 전체를 다시 임베딩하여 name_vector의 '중심점'을 이동.
     """
     row = await pg_pool.fetchrow(
-        "SELECT aliases FROM concepts WHERE concept_name = $1", target_name
+        "SELECT aliases, domains, desc_vector, description_ko "
+        "FROM concepts WHERE concept_name = $1", target_name
     )
     existing_aliases: list[str] = list(row["aliases"] or []) if row else []
+    existing_domains: list[str] = list(row["domains"] or []) if row else []
+    existing_desc_ko = row["description_ko"] if row else None
 
     new_entries = [incoming.concept_name] + incoming.aliases
     merged      = list(dict.fromkeys(existing_aliases + new_entries))  # 순서 보존 dedup
+    merged_domain = list(dict.fromkeys(existing_domains + incoming.domains))
 
     # Centroid Shifting: 확장된 키워드 풀로 재임베딩
     shifted_vec = embedding_svc.embed(", ".join([target_name] + merged))
 
+    eff_severity = "low" if incoming.severity == "info" else incoming.severity
+
+    desc_vec_str = None
+    if incoming.description_ko and not existing_desc_ko:
+        desc_vec_str = _vec_to_str(embedding_svc.embed(incoming.description_ko))
+
     await pg_pool.execute(
-        "UPDATE concepts "
-        "SET aliases = $1, name_vector = $2::vector, updated_at = now() "
-        "WHERE concept_name = $3",
+        """
+        UPDATE concepts
+        SET aliases        = $1,
+            domains        = $2,
+            name_vector    = $3::vector,
+            severity       = COALESCE($4, severity),
+            description_ko = COALESCE($5, description_ko),
+            concept_type   = COALESCE($6, concept_type),
+            cwe_id         = COALESCE($7, cwe_id),
+            owasp_id       = COALESCE($8, owasp_id),
+            root_cause     = COALESCE($9, root_cause),
+            desc_vector    = COALESCE($10::vector, desc_vector),
+            updated_at     = now()
+        WHERE concept_name = $11
+        """,
         merged,
+        merged_domain,
         _vec_to_str(shifted_vec),
+        eff_severity,
+        incoming.description_ko or None,
+        incoming.concept_type,
+        incoming.cwe_id,
+        incoming.owasp_id,
+        incoming.root_cause,
+        desc_vec_str,
         target_name,
     )
 

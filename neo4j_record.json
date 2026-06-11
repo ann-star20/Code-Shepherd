@@ -1,0 +1,2163 @@
+﻿[
+  {
+    "n": {
+      "identity": 0,
+      "labels": [
+        "Concept",
+        "Security"
+      ],
+      "properties": {
+        "severity": "high",
+        "owasp_id": "A03:2025",
+        "aliases": [
+          "XSS",
+          "Cross-Site Scripting",
+          "XSS Attack",
+          "CrossSiteScripting",
+          "CrossSiteScriptingAttack",
+          "XssVulnerability",
+          "CrossSiteScriptingVulnerability",
+          "크로스 사이트 스크립팅"
+        ],
+        "cwe_id": "CWE-79",
+        "is_deprecated": false,
+        "concept_type": "vulnerability_root_cause",
+        "name": "XSS",
+        "created_at": 1781155791517,
+        "domains": [
+          "security"
+        ],
+        "description_ko": "크로스 사이트 스크립팅(XSS)은 공격자가 악성 스크립트를 신뢰된 웹 페이지에 주입하여 피해자의 브라우저에서 실행시키는 공격. 세션 탈취, 리다이렉션, 피싱 등을 유발한다."
+      },
+      "elementId": "4:252d86ff-4d6a-4eb3-b328-43c3ea679769:0"
+    }
+  },
+  {
+    "n": {
+      "identity": 1,
+      "labels": [
+        "Domain"
+      ],
+      "properties": {
+        "name": "security",
+        "created_at": 1781155791889
+      },
+      "elementId": "4:252d86ff-4d6a-4eb3-b328-43c3ea679769:1"
+    }
+  },
+  {
+    "n": {
+      "identity": 2,
+      "labels": [
+        "Mechanism"
+      ],
+      "properties": {
+        "name": "output_encoding",
+        "created_at": 1781155792084
+      },
+      "elementId": "4:252d86ff-4d6a-4eb3-b328-43c3ea679769:2"
+    }
+  },
+  {
+    "n": {
+      "identity": 3,
+      "labels": [
+        "CodeExample"
+      ],
+      "properties": {
+        "framework_version": ">=4.0",
+        "lang_version": ">=3.10",
+        "framework": "django",
+        "code": "from django.utils.html import escape
+safe = escape(user_input)",
+        "created_at": 1781155792222,
+        "description": "Django 템플릿 외부에서 사용자 입력을 안전하게 HTML 이스케이프",
+        "unq_id": "output_encoding_python_>=3.10_django_>=4.0",
+        "lang": "python"
+      },
+      "elementId": "4:252d86ff-4d6a-4eb3-b328-43c3ea679769:3"
+    }
+  },
+  {
+    "n": {
+      "identity": 4,
+      "labels": [
+        "Mechanism"
+      ],
+      "properties": {
+        "name": "content_security_policy",
+        "created_at": 1781155792329
+      },
+      "elementId": "4:252d86ff-4d6a-4eb3-b328-43c3ea679769:4"
+    }
+  },
+  {
+    "n": {
+      "identity": 5,
+      "labels": [
+        "CodeExample"
+      ],
+      "properties": {
+        "framework_version": ">=4.0",
+        "lang_version": ">=3.10",
+        "framework": "django",
+        "code": "# settings.py
+SECURE_CONTENT_TYPE_NOSNIFF = True
+X_FRAME_OPTIONS = 'DENY'",
+        "created_at": 1781155792333,
+        "description": "Django CSP 헤더 설정으로 XSS 공격 표면 축소",
+        "unq_id": "content_security_policy_python_>=3.10_django_>=4.0",
+        "lang": "python"
+      },
+      "elementId": "4:252d86ff-4d6a-4eb3-b328-43c3ea679769:5"
+    }
+  },
+  {
+    "n": {
+      "identity": 6,
+      "labels": [
+        "Property"
+      ],
+      "properties": {
+        "created_at": 1781155792351,
+        "unq_key": "secure_browser_xss_filter",
+        "type": "security",
+        "value": "True"
+      },
+      "elementId": "4:252d86ff-4d6a-4eb3-b328-43c3ea679769:6"
+    }
+  },
+  {
+    "n": {
+      "identity": 7,
+      "labels": [
+        "Property"
+      ],
+      "properties": {
+        "created_at": 1781155792425,
+        "unq_key": "content_type_nosniff",
+        "type": "security",
+        "value": "True"
+      },
+      "elementId": "4:252d86ff-4d6a-4eb3-b328-43c3ea679769:7"
+    }
+  },
+  {
+    "n": {
+      "identity": 8,
+      "labels": [
+        "RootCause"
+      ],
+      "properties": {
+        "name": "unsanitized_user_input_in_html_context",
+        "created_at": 1781155792443
+      },
+      "elementId": "4:252d86ff-4d6a-4eb3-b328-43c3ea679769:8"
+    }
+  },
+  {
+    "n": {
+      "identity": 9,
+      "labels": [
+        "Component"
+      ],
+      "properties": {
+        "name": "template_rendering_layer",
+        "created_at": 1781155792521
+      },
+      "elementId": "4:252d86ff-4d6a-4eb3-b328-43c3ea679769:9"
+    }
+  },
+  {
+    "n": {
+      "identity": 10,
+      "labels": [
+        "Component"
+      ],
+      "properties": {
+        "name": "api_response_serialization",
+        "created_at": 1781155792587
+      },
+      "elementId": "4:252d86ff-4d6a-4eb3-b328-43c3ea679769:10"
+    }
+  },
+  {
+    "n": {
+      "identity": 11,
+      "labels": [
+        "Concept",
+        "Security"
+      ],
+      "properties": {
+        "severity": "critical",
+        "owasp_id": "A03:2025",
+        "aliases": [
+          "SQLi",
+          "SQL Injection",
+          "SQLInjection",
+          "SqlInjection",
+          "SQLi Attack",
+          "SqlInjectionVulnerability",
+          "SqlInjectionAttack",
+          "SQL 인젝션"
+        ],
+        "cwe_id": "CWE-89",
+        "is_deprecated": false,
+        "concept_type": "vulnerability_root_cause",
+        "name": "SQLi",
+        "created_at": 1781155792765,
+        "domains": [
+          "security"
+        ],
+        "description_ko": "SQL 인젝션은 공격자가 악의적인 SQL 구문을 입력값에 삽입하여 데이터베이스를 조작하는 공격. 데이터 유출, 삭제, 권한 상승을 유발한다."
+      },
+      "elementId": "4:252d86ff-4d6a-4eb3-b328-43c3ea679769:11"
+    }
+  },
+  {
+    "n": {
+      "identity": 12,
+      "labels": [
+        "Mechanism"
+      ],
+      "properties": {
+        "name": "parameterized_query",
+        "created_at": 1781155792780
+      },
+      "elementId": "4:252d86ff-4d6a-4eb3-b328-43c3ea679769:12"
+    }
+  },
+  {
+    "n": {
+      "identity": 13,
+      "labels": [
+        "CodeExample"
+      ],
+      "properties": {
+        "framework_version": ">=4.0",
+        "lang_version": ">=3.10",
+        "framework": "django",
+        "code": "# ORM 사용 (안전)
+User.objects.filter(username=username)
+
+# Raw SQL — 파라미터 바인딩 필수
+from django.db import connection
+with connection.cursor() as c:
+    c.execute('SELECT * FROM users WHERE name = %s', [username])",
+        "created_at": 1781155792802,
+        "description": "Django ORM 또는 파라미터 바인딩을 통한 SQL 인젝션 방어",
+        "unq_id": "parameterized_query_python_>=3.10_django_>=4.0",
+        "lang": "python"
+      },
+      "elementId": "4:252d86ff-4d6a-4eb3-b328-43c3ea679769:13"
+    }
+  },
+  {
+    "n": {
+      "identity": 14,
+      "labels": [
+        "Mechanism"
+      ],
+      "properties": {
+        "name": "input_type_validation",
+        "created_at": 1781155792870
+      },
+      "elementId": "4:252d86ff-4d6a-4eb3-b328-43c3ea679769:14"
+    }
+  },
+  {
+    "n": {
+      "identity": 15,
+      "labels": [
+        "CodeExample"
+      ],
+      "properties": {
+        "framework_version": ">=0.100",
+        "lang_version": ">=3.10",
+        "framework": "fastapi",
+        "code": "from pydantic import BaseModel, conint
+
+class UserQuery(BaseModel):
+    user_id: conint(gt=0)  # 양의 정수만 허용",
+        "created_at": 1781155792875,
+        "description": "Pydantic 타입 제약으로 SQL 특수문자 주입 원천 차단",
+        "unq_id": "input_type_validation_python_>=3.10_fastapi_>=0.100",
+        "lang": "python"
+      },
+      "elementId": "4:252d86ff-4d6a-4eb3-b328-43c3ea679769:15"
+    }
+  },
+  {
+    "n": {
+      "identity": 16,
+      "labels": [
+        "RootCause"
+      ],
+      "properties": {
+        "name": "unsanitized_user_input_in_sql_query",
+        "created_at": 1781155792880
+      },
+      "elementId": "4:252d86ff-4d6a-4eb3-b328-43c3ea679769:16"
+    }
+  },
+  {
+    "n": {
+      "identity": 17,
+      "labels": [
+        "Component"
+      ],
+      "properties": {
+        "name": "database_query_layer",
+        "created_at": 1781155792884
+      },
+      "elementId": "4:252d86ff-4d6a-4eb3-b328-43c3ea679769:17"
+    }
+  },
+  {
+    "n": {
+      "identity": 18,
+      "labels": [
+        "Component"
+      ],
+      "properties": {
+        "name": "orm_layer",
+        "created_at": 1781155792898
+      },
+      "elementId": "4:252d86ff-4d6a-4eb3-b328-43c3ea679769:18"
+    }
+  },
+  {
+    "n": {
+      "identity": 19,
+      "labels": [
+        "Concept",
+        "Security"
+      ],
+      "properties": {
+        "severity": "high",
+        "owasp_id": "A01:2025",
+        "aliases": [
+          "CSRF",
+          "Cross-Site Request Forgery",
+          "XSRF",
+          "Sea Surf",
+          "CrossSiteRequestForgery",
+          "CSRFAttack",
+          "CrossSiteRequestForgeryAttack",
+          "CrossSiteRequestForgeryVulnerability",
+          "크로스 사이트 요청 위조",
+          "CSRF Attack"
+        ],
+        "cwe_id": "CWE-352",
+        "is_deprecated": false,
+        "concept_type": "vulnerability_root_cause",
+        "name": "CSRF",
+        "created_at": 1781155793035,
+        "domains": [
+          "security"
+        ],
+        "description_ko": "크로스 사이트 요청 위조(CSRF)는 인증된 사용자의 브라우저를 통해 공격자가 원하는 요청을 서버에 강제로 전송하는 공격. 계정 설정 변경, 결제 등을 피해자 모르게 실행한다."
+      },
+      "elementId": "4:252d86ff-4d6a-4eb3-b328-43c3ea679769:19"
+    }
+  },
+  {
+    "n": {
+      "identity": 20,
+      "labels": [
+        "Mechanism"
+      ],
+      "properties": {
+        "name": "csrf_token_validation",
+        "created_at": 1781155793051
+      },
+      "elementId": "4:252d86ff-4d6a-4eb3-b328-43c3ea679769:20"
+    }
+  },
+  {
+    "n": {
+      "identity": 21,
+      "labels": [
+        "CodeExample"
+      ],
+      "properties": {
+        "framework_version": ">=4.0",
+        "lang_version": ">=3.10",
+        "framework": "django",
+        "code": "# settings.py
+MIDDLEWARE = [
+    'django.middleware.csrf.CsrfViewMiddleware',
+    ...
+]
+
+# 템플릿
+# <form method='post'>{% csrf_token %}</form>",
+        "created_at": 1781155793058,
+        "description": "Django CsrfViewMiddleware + {% csrf_token %} 태그로 토큰 검증",
+        "unq_id": "csrf_token_validation_python_>=3.10_django_>=4.0",
+        "lang": "python"
+      },
+      "elementId": "4:252d86ff-4d6a-4eb3-b328-43c3ea679769:21"
+    }
+  },
+  {
+    "n": {
+      "identity": 22,
+      "labels": [
+        "Mechanism"
+      ],
+      "properties": {
+        "name": "samesite_cookie",
+        "created_at": 1781155793065
+      },
+      "elementId": "4:252d86ff-4d6a-4eb3-b328-43c3ea679769:22"
+    }
+  },
+  {
+    "n": {
+      "identity": 23,
+      "labels": [
+        "CodeExample"
+      ],
+      "properties": {
+        "framework_version": ">=4.0",
+        "lang_version": ">=3.10",
+        "framework": "django",
+        "code": "# settings.py
+CSRF_COOKIE_SAMESITE = 'Strict'
+SESSION_COOKIE_SAMESITE = 'Lax'
+CSRF_COOKIE_SECURE = True",
+        "created_at": 1781155793069,
+        "description": "SameSite 쿠키 속성으로 크로스 사이트 요청 시 쿠키 전송 차단",
+        "unq_id": "samesite_cookie_python_>=3.10_django_>=4.0",
+        "lang": "python"
+      },
+      "elementId": "4:252d86ff-4d6a-4eb3-b328-43c3ea679769:23"
+    }
+  },
+  {
+    "n": {
+      "identity": 24,
+      "labels": [
+        "Property"
+      ],
+      "properties": {
+        "created_at": 1781155793075,
+        "unq_key": "csrf_cookie_secure",
+        "type": "security",
+        "value": "True"
+      },
+      "elementId": "4:252d86ff-4d6a-4eb3-b328-43c3ea679769:24"
+    }
+  },
+  {
+    "n": {
+      "identity": 25,
+      "labels": [
+        "Property"
+      ],
+      "properties": {
+        "created_at": 1781155793080,
+        "unq_key": "csrf_cookie_samesite",
+        "type": "security",
+        "value": "Strict"
+      },
+      "elementId": "4:252d86ff-4d6a-4eb3-b328-43c3ea679769:25"
+    }
+  },
+  {
+    "n": {
+      "identity": 26,
+      "labels": [
+        "RootCause"
+      ],
+      "properties": {
+        "name": "missing_request_origin_verification",
+        "created_at": 1781155793085
+      },
+      "elementId": "4:252d86ff-4d6a-4eb3-b328-43c3ea679769:26"
+    }
+  },
+  {
+    "n": {
+      "identity": 27,
+      "labels": [
+        "Component"
+      ],
+      "properties": {
+        "name": "form_submission_handler",
+        "created_at": 1781155793090
+      },
+      "elementId": "4:252d86ff-4d6a-4eb3-b328-43c3ea679769:27"
+    }
+  },
+  {
+    "n": {
+      "identity": 28,
+      "labels": [
+        "Component"
+      ],
+      "properties": {
+        "name": "state_changing_api",
+        "created_at": 1781155793095
+      },
+      "elementId": "4:252d86ff-4d6a-4eb3-b328-43c3ea679769:28"
+    }
+  },
+  {
+    "n": {
+      "identity": 29,
+      "labels": [
+        "Component"
+      ],
+      "properties": {
+        "name": "session_management",
+        "created_at": 1781155793101
+      },
+      "elementId": "4:252d86ff-4d6a-4eb3-b328-43c3ea679769:29"
+    }
+  },
+  {
+    "n": {
+      "identity": 30,
+      "labels": [
+        "Concept",
+        "Security"
+      ],
+      "properties": {
+        "severity": "high",
+        "owasp_id": "A10:2025",
+        "aliases": [
+          "SSRF",
+          "Server-Side Request Forgery",
+          "ServerSideRequestForgery",
+          "SSRFAttack",
+          "ServerSideRequestForgeryAttack",
+          "ServerSideRequestForgeryVulnerability",
+          "SsrfVulnerability",
+          "서버 사이드 요청 위조"
+        ],
+        "cwe_id": "CWE-918",
+        "is_deprecated": false,
+        "concept_type": "vulnerability_root_cause",
+        "name": "SSRF",
+        "created_at": 1781155793195,
+        "domains": [
+          "security"
+        ],
+        "description_ko": "서버 사이드 요청 위조(SSRF)는 서버가 공격자가 지정한 내부 또는 외부 리소스로 요청을 전송하도록 유도하는 공격. 내부망 스캔, 클라우드 메타데이터 탈취에 악용된다."
+      },
+      "elementId": "4:252d86ff-4d6a-4eb3-b328-43c3ea679769:30"
+    }
+  },
+  {
+    "n": {
+      "identity": 31,
+      "labels": [
+        "Mechanism"
+      ],
+      "properties": {
+        "name": "allowlist_url_validation",
+        "created_at": 1781155793208
+      },
+      "elementId": "4:252d86ff-4d6a-4eb3-b328-43c3ea679769:31"
+    }
+  },
+  {
+    "n": {
+      "identity": 32,
+      "labels": [
+        "CodeExample"
+      ],
+      "properties": {
+        "framework_version": ">=0.100",
+        "lang_version": ">=3.10",
+        "framework": "fastapi",
+        "code": "from urllib.parse import urlparse
+
+ALLOWED_HOSTS = {'api.example.com', 'cdn.example.com'}
+
+def safe_fetch(url: str) -> bytes:
+    host = urlparse(url).hostname
+    if host not in ALLOWED_HOSTS:
+        raise ValueError(f'Blocked: {host}')
+    import httpx
+    return httpx.get(url, timeout=5).content",
+        "created_at": 1781155793213,
+        "description": "허용 도메인 목록(allowlist) 검증으로 임의 URL 요청 차단",
+        "unq_id": "allowlist_url_validation_python_>=3.10_fastapi_>=0.100",
+        "lang": "python"
+      },
+      "elementId": "4:252d86ff-4d6a-4eb3-b328-43c3ea679769:32"
+    }
+  },
+  {
+    "n": {
+      "identity": 33,
+      "labels": [
+        "RootCause"
+      ],
+      "properties": {
+        "name": "unvalidated_user_supplied_url_in_server_request",
+        "created_at": 1781155793219
+      },
+      "elementId": "4:252d86ff-4d6a-4eb3-b328-43c3ea679769:33"
+    }
+  },
+  {
+    "n": {
+      "identity": 34,
+      "labels": [
+        "Component"
+      ],
+      "properties": {
+        "name": "http_client_layer",
+        "created_at": 1781155793224
+      },
+      "elementId": "4:252d86ff-4d6a-4eb3-b328-43c3ea679769:34"
+    }
+  },
+  {
+    "n": {
+      "identity": 35,
+      "labels": [
+        "Component"
+      ],
+      "properties": {
+        "name": "webhook_handler",
+        "created_at": 1781155793228
+      },
+      "elementId": "4:252d86ff-4d6a-4eb3-b328-43c3ea679769:35"
+    }
+  },
+  {
+    "n": {
+      "identity": 36,
+      "labels": [
+        "Component"
+      ],
+      "properties": {
+        "name": "url_fetch_service",
+        "created_at": 1781155793234
+      },
+      "elementId": "4:252d86ff-4d6a-4eb3-b328-43c3ea679769:36"
+    }
+  },
+  {
+    "n": {
+      "identity": 37,
+      "labels": [
+        "Concept",
+        "Security"
+      ],
+      "properties": {
+        "severity": "high",
+        "owasp_id": "A01:2025",
+        "aliases": [
+          "PathTraversal",
+          "Directory Traversal",
+          "DirectoryTraversal",
+          "PathTraversalAttack",
+          "PathTraversalVulnerability",
+          "DirectoryTraversalAttack",
+          "DirectoryTraversalVulnerability",
+          "DotDotSlash",
+          "경로 순회 공격",
+          "../ Attack"
+        ],
+        "cwe_id": "CWE-22",
+        "is_deprecated": false,
+        "concept_type": "vulnerability_root_cause",
+        "name": "PathTraversal",
+        "domains": [
+          "security"
+        ],
+        "created_at": 1781155793398,
+        "description_ko": "경로 순회 공격은 '../' 시퀀스를 사용하여 허용된 디렉토리 밖의 파일에 접근하는 공격. 설정 파일, 시스템 파일 노출로 이어진다."
+      },
+      "elementId": "4:252d86ff-4d6a-4eb3-b328-43c3ea679769:37"
+    }
+  },
+  {
+    "n": {
+      "identity": 38,
+      "labels": [
+        "Mechanism"
+      ],
+      "properties": {
+        "name": "canonical_path_validation",
+        "created_at": 1781155793588
+      },
+      "elementId": "4:252d86ff-4d6a-4eb3-b328-43c3ea679769:38"
+    }
+  },
+  {
+    "n": {
+      "identity": 39,
+      "labels": [
+        "CodeExample"
+      ],
+      "properties": {
+        "framework_version": ">=0.100",
+        "lang_version": ">=3.10",
+        "framework": "fastapi",
+        "code": "from pathlib import Path
+
+BASE_DIR = Path('/app/uploads').resolve()
+
+def safe_path(filename: str) -> Path:
+    target = (BASE_DIR / filename).resolve()
+    if not str(target).startswith(str(BASE_DIR)):
+        raise PermissionError('Path traversal detected')
+    return target",
+        "created_at": 1781155793639,
+        "description": "resolve()로 절대경로 정규화 후 기준 디렉토리 접두사 검증",
+        "unq_id": "canonical_path_validation_python_>=3.10_fastapi_>=0.100",
+        "lang": "python"
+      },
+      "elementId": "4:252d86ff-4d6a-4eb3-b328-43c3ea679769:39"
+    }
+  },
+  {
+    "n": {
+      "identity": 40,
+      "labels": [
+        "RootCause"
+      ],
+      "properties": {
+        "name": "unvalidated_file_path_from_user_input",
+        "created_at": 1781155793655
+      },
+      "elementId": "4:252d86ff-4d6a-4eb3-b328-43c3ea679769:40"
+    }
+  },
+  {
+    "n": {
+      "identity": 41,
+      "labels": [
+        "Component"
+      ],
+      "properties": {
+        "name": "file_download_endpoint",
+        "created_at": 1781155793761
+      },
+      "elementId": "4:252d86ff-4d6a-4eb3-b328-43c3ea679769:41"
+    }
+  },
+  {
+    "n": {
+      "identity": 42,
+      "labels": [
+        "Component"
+      ],
+      "properties": {
+        "name": "static_file_server",
+        "created_at": 1781155793821
+      },
+      "elementId": "4:252d86ff-4d6a-4eb3-b328-43c3ea679769:42"
+    }
+  },
+  {
+    "n": {
+      "identity": 43,
+      "labels": [
+        "Concept",
+        "Security"
+      ],
+      "properties": {
+        "severity": "critical",
+        "owasp_id": "A03:2025",
+        "aliases": [
+          "CommandInjection",
+          "OS Command Injection",
+          "Shell Injection",
+          "OsCommandInjection",
+          "ShellInjection",
+          "CommandInjectionAttack",
+          "CommandInjectionVulnerability",
+          "OsCommandInjectionAttack",
+          "ShellInjectionAttack",
+          "명령어 인젝션"
+        ],
+        "cwe_id": "CWE-78",
+        "is_deprecated": false,
+        "concept_type": "vulnerability_root_cause",
+        "name": "CommandInjection",
+        "created_at": 1781155793913,
+        "domains": [
+          "security"
+        ],
+        "description_ko": "명령어 인젝션은 사용자 입력이 OS 명령어로 직접 실행될 때 발생하는 취약점. 서버 시스템의 완전한 장악이 가능하다."
+      },
+      "elementId": "4:252d86ff-4d6a-4eb3-b328-43c3ea679769:43"
+    }
+  },
+  {
+    "n": {
+      "identity": 44,
+      "labels": [
+        "Mechanism"
+      ],
+      "properties": {
+        "name": "subprocess_args_list",
+        "created_at": 1781155793929
+      },
+      "elementId": "4:252d86ff-4d6a-4eb3-b328-43c3ea679769:44"
+    }
+  },
+  {
+    "n": {
+      "identity": 45,
+      "labels": [
+        "CodeExample"
+      ],
+      "properties": {
+        "framework_version": ">=0.100",
+        "lang_version": ">=3.10",
+        "framework": "fastapi",
+        "code": "import subprocess
+
+# 위험 — 절대 사용 금지
+# subprocess.run(f'ls {user_dir}', shell=True)
+
+# 안전 — 리스트로 분리
+result = subprocess.run(
+    ['ls', '-la', user_dir],
+    capture_output=True,
+    text=True,
+    timeout=10,
+)",
+        "created_at": 1781155793935,
+        "description": "shell=True 금지, 인자를 리스트로 전달하여 셸 메타문자 해석 차단",
+        "unq_id": "subprocess_args_list_python_>=3.10_fastapi_>=0.100",
+        "lang": "python"
+      },
+      "elementId": "4:252d86ff-4d6a-4eb3-b328-43c3ea679769:45"
+    }
+  },
+  {
+    "n": {
+      "identity": 46,
+      "labels": [
+        "RootCause"
+      ],
+      "properties": {
+        "name": "shell_true_with_unsanitized_user_input",
+        "created_at": 1781155793939
+      },
+      "elementId": "4:252d86ff-4d6a-4eb3-b328-43c3ea679769:46"
+    }
+  },
+  {
+    "n": {
+      "identity": 47,
+      "labels": [
+        "Component"
+      ],
+      "properties": {
+        "name": "subprocess_caller",
+        "created_at": 1781155793944
+      },
+      "elementId": "4:252d86ff-4d6a-4eb3-b328-43c3ea679769:47"
+    }
+  },
+  {
+    "n": {
+      "identity": 48,
+      "labels": [
+        "Component"
+      ],
+      "properties": {
+        "name": "system_command_api",
+        "created_at": 1781155793948
+      },
+      "elementId": "4:252d86ff-4d6a-4eb3-b328-43c3ea679769:48"
+    }
+  },
+  {
+    "n": {
+      "identity": 49,
+      "labels": [
+        "Concept",
+        "Security"
+      ],
+      "properties": {
+        "severity": "critical",
+        "owasp_id": "A08:2025",
+        "aliases": [
+          "InsecureDeserialization",
+          "Unsafe Deserialization",
+          "UnsafeDeserialization",
+          "InsecureDeserializationAttack",
+          "InsecureDeserializationVulnerability",
+          "UnsafeDeserializationAttack",
+          "UnsafeDeserializationVulnerability",
+          "불안전한 역직렬화"
+        ],
+        "cwe_id": "CWE-502",
+        "is_deprecated": false,
+        "concept_type": "vulnerability_root_cause",
+        "name": "InsecureDeserialization",
+        "created_at": 1781155794035,
+        "domains": [
+          "security"
+        ],
+        "description_ko": "불안전한 역직렬화는 신뢰할 수 없는 데이터를 객체로 복원할 때 발생하는 취약점. 임의 코드 실행(RCE)으로 이어질 수 있다."
+      },
+      "elementId": "4:252d86ff-4d6a-4eb3-b328-43c3ea679769:49"
+    }
+  },
+  {
+    "n": {
+      "identity": 50,
+      "labels": [
+        "Mechanism"
+      ],
+      "properties": {
+        "name": "safe_serialization_format",
+        "created_at": 1781155794045
+      },
+      "elementId": "4:252d86ff-4d6a-4eb3-b328-43c3ea679769:50"
+    }
+  },
+  {
+    "n": {
+      "identity": 51,
+      "labels": [
+        "CodeExample"
+      ],
+      "properties": {
+        "framework_version": ">=0.100",
+        "lang_version": ">=3.10",
+        "framework": "fastapi",
+        "code": "# pickle 사용 금지 (RCE 위험)
+# data = pickle.loads(user_bytes)
+
+from pydantic import BaseModel
+
+class SafePayload(BaseModel):
+    action: str
+    value: int
+
+# 스키마 검증 후 역직렬화
+payload = SafePayload.model_validate_json(user_json)",
+        "created_at": 1781155794049,
+        "description": "pickle 대신 JSON + Pydantic 스키마 검증으로 역직렬화 안전성 확보",
+        "unq_id": "safe_serialization_format_python_>=3.10_fastapi_>=0.100",
+        "lang": "python"
+      },
+      "elementId": "4:252d86ff-4d6a-4eb3-b328-43c3ea679769:51"
+    }
+  },
+  {
+    "n": {
+      "identity": 52,
+      "labels": [
+        "RootCause"
+      ],
+      "properties": {
+        "name": "deserialization_of_untrusted_data",
+        "created_at": 1781155794054
+      },
+      "elementId": "4:252d86ff-4d6a-4eb3-b328-43c3ea679769:52"
+    }
+  },
+  {
+    "n": {
+      "identity": 53,
+      "labels": [
+        "Component"
+      ],
+      "properties": {
+        "name": "api_request_body_parser",
+        "created_at": 1781155794058
+      },
+      "elementId": "4:252d86ff-4d6a-4eb3-b328-43c3ea679769:53"
+    }
+  },
+  {
+    "n": {
+      "identity": 54,
+      "labels": [
+        "Component"
+      ],
+      "properties": {
+        "name": "cache_layer",
+        "created_at": 1781155794061
+      },
+      "elementId": "4:252d86ff-4d6a-4eb3-b328-43c3ea679769:54"
+    }
+  },
+  {
+    "n": {
+      "identity": 55,
+      "labels": [
+        "Component"
+      ],
+      "properties": {
+        "name": "message_queue_consumer",
+        "created_at": 1781155794066
+      },
+      "elementId": "4:252d86ff-4d6a-4eb3-b328-43c3ea679769:55"
+    }
+  },
+  {
+    "n": {
+      "identity": 56,
+      "labels": [
+        "Concept",
+        "Security"
+      ],
+      "properties": {
+        "severity": "critical",
+        "owasp_id": "A02:2025",
+        "aliases": [
+          "HardcodedSecret",
+          "Hardcoded Credentials",
+          "Hardcoded Password",
+          "HardcodedCredentials",
+          "HardcodedPassword",
+          "HardcodedSecretVulnerability",
+          "HardcodedApiKey",
+          "HardcodedToken",
+          "SecretInSourceCode",
+          "SecretsInCode",
+          "하드코딩된 비밀번호"
+        ],
+        "cwe_id": "CWE-798",
+        "is_deprecated": false,
+        "concept_type": "vulnerability_root_cause",
+        "name": "HardcodedSecret",
+        "created_at": 1781155794188,
+        "domains": [
+          "security"
+        ],
+        "description_ko": "하드코딩된 자격증명은 소스코드에 비밀키, 비밀번호, API 키가 평문으로 포함된 취약점. Git 저장소 노출 시 즉각적인 보안 침해로 이어진다."
+      },
+      "elementId": "4:252d86ff-4d6a-4eb3-b328-43c3ea679769:56"
+    }
+  },
+  {
+    "n": {
+      "identity": 57,
+      "labels": [
+        "Mechanism"
+      ],
+      "properties": {
+        "name": "environment_variable_injection",
+        "created_at": 1781155794275
+      },
+      "elementId": "4:252d86ff-4d6a-4eb3-b328-43c3ea679769:57"
+    }
+  },
+  {
+    "n": {
+      "identity": 58,
+      "labels": [
+        "CodeExample"
+      ],
+      "properties": {
+        "framework_version": ">=0.100",
+        "lang_version": ">=3.10",
+        "framework": "fastapi",
+        "code": "from pydantic_settings import BaseSettings
+
+class Settings(BaseSettings):
+    secret_key: str
+    db_password: str
+
+    model_config = {'env_file': '.env'}
+
+settings = Settings()",
+        "created_at": 1781155794280,
+        "description": "pydantic-settings로 환경변수/.env에서 시크릿 주입, 소스코드에 기록 금지",
+        "unq_id": "environment_variable_injection_python_>=3.10_fastapi_>=0.100",
+        "lang": "python"
+      },
+      "elementId": "4:252d86ff-4d6a-4eb3-b328-43c3ea679769:58"
+    }
+  },
+  {
+    "n": {
+      "identity": 59,
+      "labels": [
+        "Property"
+      ],
+      "properties": {
+        "created_at": 1781155794300,
+        "unq_key": "debug",
+        "type": "security",
+        "value": "False"
+      },
+      "elementId": "4:252d86ff-4d6a-4eb3-b328-43c3ea679769:59"
+    }
+  },
+  {
+    "n": {
+      "identity": 60,
+      "labels": [
+        "RootCause"
+      ],
+      "properties": {
+        "name": "secret_stored_in_source_code",
+        "created_at": 1781155794397
+      },
+      "elementId": "4:252d86ff-4d6a-4eb3-b328-43c3ea679769:60"
+    }
+  },
+  {
+    "n": {
+      "identity": 61,
+      "labels": [
+        "Component"
+      ],
+      "properties": {
+        "name": "configuration_file",
+        "created_at": 1781155794402
+      },
+      "elementId": "4:252d86ff-4d6a-4eb3-b328-43c3ea679769:61"
+    }
+  },
+  {
+    "n": {
+      "identity": 62,
+      "labels": [
+        "Component"
+      ],
+      "properties": {
+        "name": "source_code_repository",
+        "created_at": 1781155794407
+      },
+      "elementId": "4:252d86ff-4d6a-4eb3-b328-43c3ea679769:62"
+    }
+  },
+  {
+    "n": {
+      "identity": 63,
+      "labels": [
+        "Concept",
+        "Security"
+      ],
+      "properties": {
+        "severity": "critical",
+        "owasp_id": "A07:2025",
+        "aliases": [
+          "BrokenAuthentication",
+          "Authentication Bypass",
+          "AuthenticationBypass",
+          "WeakAuthentication",
+          "BrokenAuthenticationVulnerability",
+          "WeakAuthenticationVulnerability",
+          "AuthenticationBypassVulnerability",
+          "취약한 인증"
+        ],
+        "cwe_id": "CWE-287",
+        "is_deprecated": false,
+        "concept_type": "vulnerability_root_cause",
+        "name": "BrokenAuthentication",
+        "created_at": 1781155794855,
+        "domains": [
+          "security"
+        ],
+        "description_ko": "취약한 인증은 세션 관리, 자격증명 검증, 비밀번호 정책의 결함으로 계정 탈취를 가능하게 하는 취약점."
+      },
+      "elementId": "4:252d86ff-4d6a-4eb3-b328-43c3ea679769:63"
+    }
+  },
+  {
+    "n": {
+      "identity": 64,
+      "labels": [
+        "Mechanism"
+      ],
+      "properties": {
+        "name": "secure_password_hashing",
+        "created_at": 1781155794873
+      },
+      "elementId": "4:252d86ff-4d6a-4eb3-b328-43c3ea679769:64"
+    }
+  },
+  {
+    "n": {
+      "identity": 65,
+      "labels": [
+        "CodeExample"
+      ],
+      "properties": {
+        "framework_version": ">=0.100",
+        "lang_version": ">=3.10",
+        "framework": "fastapi",
+        "code": "from passlib.context import CryptContext
+
+pwd_ctx = CryptContext(schemes=['bcrypt'], deprecated='auto')
+
+def hash_pw(plain: str) -> str:
+    return pwd_ctx.hash(plain)
+
+def verify_pw(plain: str, hashed: str) -> bool:
+    return pwd_ctx.verify(plain, hashed)",
+        "created_at": 1781155794877,
+        "description": "bcrypt 단방향 해싱으로 비밀번호 평문 저장 원천 차단",
+        "unq_id": "secure_password_hashing_python_>=3.10_fastapi_>=0.100",
+        "lang": "python"
+      },
+      "elementId": "4:252d86ff-4d6a-4eb3-b328-43c3ea679769:65"
+    }
+  },
+  {
+    "n": {
+      "identity": 66,
+      "labels": [
+        "Property"
+      ],
+      "properties": {
+        "created_at": 1781155794904,
+        "unq_key": "session_cookie_secure",
+        "type": "security",
+        "value": "True"
+      },
+      "elementId": "4:252d86ff-4d6a-4eb3-b328-43c3ea679769:66"
+    }
+  },
+  {
+    "n": {
+      "identity": 67,
+      "labels": [
+        "Property"
+      ],
+      "properties": {
+        "created_at": 1781155795007,
+        "unq_key": "session_cookie_httponly",
+        "type": "security",
+        "value": "True"
+      },
+      "elementId": "4:252d86ff-4d6a-4eb3-b328-43c3ea679769:67"
+    }
+  },
+  {
+    "n": {
+      "identity": 68,
+      "labels": [
+        "RootCause"
+      ],
+      "properties": {
+        "name": "weak_session_or_credential_management",
+        "created_at": 1781155795012
+      },
+      "elementId": "4:252d86ff-4d6a-4eb3-b328-43c3ea679769:68"
+    }
+  },
+  {
+    "n": {
+      "identity": 69,
+      "labels": [
+        "Component"
+      ],
+      "properties": {
+        "name": "login_endpoint",
+        "created_at": 1781155795018
+      },
+      "elementId": "4:252d86ff-4d6a-4eb3-b328-43c3ea679769:69"
+    }
+  },
+  {
+    "n": {
+      "identity": 70,
+      "labels": [
+        "Component"
+      ],
+      "properties": {
+        "name": "session_storage",
+        "created_at": 1781155795023
+      },
+      "elementId": "4:252d86ff-4d6a-4eb3-b328-43c3ea679769:70"
+    }
+  },
+  {
+    "n": {
+      "identity": 71,
+      "labels": [
+        "Component"
+      ],
+      "properties": {
+        "name": "password_reset_flow",
+        "created_at": 1781155795037
+      },
+      "elementId": "4:252d86ff-4d6a-4eb3-b328-43c3ea679769:71"
+    }
+  },
+  {
+    "n": {
+      "identity": 72,
+      "labels": [
+        "Concept",
+        "Security"
+      ],
+      "properties": {
+        "severity": "high",
+        "owasp_id": "A05:2025",
+        "aliases": [
+          "XXE",
+          "XML External Entity",
+          "XmlExternalEntity",
+          "XXEAttack",
+          "XmlExternalEntityAttack",
+          "XxeVulnerability",
+          "XxeAttack",
+          "XxeInjection",
+          "XmlExternalEntityVulnerability",
+          "XML 외부 엔티티 공격"
+        ],
+        "cwe_id": "CWE-611",
+        "is_deprecated": false,
+        "concept_type": "vulnerability_root_cause",
+        "name": "XXE",
+        "created_at": 1781155795393,
+        "domains": [
+          "security"
+        ],
+        "description_ko": "XML 외부 엔티티(XXE) 공격은 외부 엔티티 참조를 지원하는 XML 파서를 이용하여 서버 파일 읽기, SSRF, 포트 스캔을 수행하는 취약점."
+      },
+      "elementId": "4:252d86ff-4d6a-4eb3-b328-43c3ea679769:72"
+    }
+  },
+  {
+    "n": {
+      "identity": 73,
+      "labels": [
+        "Mechanism"
+      ],
+      "properties": {
+        "name": "disable_external_entities",
+        "created_at": 1781155795407
+      },
+      "elementId": "4:252d86ff-4d6a-4eb3-b328-43c3ea679769:73"
+    }
+  },
+  {
+    "n": {
+      "identity": 74,
+      "labels": [
+        "CodeExample"
+      ],
+      "properties": {
+        "framework_version": ">=0.100",
+        "lang_version": ">=3.10",
+        "framework": "fastapi",
+        "code": "import defusedxml.ElementTree as ET
+
+# defusedxml — 외부 엔티티 자동 비활성화
+tree = ET.fromstring(xml_string)",
+        "created_at": 1781155795412,
+        "description": "defusedxml 라이브러리로 외부 엔티티 처리를 자동으로 비활성화",
+        "unq_id": "disable_external_entities_python_>=3.10_fastapi_>=0.100",
+        "lang": "python"
+      },
+      "elementId": "4:252d86ff-4d6a-4eb3-b328-43c3ea679769:74"
+    }
+  },
+  {
+    "n": {
+      "identity": 75,
+      "labels": [
+        "RootCause"
+      ],
+      "properties": {
+        "name": "xml_parser_external_entity_enabled",
+        "created_at": 1781155795417
+      },
+      "elementId": "4:252d86ff-4d6a-4eb3-b328-43c3ea679769:75"
+    }
+  },
+  {
+    "n": {
+      "identity": 76,
+      "labels": [
+        "Component"
+      ],
+      "properties": {
+        "name": "xml_parser",
+        "created_at": 1781155795420
+      },
+      "elementId": "4:252d86ff-4d6a-4eb3-b328-43c3ea679769:76"
+    }
+  },
+  {
+    "n": {
+      "identity": 77,
+      "labels": [
+        "Component"
+      ],
+      "properties": {
+        "name": "soap_endpoint",
+        "created_at": 1781155795423
+      },
+      "elementId": "4:252d86ff-4d6a-4eb3-b328-43c3ea679769:77"
+    }
+  },
+  {
+    "n": {
+      "identity": 78,
+      "labels": [
+        "Component"
+      ],
+      "properties": {
+        "name": "file_upload_handler",
+        "created_at": 1781155795427
+      },
+      "elementId": "4:252d86ff-4d6a-4eb3-b328-43c3ea679769:78"
+    }
+  },
+  {
+    "n": {
+      "identity": 79,
+      "labels": [
+        "Concept",
+        "Security"
+      ],
+      "properties": {
+        "severity": "critical",
+        "owasp_id": "A01:2025",
+        "aliases": [
+          "BrokenAccessControl",
+          "Broken Access Control",
+          "IDOR",
+          "InsecureDirectObjectReference",
+          "BrokenAccessControlVulnerability",
+          "InsecureDirectObjectReferenceVulnerability",
+          "IdorVulnerability",
+          "AccessControlVulnerability",
+          "취약한 접근 제어",
+          "Insecure Direct Object Reference"
+        ],
+        "cwe_id": "CWE-284",
+        "is_deprecated": false,
+        "concept_type": "vulnerability_root_cause",
+        "name": "BrokenAccessControl",
+        "created_at": 1781155795783,
+        "domains": [
+          "security"
+        ],
+        "description_ko": "취약한 접근 제어는 최소 권한 원칙 미준수, IDOR, 권한 검증 누락 등으로 인증된 사용자가 허용되지 않은 리소스에 접근할 수 있는 취약점. OWASP Top 10 2021/2025 1위."
+      },
+      "elementId": "4:252d86ff-4d6a-4eb3-b328-43c3ea679769:79"
+    }
+  },
+  {
+    "n": {
+      "identity": 80,
+      "labels": [
+        "Mechanism"
+      ],
+      "properties": {
+        "name": "rbac_rules",
+        "created_at": 1781155795864
+      },
+      "elementId": "4:252d86ff-4d6a-4eb3-b328-43c3ea679769:80"
+    }
+  },
+  {
+    "n": {
+      "identity": 81,
+      "labels": [
+        "CodeExample"
+      ],
+      "properties": {
+        "framework_version": ">=4.0",
+        "lang_version": ">=3.10",
+        "framework": "django",
+        "code": "from django.contrib.auth.decorators import permission_required
+
+@permission_required('app.view_resource', raise_exception=True)
+def protected_view(request):
+    ...",
+        "created_at": 1781155795935,
+        "description": "Django permission_required 데코레이터로 뷰 단위 RBAC 강제 적용",
+        "unq_id": "rbac_rules_python_>=3.10_django_>=4.0",
+        "lang": "python"
+      },
+      "elementId": "4:252d86ff-4d6a-4eb3-b328-43c3ea679769:81"
+    }
+  },
+  {
+    "n": {
+      "identity": 82,
+      "labels": [
+        "Mechanism"
+      ],
+      "properties": {
+        "name": "abac_rules",
+        "created_at": 1781155796012
+      },
+      "elementId": "4:252d86ff-4d6a-4eb3-b328-43c3ea679769:82"
+    }
+  },
+  {
+    "n": {
+      "identity": 83,
+      "labels": [
+        "CodeExample"
+      ],
+      "properties": {
+        "framework_version": ">=0.100",
+        "lang_version": ">=3.10",
+        "framework": "fastapi",
+        "code": "from fastapi import Depends, HTTPException
+
+def authorize_owner(resource_id: int, current_user=Depends(get_current_user)):
+    resource = db.get(resource_id)
+    if resource.owner_id != current_user.id:
+        raise HTTPException(status_code=403)
+    return resource",
+        "created_at": 1781155796016,
+        "description": "리소스 소유자 속성 검증으로 IDOR 차단 (ABAC 패턴)",
+        "unq_id": "abac_rules_python_>=3.10_fastapi_>=0.100",
+        "lang": "python"
+      },
+      "elementId": "4:252d86ff-4d6a-4eb3-b328-43c3ea679769:83"
+    }
+  },
+  {
+    "n": {
+      "identity": 84,
+      "labels": [
+        "Mechanism"
+      ],
+      "properties": {
+        "name": "middleware_authorization",
+        "created_at": 1781155796020
+      },
+      "elementId": "4:252d86ff-4d6a-4eb3-b328-43c3ea679769:84"
+    }
+  },
+  {
+    "n": {
+      "identity": 85,
+      "labels": [
+        "CodeExample"
+      ],
+      "properties": {
+        "framework_version": ">=4.0",
+        "lang_version": ">=3.10",
+        "framework": "django",
+        "code": "# settings.py
+MIDDLEWARE = [
+    'django.contrib.auth.middleware.AuthenticationMiddleware',
+    'myapp.middleware.ObjectLevelPermissionMiddleware',
+]",
+        "created_at": 1781155796024,
+        "description": "미들웨어 레이어에서 객체 수준 권한을 일괄 강제하여 뷰 우회 차단",
+        "unq_id": "middleware_authorization_python_>=3.10_django_>=4.0",
+        "lang": "python"
+      },
+      "elementId": "4:252d86ff-4d6a-4eb3-b328-43c3ea679769:85"
+    }
+  },
+  {
+    "n": {
+      "identity": 86,
+      "labels": [
+        "Property"
+      ],
+      "properties": {
+        "created_at": 1781155796035,
+        "unq_key": "login_url",
+        "type": "security",
+        "value": "/login/"
+      },
+      "elementId": "4:252d86ff-4d6a-4eb3-b328-43c3ea679769:86"
+    }
+  },
+  {
+    "n": {
+      "identity": 87,
+      "labels": [
+        "RootCause"
+      ],
+      "properties": {
+        "name": "missing_authorization_check_on_resource",
+        "created_at": 1781155796039
+      },
+      "elementId": "4:252d86ff-4d6a-4eb3-b328-43c3ea679769:87"
+    }
+  },
+  {
+    "n": {
+      "identity": 88,
+      "labels": [
+        "Component"
+      ],
+      "properties": {
+        "name": "authentication_filter",
+        "created_at": 1781155796043
+      },
+      "elementId": "4:252d86ff-4d6a-4eb3-b328-43c3ea679769:88"
+    }
+  },
+  {
+    "n": {
+      "identity": 89,
+      "labels": [
+        "Component"
+      ],
+      "properties": {
+        "name": "api_endpoint",
+        "created_at": 1781155796047
+      },
+      "elementId": "4:252d86ff-4d6a-4eb3-b328-43c3ea679769:89"
+    }
+  },
+  {
+    "n": {
+      "identity": 90,
+      "labels": [
+        "Component"
+      ],
+      "properties": {
+        "name": "database_access_layer",
+        "created_at": 1781155796051
+      },
+      "elementId": "4:252d86ff-4d6a-4eb3-b328-43c3ea679769:90"
+    }
+  },
+  {
+    "n": {
+      "identity": 91,
+      "labels": [
+        "Concept",
+        "Security"
+      ],
+      "properties": {
+        "severity": "medium",
+        "owasp_id": "A05:2025",
+        "aliases": [
+          "Clickjacking",
+          "UI Redressing",
+          "UIRedressing",
+          "ClickjackingAttack",
+          "ClickjackingVulnerability",
+          "UiRedressingAttack",
+          "UiRedressingVulnerability",
+          "클릭재킹"
+        ],
+        "cwe_id": "CWE-451",
+        "is_deprecated": false,
+        "concept_type": "vulnerability_root_cause",
+        "name": "Clickjacking",
+        "created_at": 1781155796511,
+        "domains": [
+          "security"
+        ],
+        "description_ko": "투명한 iframe을 웹 페이지 위에 덮어씌워 사용자가 의도치 않은 버튼이나 링크를 클릭하도록 속이는 UI 교정 공격. 계정 설정 변경, 소셜 미디어 공유 등 원하지 않는 행위를 유발한다."
+      },
+      "elementId": "4:252d86ff-4d6a-4eb3-b328-43c3ea679769:91"
+    }
+  },
+  {
+    "n": {
+      "identity": 92,
+      "labels": [
+        "Mechanism"
+      ],
+      "properties": {
+        "name": "x_frame_options_header",
+        "created_at": 1781155796521
+      },
+      "elementId": "4:252d86ff-4d6a-4eb3-b328-43c3ea679769:92"
+    }
+  },
+  {
+    "n": {
+      "identity": 93,
+      "labels": [
+        "CodeExample"
+      ],
+      "properties": {
+        "framework_version": ">=4.0",
+        "lang_version": ">=3.10",
+        "framework": "django",
+        "code": "# settings.py
+X_FRAME_OPTIONS = 'DENY'  # 또는 'SAMEORIGIN'",
+        "created_at": 1781155796525,
+        "description": "X-Frame-Options 헤더로 iframe 내 페이지 로드를 전면 차단",
+        "unq_id": "x_frame_options_header_python_>=3.10_django_>=4.0",
+        "lang": "python"
+      },
+      "elementId": "4:252d86ff-4d6a-4eb3-b328-43c3ea679769:93"
+    }
+  },
+  {
+    "n": {
+      "identity": 94,
+      "labels": [
+        "Mechanism"
+      ],
+      "properties": {
+        "name": "csp_frame_ancestors",
+        "created_at": 1781155796530
+      },
+      "elementId": "4:252d86ff-4d6a-4eb3-b328-43c3ea679769:94"
+    }
+  },
+  {
+    "n": {
+      "identity": 95,
+      "labels": [
+        "CodeExample"
+      ],
+      "properties": {
+        "framework_version": ">=0.100",
+        "lang_version": ">=3.10",
+        "framework": "fastapi",
+        "code": "from fastapi.responses import Response
+
+@app.middleware('http')
+async def add_csp(request, call_next):
+    response = await call_next(request)
+    response.headers['Content-Security-Policy'] = \"frame-ancestors 'none'\"
+    return response",
+        "created_at": 1781155796533,
+        "description": "CSP frame-ancestors 지시어로 iframe 삽입 출처를 정밀 제어",
+        "unq_id": "csp_frame_ancestors_python_>=3.10_fastapi_>=0.100",
+        "lang": "python"
+      },
+      "elementId": "4:252d86ff-4d6a-4eb3-b328-43c3ea679769:95"
+    }
+  },
+  {
+    "n": {
+      "identity": 96,
+      "labels": [
+        "Property"
+      ],
+      "properties": {
+        "created_at": 1781155796537,
+        "unq_key": "x_frame_options",
+        "type": "security",
+        "value": "DENY"
+      },
+      "elementId": "4:252d86ff-4d6a-4eb3-b328-43c3ea679769:96"
+    }
+  },
+  {
+    "n": {
+      "identity": 97,
+      "labels": [
+        "RootCause"
+      ],
+      "properties": {
+        "name": "transparent_iframe_overlay_without_frame_protection",
+        "created_at": 1781155796541
+      },
+      "elementId": "4:252d86ff-4d6a-4eb3-b328-43c3ea679769:97"
+    }
+  },
+  {
+    "n": {
+      "identity": 98,
+      "labels": [
+        "Component"
+      ],
+      "properties": {
+        "name": "browser_rendering_layer",
+        "created_at": 1781155796543
+      },
+      "elementId": "4:252d86ff-4d6a-4eb3-b328-43c3ea679769:98"
+    }
+  },
+  {
+    "n": {
+      "identity": 99,
+      "labels": [
+        "Component"
+      ],
+      "properties": {
+        "name": "iframe_sandbox_policy",
+        "created_at": 1781155796548
+      },
+      "elementId": "4:252d86ff-4d6a-4eb3-b328-43c3ea679769:99"
+    }
+  },
+  {
+    "n": {
+      "identity": 100,
+      "labels": [
+        "Concept",
+        "Performance"
+      ],
+      "properties": {
+        "severity": "medium",
+        "aliases": [
+          "N+1Query",
+          "N+1 Query Problem",
+          "NPlusOneQuery",
+          "NPlusOneQueryProblem",
+          "NPlus1Query",
+          "NPlus1QueryProblem",
+          "NPlusOneQueryAntipattern",
+          "NPlus1QueryAntipattern",
+          "LazyLoadingLoop",
+          "LazyLoadingLoopAntipattern",
+          "LazyLoadingAntipattern",
+          "LazyLoadingProblem",
+          "N+1 쿼리 문제",
+          "Lazy Loading Loop"
+        ],
+        "cwe_id": "CWE-1048",
+        "is_deprecated": false,
+        "concept_type": "performance_antipattern",
+        "name": "N+1Query",
+        "created_at": 1781155796732,
+        "domains": [
+          "performance"
+        ],
+        "description_ko": "N+1 쿼리 문제는 루프 내에서 관련 객체를 개별 쿼리로 지연 로딩(Lazy Loading)하여 DB 쿼리가 N+1회 실행되는 성능 안티패턴. 데이터 건수가 늘수록 응답 시간이 선형 증가한다."
+      },
+      "elementId": "4:252d86ff-4d6a-4eb3-b328-43c3ea679769:100"
+    }
+  },
+  {
+    "n": {
+      "identity": 101,
+      "labels": [
+        "Domain"
+      ],
+      "properties": {
+        "name": "performance",
+        "created_at": 1781155796804
+      },
+      "elementId": "4:252d86ff-4d6a-4eb3-b328-43c3ea679769:101"
+    }
+  },
+  {
+    "n": {
+      "identity": 102,
+      "labels": [
+        "RootCause"
+      ],
+      "properties": {
+        "name": "lazy_loading_in_iteration_loop",
+        "created_at": 1781155796857
+      },
+      "elementId": "4:252d86ff-4d6a-4eb3-b328-43c3ea679769:102"
+    }
+  },
+  {
+    "n": {
+      "identity": 103,
+      "labels": [
+        "Component"
+      ],
+      "properties": {
+        "name": "api_list_endpoint",
+        "created_at": 1781155796870
+      },
+      "elementId": "4:252d86ff-4d6a-4eb3-b328-43c3ea679769:103"
+    }
+  },
+  {
+    "n": {
+      "identity": 104,
+      "labels": [
+        "Concept",
+        "Performance"
+      ],
+      "properties": {
+        "severity": "medium",
+        "aliases": [
+          "MissingIndex",
+          "Missing Database Index",
+          "Full Table Scan",
+          "MissingDatabaseIndex",
+          "MissingIndexAntipattern",
+          "MissingDatabaseIndexAntipattern",
+          "FullTableScan",
+          "FullTableScanAntipattern",
+          "SequentialScan",
+          "SeqScan",
+          "DatabaseIndexMissing",
+          "누락된 인덱스",
+          "Seq Scan"
+        ],
+        "cwe_id": "CWE-1089",
+        "is_deprecated": false,
+        "concept_type": "performance_antipattern",
+        "name": "MissingIndex",
+        "created_at": 1781155797163,
+        "domains": [
+          "performance"
+        ],
+        "description_ko": "누락된 인덱스는 WHERE·ORDER BY·JOIN 절 컬럼에 인덱스가 없어 테이블 풀스캔(Full Scan)이 반복 발생하는 성능 안티패턴. 데이터 증가에 따라 응답 시간이 급격히 악화된다."
+      },
+      "elementId": "4:252d86ff-4d6a-4eb3-b328-43c3ea679769:104"
+    }
+  },
+  {
+    "n": {
+      "identity": 105,
+      "labels": [
+        "RootCause"
+      ],
+      "properties": {
+        "name": "unindexed_frequently_filtered_column",
+        "created_at": 1781155797299
+      },
+      "elementId": "4:252d86ff-4d6a-4eb3-b328-43c3ea679769:105"
+    }
+  },
+  {
+    "n": {
+      "identity": 106,
+      "labels": [
+        "Component"
+      ],
+      "properties": {
+        "name": "reporting_layer",
+        "created_at": 1781155797308
+      },
+      "elementId": "4:252d86ff-4d6a-4eb3-b328-43c3ea679769:106"
+    }
+  },
+  {
+    "n": {
+      "identity": 107,
+      "labels": [
+        "Concept",
+        "Performance",
+        "Security"
+      ],
+      "properties": {
+        "severity": "high",
+        "aliases": [
+          "ConnPoolExhaustion",
+          "Connection Pool Exhaustion",
+          "DB Connection Leak",
+          "ConnectionPoolExhaustion",
+          "DbConnectionLeak",
+          "ConnectionLeak",
+          "PoolExhaustion",
+          "ConnectionPoolLeakAntipattern",
+          "ConnectionPoolExhaustionAntipattern",
+          "DbConnectionLeakAntipattern",
+          "ConnectionLeakAntipattern",
+          "커넥션 풀 고갈"
+        ],
+        "cwe_id": "CWE-400",
+        "is_deprecated": false,
+        "concept_type": "performance_antipattern",
+        "name": "ConnPoolExhaustion",
+        "created_at": 1781155797475,
+        "domains": [
+          "performance",
+          "security"
+        ],
+        "description_ko": "커넥션 풀 고갈은 DB·외부 서비스 커넥션이 반납되지 않거나 동시 요청이 풀 크기를 초과할 때 전체 시스템이 응답 불능에 빠지는 안티패턴. DoS와 동일한 결과를 초래한다."
+      },
+      "elementId": "4:252d86ff-4d6a-4eb3-b328-43c3ea679769:107"
+    }
+  },
+  {
+    "n": {
+      "identity": 108,
+      "labels": [
+        "Property"
+      ],
+      "properties": {
+        "created_at": 1781155797604,
+        "unq_key": "pool_max_size",
+        "type": "tuning",
+        "value": "10"
+      },
+      "elementId": "4:252d86ff-4d6a-4eb3-b328-43c3ea679769:108"
+    }
+  },
+  {
+    "n": {
+      "identity": 109,
+      "labels": [
+        "Property"
+      ],
+      "properties": {
+        "created_at": 1781155797618,
+        "unq_key": "pool_min_size",
+        "type": "tuning",
+        "value": "2"
+      },
+      "elementId": "4:252d86ff-4d6a-4eb3-b328-43c3ea679769:109"
+    }
+  },
+  {
+    "n": {
+      "identity": 110,
+      "labels": [
+        "Property"
+      ],
+      "properties": {
+        "created_at": 1781155797674,
+        "unq_key": "command_timeout",
+        "type": "tuning",
+        "value": "30"
+      },
+      "elementId": "4:252d86ff-4d6a-4eb3-b328-43c3ea679769:110"
+    }
+  },
+  {
+    "n": {
+      "identity": 111,
+      "labels": [
+        "RootCause"
+      ],
+      "properties": {
+        "name": "connection_not_returned_to_pool_or_pool_undersized",
+        "created_at": 1781155797677
+      },
+      "elementId": "4:252d86ff-4d6a-4eb3-b328-43c3ea679769:111"
+    }
+  },
+  {
+    "n": {
+      "identity": 112,
+      "labels": [
+        "Component"
+      ],
+      "properties": {
+        "name": "database_connection_pool",
+        "created_at": 1781155797681
+      },
+      "elementId": "4:252d86ff-4d6a-4eb3-b328-43c3ea679769:112"
+    }
+  },
+  {
+    "n": {
+      "identity": 113,
+      "labels": [
+        "Component"
+      ],
+      "properties": {
+        "name": "http_client_pool",
+        "created_at": 1781155797684
+      },
+      "elementId": "4:252d86ff-4d6a-4eb3-b328-43c3ea679769:113"
+    }
+  },
+  {
+    "n": {
+      "identity": 114,
+      "labels": [
+        "Component"
+      ],
+      "properties": {
+        "name": "api_gateway",
+        "created_at": 1781155797687
+      },
+      "elementId": "4:252d86ff-4d6a-4eb3-b328-43c3ea679769:114"
+    }
+  },
+  {
+    "n": {
+      "identity": 115,
+      "labels": [
+        "Concept",
+        "Performance",
+        "Security"
+      ],
+      "properties": {
+        "severity": "high",
+        "aliases": [
+          "MemoryLeak",
+          "Memory Leak",
+          "Heap Growth",
+          "MemoryLeakAntipattern",
+          "HeapGrowth",
+          "HeapGrowthAntipattern",
+          "OutOfMemory",
+          "OutOfMemoryError",
+          "OomCrash",
+          "OomError",
+          "메모리 누수",
+          "OOM"
+        ],
+        "cwe_id": "CWE-401",
+        "is_deprecated": false,
+        "concept_type": "performance_antipattern",
+        "name": "MemoryLeak",
+        "created_at": 1781155797856,
+        "domains": [
+          "performance",
+          "security"
+        ],
+        "description_ko": "메모리 누수는 더 이상 사용하지 않는 메모리를 해제하지 않아 힙이 지속 증가하는 안티패턴. 장기 운영 시 OOM 크래시 또는 DoS로 이어진다."
+      },
+      "elementId": "4:252d86ff-4d6a-4eb3-b328-43c3ea679769:115"
+    }
+  },
+  {
+    "n": {
+      "identity": 116,
+      "labels": [
+        "Property"
+      ],
+      "properties": {
+        "created_at": 1781155797962,
+        "unq_key": "cache_max_size",
+        "type": "tuning",
+        "value": "512"
+      },
+      "elementId": "4:252d86ff-4d6a-4eb3-b328-43c3ea679769:116"
+    }
+  },
+  {
+    "n": {
+      "identity": 117,
+      "labels": [
+        "Property"
+      ],
+      "properties": {
+        "created_at": 1781155797965,
+        "unq_key": "cache_ttl_seconds",
+        "type": "tuning",
+        "value": "300"
+      },
+      "elementId": "4:252d86ff-4d6a-4eb3-b328-43c3ea679769:117"
+    }
+  },
+  {
+    "n": {
+      "identity": 118,
+      "labels": [
+        "RootCause"
+      ],
+      "properties": {
+        "name": "object_reference_retained_preventing_gc",
+        "created_at": 1781155797969
+      },
+      "elementId": "4:252d86ff-4d6a-4eb3-b328-43c3ea679769:118"
+    }
+  },
+  {
+    "n": {
+      "identity": 119,
+      "labels": [
+        "Component"
+      ],
+      "properties": {
+        "name": "long_running_worker",
+        "created_at": 1781155797972
+      },
+      "elementId": "4:252d86ff-4d6a-4eb3-b328-43c3ea679769:119"
+    }
+  },
+  {
+    "n": {
+      "identity": 120,
+      "labels": [
+        "Component"
+      ],
+      "properties": {
+        "name": "event_listener_registry",
+        "created_at": 1781155797977
+      },
+      "elementId": "4:252d86ff-4d6a-4eb3-b328-43c3ea679769:120"
+    }
+  }
+]

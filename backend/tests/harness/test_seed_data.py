@@ -144,7 +144,7 @@ def test_S08_code_examples_not_empty(domain: str, raw: dict):
 # ── S09: 개수 검증 ────────────────────────────────────────────────────────────
 
 def test_S09_security_seed_count():
-    assert len(_load(_SEC_JSON)) == 10, "보안 시드 개념 수 != 10"
+    assert len(_load(_SEC_JSON)) == 12, "보안 시드 개념 수 != 12"
 
 
 def test_S09_performance_seed_count():

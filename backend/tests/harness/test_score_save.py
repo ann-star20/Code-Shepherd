@@ -59,13 +59,17 @@ class _FakeNeo4jDriver:
 
 
 class _FakeNeo4jConceptRepo:
-    """Neo4jConceptRepo 더미 — merge_concept 호출 기록."""
+    """Neo4jConceptRepo 더미 — merge_concept/merge_concept_into 호출 기록."""
 
     def __init__(self) -> None:
         self.merge_calls: list[str] = []
+        self.merge_into_calls: list[tuple[str, str]] = []
 
     async def merge_concept(self, concept: ConceptExtractionSchema) -> None:
         self.merge_calls.append(concept.concept_name)
+
+    async def merge_concept_into(self, concept: ConceptExtractionSchema, master_name: str) -> None:
+        self.merge_into_calls.append((concept.concept_name, master_name))
 
 
 class _FakePgPool:
@@ -93,12 +97,30 @@ class _FakePgPool:
 
     async def execute(self, query: str, *args: Any) -> None:
         self.execute_calls.append((query, args))
-        if "UPDATE concepts" in query and len(args) >= 3:
-            new_aliases, new_vec_str, name = args[0], args[1], args[2]
+        if "UPDATE concepts" in query and len(args) >= 11:
+            (
+                new_aliases, new_domains, new_vec_str, severity, description_ko,
+                concept_type, cwe_id, owasp_id, root_cause, desc_vec_str, name,
+            ) = args[:11]
             for c in self._concepts:
                 if c["concept_name"] == name:
                     c["aliases"] = list(new_aliases)
+                    c["domains"] = list(new_domains)
                     c["name_vector"] = _parse_vec(new_vec_str)
+                    if severity is not None:
+                        c["severity"] = severity
+                    if description_ko is not None:
+                        c["description_ko"] = description_ko
+                    if concept_type is not None:
+                        c["concept_type"] = concept_type
+                    if cwe_id is not None:
+                        c["cwe_id"] = cwe_id
+                    if owasp_id is not None:
+                        c["owasp_id"] = owasp_id
+                    if root_cause is not None:
+                        c["root_cause"] = root_cause
+                    if desc_vec_str is not None:
+                        c["desc_vector"] = _parse_vec(desc_vec_str)
                     break
 
 
@@ -170,9 +192,15 @@ def _csrf_seed(emb: MockEmbeddingService) -> dict:
     return {
         "concept_name": "CSRF",
         "aliases": aliases,
+        "domains": ["security"],
         "description_ko": _CSRF_DESC,
         "name_vector": emb.embed(name_text),
         "desc_vector": emb.embed(_CSRF_DESC),
+        "severity": "high",
+        "concept_type": "vulnerability_root_cause",
+        "cwe_id": "CWE-352",
+        "owasp_id": "A01:2021",
+        "root_cause": None,
     }
 
 
@@ -313,6 +341,57 @@ class TestWriteWithPrecomputed:
         update_calls = [c for c in pg.execute_calls if "UPDATE concepts" in c[0]]
         assert update_calls, "MERGE → Centroid Shifting(UPDATE concepts) 필수"
         assert pg.full_scan_count == 0, "write_with_precomputed → 재스코어링 금지"
+
+    @pytest.mark.anyio
+    async def test_F01b_merge_propagates_enrichment_to_target(self) -> None:
+        """write_with_precomputed(MERGE) — incoming concept의 enrichment가 target row에 전파.
+
+        Arrange: CSRF 시드(domains=["security"], cwe_id="CWE-352", owasp_id="A01:2021",
+                 root_cause=None, description_ko=_CSRF_DESC),
+                 incoming = domains=["performance"] 추가 + cwe_id 미제공(None) +
+                 owasp_id 신규값 + root_cause 신규값 + description_ko 미제공("")
+        Act: writer.write_with_precomputed(incoming, MERGE → "CSRF")
+        Assert:
+          - domains: 기존 + 신규 합집합 (apoc.coll.toSet과 동일한 Append+Dedupe 정책)
+          - cwe_id: incoming이 None이므로 COALESCE로 기존 값 유지 (CWE-352)
+          - owasp_id: incoming이 non-null이므로 덮어쓰기 (Overwrite-if-not-null)
+          - root_cause: 기존이 None이므로 incoming 값으로 채워짐
+          - description_ko: incoming이 빈 문자열("")이므로 NULL 취급 → 기존 값 유지,
+            desc_vector 재임베딩 없음
+        """
+        emb = MockEmbeddingService()
+        seed = _csrf_seed(emb)
+        pg = _FakePgPool([seed])
+        neo = _FakeNeo4jDriver()
+        repo = _FakeNeo4jConceptRepo()
+
+        incoming = ConceptExtractionSchema(
+            concept_name="CrossSiteRequestForgery",
+            aliases=["CSRF"],
+            domains=["performance"],
+            cwe_id=None,
+            owasp_id="A99:2099",
+            root_cause="잘못된 토큰 검증",
+            description_ko="",
+        )
+        precomputed = ResolveResult(MergeAction.MERGE, "CSRF", 0.95, "CrossSiteRequestForgery")
+
+        writer = GraphWriterService(pg, neo, repo, emb)
+        await writer.write_with_precomputed(incoming, precomputed)
+
+        updated = next(c for c in pg._concepts if c["concept_name"] == "CSRF")
+        assert set(updated["domains"]) == {"security", "performance"}, (
+            "domains: append+dedupe (apoc.coll.toSet과 동일 정책)"
+        )
+        assert updated["cwe_id"] == "CWE-352", "cwe_id: incoming이 None이면 COALESCE로 기존 유지"
+        assert updated["owasp_id"] == "A99:2099", "owasp_id: incoming이 non-null이면 덮어쓰기"
+        assert updated["root_cause"] == "잘못된 토큰 검증", "root_cause: 기존 None → incoming 값 반영"
+        assert updated["description_ko"] == _CSRF_DESC, (
+            "description_ko: incoming이 빈 문자열이면 NULL 취급되어 기존 값 유지"
+        )
+        assert repo.merge_into_calls == [("CrossSiteRequestForgery", "CSRF")], (
+            "MERGE(pre): repo.merge_concept_into(concept, target)으로 4-레이어 전체 적재"
+        )
 
     @pytest.mark.anyio
     async def test_F02_related_to_creates_edge_no_rescore(self) -> None:

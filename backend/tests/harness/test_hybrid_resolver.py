@@ -97,14 +97,32 @@ class _FakePgPool:
 
     async def execute(self, query: str, *args: Any) -> None:
         self.execute_calls.append((query, args))
-        # aliases/name_vector 인라인 업데이트 시뮬레이션
-        if "UPDATE concepts" in query and len(args) >= 3:
-            new_aliases, new_vec_str, name = args[0], args[1], args[2]
+        # aliases/domains/name_vector 등 인라인 업데이트 시뮬레이션
+        if "UPDATE concepts" in query and len(args) >= 11:
+            (
+                new_aliases, new_domains, new_vec_str, severity, description_ko,
+                concept_type, cwe_id, owasp_id, root_cause, desc_vec_str, name,
+            ) = args[:11]
             for c in self._concepts:
                 if c["concept_name"] == name:
                     c["aliases"] = list(new_aliases)
+                    c["domains"] = list(new_domains)
                     # 문자열 표현을 파싱하여 벡터로 저장
                     c["name_vector"] = _parse_vec(new_vec_str)
+                    if severity is not None:
+                        c["severity"] = severity
+                    if description_ko is not None:
+                        c["description_ko"] = description_ko
+                    if concept_type is not None:
+                        c["concept_type"] = concept_type
+                    if cwe_id is not None:
+                        c["cwe_id"] = cwe_id
+                    if owasp_id is not None:
+                        c["owasp_id"] = owasp_id
+                    if root_cause is not None:
+                        c["root_cause"] = root_cause
+                    if desc_vec_str is not None:
+                        c["desc_vector"] = _parse_vec(desc_vec_str)
                     break
 
 
@@ -133,6 +151,7 @@ def _seed_record(
     return {
         "concept_name": name,
         "aliases": aliases,
+        "domains": ["security"],
         "description_ko": desc,
         "name_vector": emb.embed(name_text),
         "desc_vector": emb.embed(desc),
@@ -393,7 +412,7 @@ class TestHybridResolveFakePool:
         assert update_calls, "Centroid Shifting — UPDATE concepts 쿼리가 호출되어야 함"
 
         # 업데이트된 벡터가 원본과 달라야 함
-        updated_vec = _parse_vec(update_calls[0][1][1])  # args[1] = new_name_vec_str
+        updated_vec = _parse_vec(update_calls[0][1][2])  # args[2] = new_name_vec_str
         assert updated_vec != original_vec, (
             "name_vector가 원본과 동일 — Centroid Shifting 미발생"
         )

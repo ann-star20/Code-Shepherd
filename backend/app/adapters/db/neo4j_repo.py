@@ -105,6 +105,27 @@ class Neo4jConceptRepo:
 
     # ─── 핵심 MERGE 오케스트레이션 ───────────────────────────────────────────
 
+    async def merge_concept_into(
+        self, concept: ConceptExtractionSchema, master_name: str,
+    ) -> None:
+        """
+        이미 결정된 master_name에 ConceptExtractionSchema 전체를 4-레이어 MERGE.
+
+        merge_concept과 달리 find_master_by_alias 조회를 생략한다 — 호출자
+        (GraphWriterService)가 hybrid_resolve를 통해 target을 이미 확정한 경우 사용.
+        """
+        async with self._driver.session() as session:
+            await session.execute_write(_write_concept_tx, concept, master_name)
+
+        log.info(
+            "[merge-into] concept='%s' → master='%s' domains=%s mechs=%d props=%d",
+            concept.concept_name,
+            master_name,
+            concept.domains,
+            len(concept.mechanisms),
+            len(concept.properties),
+        )
+
     async def merge_concept(self, concept: ConceptExtractionSchema) -> str:
         """
         ConceptExtractionSchema 전체를 4-레이어 그래프로 멱등성 MERGE.
@@ -117,16 +138,7 @@ class Neo4jConceptRepo:
             log.info("[dedup] '%s' → master '%s'", concept.concept_name, existing)
             master_name = existing
 
-        async with self._driver.session() as session:
-            await session.execute_write(_write_concept_tx, concept, master_name)
-
-        log.info(
-            "[merge] concept='%s' domains=%s mechs=%d props=%d",
-            master_name,
-            concept.domains,
-            len(concept.mechanisms),
-            len(concept.properties),
-        )
+        await self.merge_concept_into(concept, master_name)
         return master_name
 
     # ─── 단건 조회 ────────────────────────────────────────────────────────────
@@ -191,20 +203,6 @@ class Neo4jConceptRepo:
                         name=name,
                         labels=new_labels,
                     )
-
-    # ─── MERGE 수렴 후 Mechanism 보강 ────────────────────────────────────────
-
-    async def merge_mechanisms(
-        self,
-        concept: ConceptExtractionSchema,
-        master_name: str,
-    ) -> None:
-        """MERGE 분기: 기존 master 노드에 신규 Mechanism/CodeExample만 추가.
-
-        Concept 노드 재생성·속성 덮어쓰기 없이 Layer 3/4만 병합한다.
-        """
-        async with self._driver.session() as session:
-            await session.execute_write(_write_mechanisms_only_tx, concept, master_name)
 
     # ─── 연쇄 삭제 ────────────────────────────────────────────────────────────
 
@@ -405,7 +403,12 @@ async def _write_concept_tx(
         ON MATCH SET
             c.updated_at     = timestamp(),
             c.aliases        = apoc.coll.toSet(c.aliases + $aliases),
-            c.domains        = apoc.coll.toSet(c.domains + $domains)
+            c.domains        = apoc.coll.toSet(c.domains + $domains),
+            c.concept_type   = COALESCE($concept_type, c.concept_type),
+            c.cwe_id         = COALESCE($cwe_id, c.cwe_id),
+            c.owasp_id       = COALESCE($owasp_id, c.owasp_id),
+            c.severity       = COALESCE($severity, c.severity),
+            c.description_ko = COALESCE($description_ko, c.description_ko)
         """,
         name=master_name,
         concept_type=concept.concept_type,
@@ -413,7 +416,7 @@ async def _write_concept_tx(
         owasp_id=concept.owasp_id,
         severity=effective_severity,
         domains=concept.domains,
-        description_ko=concept.description_ko,
+        description_ko=concept.description_ko or None,
         aliases=all_aliases,
     )
 
@@ -477,6 +480,12 @@ async def _write_concept_tx(
                     ce.code              = $code,
                     ce.description       = $description,
                     ce.created_at        = timestamp()
+                ON MATCH SET
+                    ce.lang_version      = COALESCE($lang_version, ce.lang_version),
+                    ce.framework_version = COALESCE($fw_ver, ce.framework_version),
+                    ce.description       = COALESCE($description, ce.description),
+                    ce.code              = $code,
+                    ce.updated_at        = timestamp()
                 MERGE (m)-[:HAS_EXAMPLE]->(ce)
                 """,
                 unq_id=unq_id,
@@ -550,60 +559,6 @@ async def _write_concept_tx(
             doc_id=concept.doc_id,
             name=master_name,
         )
-
-
-async def _write_mechanisms_only_tx(
-    tx: AsyncManagedTransaction,
-    concept: ConceptExtractionSchema,
-    master_name: str,
-) -> None:
-    """Concept 노드 생성 없이 Mechanism/CodeExample 만 master 노드에 MERGE.
-
-    MERGE 수렴 분기에서 target 노드에 신규 코드 예제를 병합할 때 호출된다.
-    unq_id 기준 ON CREATE SET: 동일 버전 조합이 이미 있으면 건너뜀.
-    """
-    for mech in concept.mechanisms:
-        await tx.run(
-            """
-            MATCH (c:Concept {name: $concept_name})
-            MERGE (m:Mechanism {name: $mech_name})
-            ON CREATE SET m.created_at = timestamp()
-            MERGE (c)-[:MITIGATED_BY]->(m)
-            """,
-            mech_name=mech.mechanism_name,
-            concept_name=master_name,
-        )
-
-        for ex in mech.code_examples:
-            if not ex.code:
-                continue
-            unq_id = (
-                f"{mech.mechanism_name}_{ex.lang}_{ex.lang_version}"
-                f"_{ex.framework}_{ex.framework_version}"
-            )
-            await tx.run(
-                """
-                MATCH (m:Mechanism {name: $mech_name})
-                MERGE (ce:CodeExample {unq_id: $unq_id})
-                ON CREATE SET
-                    ce.lang              = $lang,
-                    ce.lang_version      = $lang_version,
-                    ce.framework         = $framework,
-                    ce.framework_version = $fw_ver,
-                    ce.code              = $code,
-                    ce.description       = $description,
-                    ce.created_at        = timestamp()
-                MERGE (m)-[:HAS_EXAMPLE]->(ce)
-                """,
-                unq_id=unq_id,
-                lang=ex.lang,
-                lang_version=ex.lang_version,
-                framework=ex.framework,
-                fw_ver=ex.framework_version,
-                code=ex.code,
-                description=ex.description,
-                mech_name=mech.mechanism_name,
-            )
 
 
 async def _delete_concept_tx(tx: AsyncManagedTransaction, name: str) -> None:
