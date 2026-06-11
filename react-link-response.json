@@ -1,74 +1,72 @@
-redis-1          | 1015:C 11 Jun 2026 13:26:45.403 * Fork CoW for RDB: current 0 MB, peak 0 MB, average 0 MB
-redis-1          | 1:M 11 Jun 2026 13:26:45.496 * Background saving terminated with success
-celery_worker-1  | [2026-06-11 13:26:46,356: INFO/ForkPoolWorker-1] GeminiClient 초기화 — model: gemini-2.5-flash
-celery_worker-1  | [2026-06-11 13:26:46,483: INFO/ForkPoolWorker-1] [PROMPT] framework=Unknown lang=EN domains=['security', 'performance'] chunk_len=3163 | preloadModule – React API Reference APIs   Copy page Copy preloadModule Note React-based frameworks  frequently handle r...
-celery_worker-1  | [2026-06-11 13:26:46,483: INFO/ForkPoolWorker-1] AFC is enabled with max remote calls: 10.
-celery_worker-1  | [2026-06-11 13:27:12,484: INFO/ForkPoolWorker-1] [RESPONSE RAW]
-celery_worker-1  | ```json
-celery_worker-1  | [
-celery_worker-1  |   {
-celery_worker-1  |     "concept_name": "PreloadModule",
-celery_worker-1  |     "concept_type": "resource_loading_optimization",
-celery_worker-1  |     "cwe_id": null,
-celery_worker-1  |     "owasp_id": null,
-celery_worker-1  |     "severity": null,
-celery_worker-1  |     "domains": ["performance", "security"],
-celery_worker-1  |     "description_ko": "브라우저가 예상되는 ESM 모듈을 미리 다운로드하도록 힌트를 제공하여 로드 시간을 절약하는 React API입니다. 렌더링 시점 또는 이벤트 핸들러에서 호출하여 리소스 로딩을 최적화할 수 있으며, 보안 관련 옵션들을 통해 모듈의 무결성과 출처를 검증할 수 있습니다.",
-celery_worker-1  |     "aliases": ["preloadModule", "모듈 사전 로드", "EagerModuleFetching"],
-celery_worker-1  |     "root_cause": null,
-celery_worker-1  |     "affected_components": [],
-celery_worker-1  |     "mechanism": [
-celery_worker-1  |       {
-celery_worker-1  |         "mechanism_name": "eager_module_fetching_on_render",
-celery_worker-1  |         "code_examples": [
-celery_worker-1  |           {
-celery_worker-1  |             "lang": "javascript",
-celery_worker-1  |             "lang_version": null,
-celery_worker-1  |             "framework": "react",
-celery_worker-1  |             "framework_version": null,
-celery_worker-1  |             "code": "import { preloadModule } from 'react-dom';\nfunction AppRoot() {\n  preloadModule(\"https://example.com/module.js\", {as: \"script\"});\n  return ...;\n}",
-celery_worker-1  |             "description": "컴포넌트 렌더링 시점에서 preloadModule을 호출하여 해당 컴포넌트나 자식들이 사용할 모듈을 미리 다운로드하도록 지시하는 코드 예시입니다. 이는 초기 로딩 성능을 최적화하는 데 사용되며, 브라우저가 모듈 실행을 즉시 시작하게 하려면 preinitModule을 사용합니다."
-celery_worker-1  |           }
-celery_worker-1  |         ]
-celery_worker-1  |       },
-celery_worker-1  |       {
-celery_worker-1  |         "mechanism_name": "eager_module_fetching_on_event_handler",
-celery_worker-1  |         "code_examples": [
-celery_worker-1  |           {
-celery_worker-1  |             "lang": "javascript",
-celery_worker-1  |             "lang_version": null,
-celery_worker-1  |             "framework": "react",
-celery_worker-1  |             "framework_version": null,
-celery_worker-1  |             "code": "import { preloadModule } from 'react-dom';\nfunction CallToAction() {\n  const onClick = () => {\n    preloadModule(\"https://example.com/module.js\", {as: \"script\"});\n    startWizard();\n  }\n  return (\n    <button onClick={onClick}>Start Wizard</button>\n  );\n}",
-celery_worker-1  |             "description": "이벤트 핸들러 내에서 preloadModule을 호출하여 사용자가 특정 페이지나 상태로 전환하기 전에 필요한 모듈을 미리 다운로드하도록 하는 코드 예시입니다. 이는 새로운 페이지나 상태의 렌더링 시점에 호출하는 것보다 더 일찍 프로세스를 시작하여 사용자 경험을 개선합니다."
-celery_worker-1  |           }
-celery_worker-1  |         ]
-celery_worker-1  |       }
-celery_worker-1  |     ],
-celery_worker-1  |     "config_properties": [
-celery_worker-1  |       {
-celery_worker-1  |         "key": "as",
-celery_worker-1  |         "value": "script",
-celery_worker-1  |         "type": "tuning"
-celery_worker-1  |       },
-celery_worker-1  |       {
-celery_worker-1  |         "key": "cross_origin",
-celery_worker-1  |         "value": "anonymous|use-credentials",
-celery_worker-1  |         "type": "security"
-celery_worker-1  |       },
-celery_worker-1  |       {
-celery_worker-1  |         "key": "integrity",
-celery_worker-1  |         "value": "cryptographic_hash_string",
-celery_worker-1  |         "type": "security"
-celery_worker-1  |       },
-celery_worker-1  |       {
-celery_worker-1  |         "key": "nonce",
-celery_worker-1  |         "value": "cryptographic_nonce_string",
-celery_worker-1  |         "type": "security"
-celery_worker-1  |       }
-celery_worker-1  |     ]
-celery_worker-1  |   }
-celery_worker-1  | ]
-celery_worker-1  | ```
-celery_worker-1  | [2026-06-11 13:27:12,485: INFO/ForkPoolWorker-1] [PARSED] 1 개 컨셉: ['PreloadModule']
+[2026-06-11 13:26:46,356: INFO/ForkPoolWorker-1] GeminiClient 초기화 — model: gemini-2.5-flash
+[2026-06-11 13:26:46,483: INFO/ForkPoolWorker-1] [PROMPT] framework=Unknown lang=EN domains=['security', 'performance'] chunk_len=3163 | preloadModule – React API Reference APIs   Copy page Copy preloadModule Note React-based frameworks  frequently handle r...
+[2026-06-11 13:26:46,483: INFO/ForkPoolWorker-1] AFC is enabled with max remote calls: 10.
+[2026-06-11 13:27:12,484: INFO/ForkPoolWorker-1] [RESPONSE RAW]
+```json
+[
+  {
+    "concept_name": "PreloadModule",
+    "concept_type": "resource_loading_optimization",
+    "cwe_id": null,
+    "owasp_id": null,
+    "severity": null,
+    "domains": ["performance", "security"],
+    "description_ko": "브라우저가 예상되는 ESM 모듈을 미리 다운로드하도록 힌트를 제공하여 로드 시간을 절약하는 React API입니다. 렌더링 시점 또는 이벤트 핸들러에서 호출하여 리소스 로딩을 최적화할 수 있으며, 보안 관련 옵션들을 통해 모듈의 무결성과 출처를 검증할 수 있습니다.",
+    "aliases": ["preloadModule", "모듈 사전 로드", "EagerModuleFetching"],
+    "root_cause": null,
+    "affected_components": [],
+    "mechanism": [
+      {
+        "mechanism_name": "eager_module_fetching_on_render",
+        "code_examples": [
+          {
+            "lang": "javascript",
+            "lang_version": null,
+            "framework": "react",
+            "framework_version": null,
+            "code": "import { preloadModule } from 'react-dom';\nfunction AppRoot() {\n  preloadModule(\"https://example.com/module.js\", {as: \"script\"});\n  return ...;\n}",
+            "description": "컴포넌트 렌더링 시점에서 preloadModule을 호출하여 해당 컴포넌트나 자식들이 사용할 모듈을 미리 다운로드하도록 지시하는 코드 예시입니다. 이는 초기 로딩 성능을 최적화하는 데 사용되며, 브라우저가 모듈 실행을 즉시 시작하게 하려면 preinitModule을 사용합니다."
+          }
+        ]
+      },
+      {
+        "mechanism_name": "eager_module_fetching_on_event_handler",
+        "code_examples": [
+          {
+            "lang": "javascript",
+            "lang_version": null,
+            "framework": "react",
+            "framework_version": null,
+            "code": "import { preloadModule } from 'react-dom';\nfunction CallToAction() {\n  const onClick = () => {\n    preloadModule(\"https://example.com/module.js\", {as: \"script\"});\n    startWizard();\n  }\n  return (\n    <button onClick={onClick}>Start Wizard</button>\n  );\n}",
+            "description": "이벤트 핸들러 내에서 preloadModule을 호출하여 사용자가 특정 페이지나 상태로 전환하기 전에 필요한 모듈을 미리 다운로드하도록 하는 코드 예시입니다. 이는 새로운 페이지나 상태의 렌더링 시점에 호출하는 것보다 더 일찍 프로세스를 시작하여 사용자 경험을 개선합니다."
+          }
+        ]
+      }
+    ],
+    "config_properties": [
+      {
+        "key": "as",
+        "value": "script",
+        "type": "tuning"
+      },
+      {
+        "key": "cross_origin",
+        "value": "anonymous|use-credentials",
+        "type": "security"
+      },
+      {
+        "key": "integrity",
+        "value": "cryptographic_hash_string",
+        "type": "security"
+      },
+      {
+        "key": "nonce",
+        "value": "cryptographic_nonce_string",
+        "type": "security"
+      }
+    ]
+  }
+]
+```
+[2026-06-11 13:27:12,485: INFO/ForkPoolWorker-1] [PARSED] 1 개 컨셉: ['PreloadModule']
 Batches:   0%|          | 0/1 [00:00<?, ?it/s]ARNING/ForkPoolWorker-1] 

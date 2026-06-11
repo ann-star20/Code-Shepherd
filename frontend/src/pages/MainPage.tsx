@@ -516,7 +516,10 @@ export function MainPage() {
       }
       setConcepts(apiConcepts as typeof INITIAL_CONCEPTS);
       if (apiConcepts.length > 0) {
-        setSelectedConcept(apiConcepts[0] as typeof INITIAL_CONCEPTS[0]);
+        setSelectedConcept((prev) => {
+          const stillExists = apiConcepts.find((c) => c.name === prev?.name);
+          return (stillExists ?? apiConcepts[0]) as typeof INITIAL_CONCEPTS[0];
+        });
       }
     } catch { /* 네트워크 오류 시 하드코딩 초기값 유지 */ }
   }, []);
@@ -701,6 +704,7 @@ export function MainPage() {
             setPipelineState("FINISHED");
             setShowDraft(false);
             setUrls([]);
+            fetchTopology(activeTab, graphSearch);
           }
           return;
         }
@@ -716,6 +720,7 @@ export function MainPage() {
           setPipelineState("FINISHED");
           setShowDraft(false);
           setUrls([]);
+          fetchTopology(activeTab, graphSearch);
         }
       } catch { /* JSON parse 오류 무시 */ }
     };
@@ -723,7 +728,7 @@ export function MainPage() {
     es.onerror = () => {
       addLog("SYSTEM", "SSE 연결 오류 — 백엔드 재연결 대기 중...");
     };
-  }, [addToast]);
+  }, [addToast, fetchTopology, activeTab, graphSearch]);
 
   // ── URL 추가 ─────────────────────────────────────────────────────────────
   async function handleAddUrl(e: React.SyntheticEvent) {
