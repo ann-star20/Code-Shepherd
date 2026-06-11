@@ -1,5 +1,23 @@
 import "@testing-library/jest-dom";
 import { afterAll, afterEach, beforeAll } from "vitest";
+
+// jsdom에서 File/Blob.arrayBuffer() 미지원 — Web Crypto 테스트용 폴리필
+if (typeof Blob.prototype.arrayBuffer === "undefined") {
+  Blob.prototype.arrayBuffer = function (): Promise<ArrayBuffer> {
+    return new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onload = () => resolve(reader.result as ArrayBuffer);
+      reader.onerror = () => reject(reader.error);
+      reader.readAsArrayBuffer(this);
+    });
+  };
+}
+
+// crypto.subtle 미지원 환경 → Node 내장 crypto로 폴리필
+if (typeof globalThis.crypto === "undefined" || typeof globalThis.crypto.subtle === "undefined") {
+  const { webcrypto } = await import("crypto");
+  Object.defineProperty(globalThis, "crypto", { value: webcrypto, writable: false });
+}
 import { server } from "./msw/server";
 
 // jsdom does not implement scrollIntoView
