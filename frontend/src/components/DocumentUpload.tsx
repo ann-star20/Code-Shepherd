@@ -1,5 +1,7 @@
 import { useCallback, useEffect, useRef, useState, type ChangeEvent, type DragEvent } from "react";
-import { getDocDetails, listDocuments, uploadDocument } from "../lib/kmsApi";
+import { getDocDetails, listDocuments, uploadDocument, checkDuplicate, replaceDocument, type CheckDuplicateResult, type ExistingDocInfo } from "../lib/kmsApi";
+import { computeFileHash } from "../lib/fileHash";
+import { DuplicateModal } from "./DuplicateModal";
 import { listHitlQueue } from "../lib/hitlApi";
 import { TERMINAL_STATUSES, useUploadStatus } from "../hooks/useUploadStatus";
 import type { DocDetailsResponse, UploadResponse } from "../types/kms";
@@ -102,6 +104,12 @@ export function DocumentUpload({ isVisible = true }: { isVisible?: boolean }) {
   const [dragOver, setDragOver]         = useState(false);
   const [uploading, setUploading]       = useState(false);
   const [uploadError, setUploadError]   = useState<string | null>(null);
+  const [duplicateState, setDuplicateState] = useState<{
+    type: "identical" | "modified";
+    existingDoc: ExistingDocInfo;
+    pendingFile: File;
+    pendingHash: string;
+  } | null>(null);
   const [uploadResult, setUploadResult] = useState<UploadResponse | null>(() => {
     try {
       const saved = sessionStorage.getItem(SESSION_KEY);
@@ -152,6 +160,34 @@ export function DocumentUpload({ isVisible = true }: { isVisible?: boolean }) {
     return () => clearTimeout(timer);
   }, [isTerminal, uploadResult?.doc_id, docDetails]);
 
+  const doUpload = useCallback(async (file: File, fileHash?: string | null) => {
+    setUploading(true);
+    setUploadError(null);
+    try {
+      const result = await uploadDocument(file, "upload", fileHash ?? undefined);
+      setUploadResult(result);
+      setKpiRefreshKey(k => k + 1);
+    } catch (e) {
+      setUploadError(e instanceof Error ? e.message : "업로드 중 오류 발생");
+    } finally {
+      setUploading(false);
+    }
+  }, []);
+
+  const doReplace = useCallback(async (oldDocId: string, file: File, fileHash?: string | null) => {
+    setUploading(true);
+    setUploadError(null);
+    try {
+      const result = await replaceDocument(oldDocId, file, fileHash);
+      setUploadResult({ doc_id: result.new_doc_id, status: result.status, message: result.message, hitl_required: false, chunk_count: 0 });
+      setKpiRefreshKey(k => k + 1);
+    } catch (e) {
+      setUploadError(e instanceof Error ? e.message : "교체 중 오류 발생");
+    } finally {
+      setUploading(false);
+    }
+  }, []);
+
   const handleFile = useCallback(async (file: File) => {
     const ext = "." + (file.name.split(".").pop()?.toLowerCase() ?? "");
     if (!ACCEPTED_EXTENSIONS.includes(ext)) {
@@ -162,17 +198,34 @@ export function DocumentUpload({ isVisible = true }: { isVisible?: boolean }) {
     setUploadResult(null);
     setDocDetails(null);
     setShowChunks(false);
-    setUploading(true);
+    setDuplicateState(null);
+
+    let fileHash: string | null = null;
     try {
-      const result = await uploadDocument(file);
-      setUploadResult(result);
-      setKpiRefreshKey(k => k + 1);
-    } catch (e) {
-      setUploadError(e instanceof Error ? e.message : "업로드 중 오류 발생");
-    } finally {
-      setUploading(false);
+      fileHash = await computeFileHash(file);
+    } catch {
+      // hash 실패 시 체크 없이 업로드 진행
     }
-  }, []);
+
+    if (fileHash) {
+      try {
+        const dupResult = await checkDuplicate(fileHash, file.name);
+        if (dupResult.status !== "new" && dupResult.existing_doc) {
+          setDuplicateState({
+            type: dupResult.status,
+            existingDoc: dupResult.existing_doc,
+            pendingFile: file,
+            pendingHash: fileHash,
+          });
+          return;
+        }
+      } catch {
+        // 중복 체크 실패 시 업로드 계속 진행
+      }
+    }
+
+    await doUpload(file, fileHash);
+  }, [doUpload]);
 
   const onFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -200,6 +253,39 @@ export function DocumentUpload({ isVisible = true }: { isVisible?: boolean }) {
 
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
+      {/* ── 중복 감지 모달 ─────────────────────────────────────────── */}
+      {duplicateState && (
+        duplicateState.type === "identical" ? (
+          <DuplicateModal
+            type="identical"
+            existingDoc={duplicateState.existingDoc}
+            onKeepExisting={() => setDuplicateState(null)}
+            onReupload={() => {
+              const { pendingFile, pendingHash } = duplicateState;
+              setDuplicateState(null);
+              void doUpload(pendingFile, pendingHash);
+            }}
+            onCancel={() => setDuplicateState(null)}
+          />
+        ) : (
+          <DuplicateModal
+            type="modified"
+            existingDoc={duplicateState.existingDoc}
+            onKeepExisting={() => setDuplicateState(null)}
+            onReplace={() => {
+              const { pendingFile, pendingHash, existingDoc } = duplicateState;
+              setDuplicateState(null);
+              void doReplace(existingDoc.doc_id, pendingFile, pendingHash);
+            }}
+            onAddNew={() => {
+              const { pendingFile, pendingHash } = duplicateState;
+              setDuplicateState(null);
+              void doUpload(pendingFile, pendingHash);
+            }}
+            onCancel={() => setDuplicateState(null)}
+          />
+        )
+      )}
 
       {/* ── KPI Row ─────────────────────────────────────────────────── */}
       <div style={{ display: "flex", gap: 12 }}>

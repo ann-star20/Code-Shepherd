@@ -15,10 +15,11 @@ function extractDetail(error: unknown, fallback: string): Error {
   return new Error(typeof detail === "string" ? detail : fallback);
 }
 
-export async function uploadDocument(file: File, source = "upload"): Promise<UploadResponse> {
+export async function uploadDocument(file: File, source = "upload", fileHash?: string): Promise<UploadResponse> {
   const form = new FormData();
   form.append("file", file);
   form.append("source", source);
+  if (fileHash) form.append("file_hash", fileHash);
   try {
     const { data } = await m0Client.post<UploadResponse>("/kms/upload", form, {
       headers: { "Content-Type": "multipart/form-data" },
@@ -83,3 +84,62 @@ export async function getDocPageImages(docId: string): Promise<PageImage[]> {
 }
 
 export type { PageImage };
+
+// ── 중복 감지 ─────────────────────────────────────────────────────────────────
+
+export interface ExistingDocInfo {
+  doc_id: string;
+  original_filename: string | null;
+  upload_status: string | null;
+  created_at: string | null;
+}
+
+export interface CheckDuplicateResult {
+  status: "identical" | "modified" | "new";
+  existing_doc: ExistingDocInfo | null;
+}
+
+export async function checkDuplicate(
+  fileHash: string,
+  originalFilename: string,
+): Promise<CheckDuplicateResult> {
+  const form = new FormData();
+  form.append("file_hash", fileHash);
+  form.append("original_filename", originalFilename);
+  try {
+    const { data } = await m0Client.post<CheckDuplicateResult>("/kms/check-duplicate", form, {
+      headers: { "Content-Type": "multipart/form-data" },
+    });
+    return data;
+  } catch (e) {
+    throw extractDetail(e, "중복 확인 실패");
+  }
+}
+
+export interface ReplaceDocumentResult {
+  new_doc_id: string;
+  old_doc_id: string;
+  status: string;
+  message: string;
+}
+
+export async function replaceDocument(
+  oldDocId: string,
+  file: File,
+  fileHash?: string | null,
+  source = "upload",
+): Promise<ReplaceDocumentResult> {
+  const form = new FormData();
+  form.append("old_doc_id", oldDocId);
+  form.append("file", file);
+  form.append("source", source);
+  if (fileHash) form.append("file_hash", fileHash);
+  try {
+    const { data } = await m0Client.post<ReplaceDocumentResult>("/kms/replace-document", form, {
+      headers: { "Content-Type": "multipart/form-data" },
+    });
+    return data;
+  } catch (e) {
+    throw extractDetail(e, "문서 교체 실패");
+  }
+}
