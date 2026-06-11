@@ -1,5 +1,7 @@
 """레이어 D — LLM 인프라 추상화 테스트 (T09~T12). PRD §16."""
 
+from unittest.mock import AsyncMock, MagicMock, patch
+
 import pytest
 from app.domain.models import ConceptExtractionSchema
 from app.infrastructure.llm.interface import ILLMClient
@@ -89,3 +91,55 @@ async def test_mock_concepts_use_owasp_2025_ids():
     owasp_ids = [r.owasp_id for r in results if r.owasp_id]
     for oid in owasp_ids:
         assert ":2025" in oid, f"OWASP 2021 ID 발견: {oid}"
+
+
+# ── GeminiClient.extract_concepts — GenerateContentConfig + 빈 응답 진단 ─────
+
+
+def _make_gemini_client(response_text: str) -> tuple[GeminiClient, AsyncMock]:
+    """genai.Client를 mock한 GeminiClient와 generate_content mock을 반환."""
+    fake_response = MagicMock()
+    fake_response.text = response_text
+    generate_content = AsyncMock(return_value=fake_response)
+
+    fake_genai_client = MagicMock()
+    fake_genai_client.aio.models.generate_content = generate_content
+
+    with patch("google.genai.Client", return_value=fake_genai_client):
+        client = GeminiClient(api_key="fake-key")
+
+    return client, generate_content
+
+
+@pytest.mark.anyio
+async def test_gemini_extract_concepts_uses_generate_content_config():
+    """generate_content 호출 시 temperature=0.2, response_mime_type=json 전달."""
+    client, generate_content = _make_gemini_client(
+        '[{"concept_name": "XSS", "domains": ["security"], "description_ko": "x"}]'
+    )
+
+    await client.extract_concepts("chunk", "doc1", {"framework": "Django", "lang": "KO"})
+
+    config = generate_content.call_args.kwargs["config"]
+    assert config.temperature == pytest.approx(0.2)
+    assert config.response_mime_type == "application/json"
+
+
+@pytest.mark.anyio
+async def test_gemini_extract_concepts_logs_empty_response(caplog):
+    """빈 배열 응답 시 [EMPTY] 진단 로그에 framework/lang/domains가 남는다."""
+    client, _ = _make_gemini_client("[]")
+
+    with caplog.at_level("WARNING"):
+        result = await client.extract_concepts(
+            "chunk", "doc1", {"framework": "Django", "lang": "KO", "allowed_domains": ["security"]}
+        )
+
+    assert result == []
+    empty_logs = [r for r in caplog.records if "[EMPTY]" in r.getMessage()]
+    assert len(empty_logs) == 1
+    msg = empty_logs[0].getMessage()
+    assert "doc_id=doc1" in msg
+    assert "framework=Django" in msg
+    assert "lang=KO" in msg
+    assert "domains=['security']" in msg

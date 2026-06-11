@@ -57,9 +57,11 @@ class GeminiClient(ILLMClient):
     def __init__(self, api_key: str, model: str = "gemini-2.5-flash", langsmith_project: str = "") -> None:
         try:
             from google import genai
+            from google.genai import types
             from langsmith import traceable  # noqa: F401
 
             self._client = genai.Client(api_key=api_key)
+            self._types = types
             self._model_name = model
             logger.info("GeminiClient 초기화 — model: %s", model)
         except ImportError as exc:
@@ -90,13 +92,27 @@ class GeminiClient(ILLMClient):
         )
 
         response = await self._client.aio.models.generate_content(
-            model=self._model_name, contents=prompt
+            model=self._model_name,
+            contents=prompt,
+            config=self._types.GenerateContentConfig(
+                temperature=0.2,
+                response_mime_type="application/json",
+            ),
         )
 
         self.raw_responses.append(response.text)
         logger.info("[RESPONSE RAW]\n%s", response.text)
 
         raw_list = _parse_json_safely(response.text)
+        if not raw_list:
+            logger.warning(
+                "[EMPTY] doc_id=%s framework=%s lang=%s domains=%s chunk_len=%d",
+                doc_id,
+                metadata.get("framework", "Unknown"),
+                metadata.get("lang", "EN"),
+                domains_used,
+                len(text_chunk),
+            )
         logger.info(
             "[PARSED] %d 개 컨셉: %s",
             len(raw_list),

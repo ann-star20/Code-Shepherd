@@ -59,7 +59,7 @@ def _log(conn, doc_id: str, session_id: str, agent: str, level: str, message: st
 def _set_state(conn, doc_id: str, state: str):
     with conn.cursor() as cur:
         cur.execute(
-            "UPDATE documents SET state=%s, updated_at=now() WHERE doc_id=%s",
+            "UPDATE knowledge_document SET state=%s, updated_at=now() WHERE doc_id=%s",
             (state, doc_id),
         )
     conn.commit()
@@ -69,11 +69,11 @@ def _set_state(conn, doc_id: str, state: str):
 
 @celery_app.task(name="pipeline.crawler", bind=True, max_retries=3)
 def crawl_task(self, session_id: str, doc_id: str):
-    """documents.original_url 조회 → HTTP 크롤링 → 텍스트 청크 분리."""
+    """knowledge_document.original_url 조회 → HTTP 크롤링 → 텍스트 청크 분리."""
     conn = _pg_conn()
     try:
         with conn.cursor() as cur:
-            cur.execute("SELECT original_url FROM documents WHERE doc_id=%s", (doc_id,))
+            cur.execute("SELECT state, original_url FROM knowledge_document WHERE doc_id=%s", (doc_id,))
             row = cur.fetchone()
             if row and row[0] == 'FAILED':
                 _log(conn, doc_id, session_id, "System", "WARNING", f"[RESET] 과거 실패 문서({doc_id}) 감지 ➔ 스테이징 세척 및 1단계 클린 리부팅 단행.")
@@ -83,8 +83,8 @@ def crawl_task(self, session_id: str, doc_id: str):
                 conn.commit()
                 _set_state(conn, doc_id, "PENDING")
         if not row:
-            raise ValueError(f"doc_id '{doc_id}' not found in documents")
-        url = row[0]
+            raise ValueError(f"doc_id '{doc_id}' not found in knowledge_document")
+        url = row[1]
 
         _log(conn, doc_id, session_id, "Crawler", "INFO", f"크롤링 시작: {url}")
         _set_state(conn, doc_id, "CRAWLING")
@@ -210,17 +210,25 @@ async def _do_extract(session_id: str, doc_id: str, chunks: list[str]) -> int:
     try:
         async with pool.acquire() as db_conn:
             registered = await get_registered_domains(db_conn)
+            doc_meta_row = await db_conn.fetchrow(
+                "SELECT framework, lang FROM knowledge_document WHERE doc_id=$1", doc_id
+            )
+            metadata = {
+                "framework": (doc_meta_row["framework"] if doc_meta_row else None) or "Unknown",
+                "lang": (doc_meta_row["lang"] if doc_meta_row else None) or "EN",
+                "allowed_domains": sorted(registered) if registered else None,
+            }
             if _USE_REAL_LLM:
                 all_concepts = []
                 for i, chunk in enumerate(chunks):
                     if i > 0:
                         await asyncio.sleep(4)  # 무료 티어 20 req/min → 청크 간 4초 간격
-                    concepts = await client.extract_concepts(chunk, doc_id, {})
+                    concepts = await client.extract_concepts(chunk, doc_id, metadata)
                     all_concepts.extend(concepts)
             else:
                 # MockClient는 청크 내용과 무관하게 llm_response.json(또는 내장 _MOCK_CONCEPTS)을
                 # 그대로 반환하므로, 청크 수만큼 반복하면 동일 컨셉이 중복 적재된다 → 1회만 호출.
-                all_concepts = await client.extract_concepts(chunks[0] if chunks else "", doc_id, {})
+                all_concepts = await client.extract_concepts(chunks[0] if chunks else "", doc_id, metadata)
             await write_staging_draft(session_id, doc_id, all_concepts, db_conn, registered)
 
         # 3-Factor 하이브리드 점수 선행 계산 → staging 영속화

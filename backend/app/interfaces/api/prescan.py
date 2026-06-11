@@ -2,7 +2,7 @@
 
 v3.2 — `framework_metadata` 테이블 기반 동적 패턴 매칭으로 하드코딩
 `_FRAMEWORK_PATTERNS`를 완전히 대체한다. ETag는 대소문자 무관으로 포획해
-`documents.etag`에 영속화하고, 문서 원문 언어는 `documents.doc_lang`에
+`knowledge_document.etag`에 영속화하고, 문서 원문 언어는 `knowledge_document.doc_lang`에
 별도 저장한다. `/metadata/learn`은 관리자가 HITL 모달에서 확정한 신규
 프레임워크/패턴을 `framework_metadata`에 자율 학습시킨다.
 """
@@ -153,7 +153,7 @@ async def prescan_document(
       5. confidence < 0.8 → manual_required, suggested_frameworks(HITL 드롭다운) 반환
     """
     row = await conn.fetchrow(
-        "SELECT doc_id, original_url FROM documents WHERE doc_id = $1",
+        "SELECT doc_id, original_url FROM knowledge_document WHERE doc_id = $1",
         doc_id,
     )
     if row is None:
@@ -211,14 +211,14 @@ async def prescan_document(
     suggested_versions: list[str] = []
     if framework:
         ver_rows = await conn.fetch(
-            "SELECT DISTINCT version FROM documents "
+            "SELECT DISTINCT version FROM knowledge_document "
             "WHERE framework = $1 AND version IS NOT NULL ORDER BY version",
             framework,
         )
         suggested_versions = [r["version"] for r in ver_rows]
 
     await conn.execute(
-        """UPDATE documents
+        """UPDATE knowledge_document
            SET framework = $1, version = $2, lang = $3, doc_lang = $4,
                etag = $5, infer_confidence = $6, updated_at = now()
            WHERE doc_id = $7""",

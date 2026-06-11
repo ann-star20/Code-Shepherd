@@ -1,8 +1,8 @@
 """파이프라인 실행 TDD — 통합 테스트 (RED → GREEN 사이클).
 
-T_exec_01: prescan이 documents.infer_confidence를 업데이트한다
+T_exec_01: prescan이 knowledge_document.infer_confidence를 업데이트한다
 T_exec_02: trigger가 pipeline_logs(session_id, agent, level) 행을 삽입한다
-T_exec_03: trigger가 documents.state를 PENDING → CRAWLING으로 전이한다
+T_exec_03: trigger가 knowledge_document.state를 PENDING → CRAWLING으로 전이한다
 T_exec_04: 로그 폴링이 doc_state를 올바르게 반환한다
 T_exec_05: prescan + trigger + logs 전체 시퀀스가 순서대로 동작한다
 T_exec_06: 이미 CRAWLING인 문서를 trigger하면 409를 반환한다
@@ -37,7 +37,7 @@ def _make_app(conn) -> FastAPI:
 
 async def _insert_doc(conn, doc_id: str, state: str = "PENDING") -> None:
     await conn.execute(
-        """INSERT INTO documents
+        """INSERT INTO knowledge_document
                (doc_id, source_prefix, original_url, content_hash, state)
            VALUES ($1, 'EXT',
                    'https://docs.djangoproject.com/en/6.0/topics/security/',
@@ -55,7 +55,7 @@ async def _cleanup(conn, doc_id: str) -> None:
         "DELETE FROM staging_concepts WHERE doc_id = $1", doc_id
     )
     await conn.execute(
-        "DELETE FROM documents WHERE doc_id = $1", doc_id
+        "DELETE FROM knowledge_document WHERE doc_id = $1", doc_id
     )
 
 
@@ -63,9 +63,9 @@ async def _cleanup(conn, doc_id: str) -> None:
 
 @pytest.mark.anyio
 async def test_exec_01_prescan_updates_infer_confidence(asyncpg_pool):
-    """prescan 엔드포인트가 documents.infer_confidence 컬럼을 업데이트한다.
+    """prescan 엔드포인트가 knowledge_document.infer_confidence 컬럼을 업데이트한다.
 
-    RED 조건: documents 테이블에 infer_confidence 컬럼이 없으면 500 발생.
+    RED 조건: knowledge_document 테이블에 infer_confidence 컬럼이 없으면 500 발생.
     GREEN 조건: schema.sql에 컬럼 추가 후 0.0 이상 값이 저장된다.
     """
     doc_id = f"EXT_exec01_{uuid.uuid4().hex[:8]}"
@@ -104,7 +104,7 @@ async def test_exec_01_prescan_updates_infer_confidence(asyncpg_pool):
 
             # DB에 실제로 저장됐는지 확인
             row = await conn.fetchrow(
-                "SELECT infer_confidence FROM documents WHERE doc_id=$1", doc_id
+                "SELECT infer_confidence FROM knowledge_document WHERE doc_id=$1", doc_id
             )
             assert row is not None
             assert row["infer_confidence"] is not None
@@ -156,11 +156,11 @@ async def test_exec_02_trigger_inserts_pipeline_log(asyncpg_pool):
             await _cleanup(conn, doc_id)
 
 
-# ── T_exec_03: trigger가 documents.state를 CRAWLING으로 전이 ─────────────────
+# ── T_exec_03: trigger가 knowledge_document.state를 CRAWLING으로 전이 ────────
 
 @pytest.mark.anyio
 async def test_exec_03_trigger_transitions_state_to_crawling(asyncpg_pool):
-    """trigger 후 documents.state가 PENDING → CRAWLING으로 전이된다."""
+    """trigger 후 knowledge_document.state가 PENDING → CRAWLING으로 전이된다."""
     doc_id = f"EXT_exec03_{uuid.uuid4().hex[:8]}"
 
     async with asyncpg_pool.acquire() as conn:
@@ -181,7 +181,7 @@ async def test_exec_03_trigger_transitions_state_to_crawling(asyncpg_pool):
             assert resp.status_code == 202
 
             row = await conn.fetchrow(
-                "SELECT state FROM documents WHERE doc_id=$1", doc_id
+                "SELECT state FROM knowledge_document WHERE doc_id=$1", doc_id
             )
             assert row["state"] == "CRAWLING"
 
@@ -277,7 +277,7 @@ async def test_exec_05_full_pipeline_sequence(asyncpg_pool):
 
             # Step 3: 상태 확인
             doc_row = await conn.fetchrow(
-                "SELECT state FROM documents WHERE doc_id=$1", doc_id
+                "SELECT state FROM knowledge_document WHERE doc_id=$1", doc_id
             )
             assert doc_row["state"] == "CRAWLING"
 

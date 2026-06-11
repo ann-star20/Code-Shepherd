@@ -26,7 +26,7 @@ CREATE TABLE IF NOT EXISTS domain_registry (
 );
 
 -- ── 2. 출처 문서 마스터 테이블
-CREATE TABLE IF NOT EXISTS documents (
+CREATE TABLE IF NOT EXISTS knowledge_document (
     doc_id            TEXT PRIMARY KEY,
     source_prefix     TEXT NOT NULL,
     original_url      TEXT NOT NULL,
@@ -40,7 +40,7 @@ CREATE TABLE IF NOT EXISTS documents (
     state             TEXT NOT NULL DEFAULT 'PENDING',
     created_at        TIMESTAMPTZ DEFAULT now(),
     updated_at        TIMESTAMPTZ,
-    CONSTRAINT documents_state_check
+    CONSTRAINT knowledge_document_state_check
         CHECK (state IN ('PENDING','CRAWLING','EXTRACTED','COMMITTED','FAILED'))
 );
 
@@ -48,7 +48,7 @@ CREATE TABLE IF NOT EXISTS documents (
 CREATE TABLE IF NOT EXISTS concepts (
     id             UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     concept_name   TEXT NOT NULL UNIQUE,
-    doc_id         TEXT REFERENCES documents(doc_id) ON DELETE SET NULL,
+    doc_id         TEXT REFERENCES knowledge_document(doc_id) ON DELETE SET NULL,
     domains        TEXT[] NOT NULL,
     concept_type   TEXT,
     cwe_id         TEXT,
@@ -69,7 +69,7 @@ CREATE TABLE IF NOT EXISTS concepts (
 CREATE TABLE IF NOT EXISTS staging_concepts (
     id                  UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     session_id          UUID NOT NULL,
-    doc_id              TEXT REFERENCES documents(doc_id) ON DELETE CASCADE,
+    doc_id              TEXT REFERENCES knowledge_document(doc_id) ON DELETE CASCADE,
     concept_json        JSONB NOT NULL,
     state               TEXT NOT NULL DEFAULT 'DRAFT',
     known_domains       TEXT[] DEFAULT '{}',
@@ -88,7 +88,7 @@ CREATE TABLE IF NOT EXISTS staging_concepts (
 -- ── 5. 파이프라인 실행 로그 (단일 채널 SSE 스트림 롤링 연동 기둥)
 CREATE TABLE IF NOT EXISTS pipeline_logs (
     id         UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    doc_id     TEXT REFERENCES documents(doc_id) ON DELETE SET NULL,
+    doc_id     TEXT REFERENCES knowledge_document(doc_id) ON DELETE SET NULL,
     session_id UUID NOT NULL,                          -- 태스크 세션 식별 고유키
     agent      TEXT NOT NULL,                          -- 이벤트를 유발한 에이전트명
     level      TEXT NOT NULL DEFAULT 'INFO',           -- 로그 레벨
@@ -100,9 +100,9 @@ CREATE TABLE IF NOT EXISTS pipeline_logs (
 -- 🔒 [마이그레이션 가드] 기존 운영 인프라 하위 호환성 강제 업그레이드 (멱등성 보장)
 -- =========================================================================
 
--- ① documents 마이그레이션 패치
-ALTER TABLE documents ADD COLUMN IF NOT EXISTS infer_confidence FLOAT;
-ALTER TABLE documents ADD COLUMN IF NOT EXISTS is_deprecated    BOOLEAN NOT NULL DEFAULT false;
+-- ① knowledge_document 마이그레이션 패치
+ALTER TABLE knowledge_document ADD COLUMN IF NOT EXISTS infer_confidence FLOAT;
+ALTER TABLE knowledge_document ADD COLUMN IF NOT EXISTS is_deprecated    BOOLEAN NOT NULL DEFAULT false;
 
 -- ② concepts 마이그레이션 패치
 ALTER TABLE concepts ADD COLUMN IF NOT EXISTS root_cause     TEXT;

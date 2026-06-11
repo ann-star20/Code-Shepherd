@@ -16,8 +16,11 @@ CREATE TABLE IF NOT EXISTS domain_registry (
     created_by   TEXT NOT NULL DEFAULT 'system'
 );
 
+-- ── 2.0 영속 볼륨 마이그레이션: documents → knowledge_document 리네이밍 (멱등)
+ALTER TABLE IF EXISTS documents RENAME TO knowledge_document;
+
 -- ── 2. 출처 문서 마스터 테이블
-CREATE TABLE IF NOT EXISTS documents (
+CREATE TABLE IF NOT EXISTS knowledge_document (
     doc_id            TEXT PRIMARY KEY,
     source_prefix     TEXT NOT NULL,
     original_url      TEXT NOT NULL,
@@ -36,15 +39,15 @@ CREATE TABLE IF NOT EXISTS documents (
         CHECK (state IN ('PENDING','CRAWLING','EXTRACTING','EXTRACTED','COMMITTED','FAILED'))
 );
 
--- ── 2.1 영속 볼륨 마이그레이션: 기존 documents 테이블에 신규 컬럼 보강
-ALTER TABLE documents ADD COLUMN IF NOT EXISTS etag     TEXT;
-ALTER TABLE documents ADD COLUMN IF NOT EXISTS doc_lang TEXT;
+-- ── 2.1 영속 볼륨 마이그레이션: 기존 knowledge_document 테이블에 신규 컬럼 보강
+ALTER TABLE knowledge_document ADD COLUMN IF NOT EXISTS etag     TEXT;
+ALTER TABLE knowledge_document ADD COLUMN IF NOT EXISTS doc_lang TEXT;
 
 -- ── 3. 개념 마스터 테이블 (하이브리드 벡터 통합 스펙 보전)
 CREATE TABLE IF NOT EXISTS concepts (
     id             UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     concept_name   TEXT NOT NULL UNIQUE,
-    doc_id         TEXT REFERENCES documents(doc_id) ON DELETE SET NULL,
+    doc_id         TEXT REFERENCES knowledge_document(doc_id) ON DELETE SET NULL,
     domains        TEXT[] NOT NULL,
     concept_type   TEXT,
     cwe_id         TEXT,
@@ -65,7 +68,7 @@ CREATE TABLE IF NOT EXISTS concepts (
 CREATE TABLE IF NOT EXISTS staging_concepts (
     id                  UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     session_id          UUID NOT NULL,
-    doc_id              TEXT REFERENCES documents(doc_id) ON DELETE CASCADE,
+    doc_id              TEXT REFERENCES knowledge_document(doc_id) ON DELETE CASCADE,
     concept_json        JSONB NOT NULL,
     state               TEXT NOT NULL DEFAULT 'DRAFT',
     known_domains       TEXT[] DEFAULT '{}',
@@ -84,7 +87,7 @@ SET maintenance_work_mem = '512MB';
 -- ── 5. 파이프라인 실행 로그 (단일 채널 SSE 스트림 롤링 연동 기둥)
 CREATE TABLE IF NOT EXISTS pipeline_logs (
     id         UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    doc_id     TEXT REFERENCES documents(doc_id) ON DELETE SET NULL,
+    doc_id     TEXT REFERENCES knowledge_document(doc_id) ON DELETE SET NULL,
     session_id UUID NOT NULL,                          -- 태스크 세션 식별 고유키
     agent      TEXT NOT NULL,                          -- 이벤트를 유발한 에이전트명
     level      TEXT NOT NULL DEFAULT 'INFO',           -- 로그 레벨

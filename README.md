@@ -1,3 +1,7 @@
+# 초기화용 JSON 데이터로 기존 데이터를 덮어쓰기
+docker compose exec backend python scripts/seed_postgres.py && docker compose exec backend python scripts/seed_neo4j.py
+
+
 # Task-Link
 신입사원 업무지원 플랫폼
 
@@ -89,3 +93,7 @@ docker compose up -d --force-recreate backend celery_worker
 # 기본 빌드
 docker compose up --build frontend && docker compose restart celery_worker
 docker compose up frontend
+
+docker compose down -v frontend & docker compose build --no-cache frontend;
+
+

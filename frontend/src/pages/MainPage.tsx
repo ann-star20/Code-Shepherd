@@ -168,11 +168,11 @@ export type ToastItem = { id: string; kind: "info" | "success" | "warning" | "er
 
 // ── 스텝 메타데이터 (보정 완료: SAME_AS 잔재 완벽 척결) ──────────────────────────
 const STEPS_CONFIG = [
-  { step: 1, title: "Input Agent",        desc: "링크 유효성 및 ETag 캐싱 분석" },
-  { step: 2, title: "Crawler Agent",      desc: "DOM 파싱 및 텍스트 블록 정제" },
+  { step: 1, title: "Prescan",            desc: "링크 유효성 및 ETag 캐싱 분석" },
+  { step: 2, title: "Crawler",            desc: "DOM 파싱 및 텍스트 블록 정제" },
   { step: 3, title: "Extractor Agent",    desc: "Gemini 구조화 의미 스키마 추출" },
-  { step: 4, title: "Graph Writer Agent", desc: "PostgreSQL / Neo4j 스테이징 적재" },
-  { step: 5, title: "Link Resolver Agent", desc: "하이브리드 유사도 판정 및 동의어 수렴" }, // 🛠️ 수정: SAME_AS 삭제 및 유사도 수렴 명시
+  { step: 4, title: "Graph Writer", desc: "PostgreSQL / Neo4j 스테이징 적재" },
+  { step: 5, title: "Link Resolve",       desc: "하이브리드 유사도 판정 및 동의어 수렴" }, // 🛠️ 수정: SAME_AS 삭제 및 유사도 수렴 명시
 ];
 
 // ── 스텝별 실시간 동적 롤링 로딩 가이드 (보정 완료: 렉시컬/의미론적 병합 원리 반영) ──
@@ -944,14 +944,24 @@ export function MainPage() {
   const handleRetryStep = useCallback((step: number) => {
     addLog("SYSTEM", `[RETRY] ${step}단계 재시도 요청`);
     setStepStatuses(s => ({ ...s, [step]: "LOADING" as StepStatus }));
-    if (sessionIdRef.current) {
-      fetch(`/api/pipeline/${sessionIdRef.current}/resume`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ resume_step: step }),
-      }).catch(() => {});
-    }
-  }, [addLog]);
+    setPipelineState("RUNNING");
+    const sid = sessionIdRef.current;
+    if (!sid) return;
+    fetch(`/api/pipeline/${sid}/resume`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ resume_step: step }),
+    })
+      .then((res) => {
+        if (!res.ok) throw new Error(`resume failed: ${res.status}`);
+        startSSE(sid);
+      })
+      .catch(() => {
+        setStepStatuses(s => ({ ...s, [step]: "FAILED" as StepStatus }));
+        setPipelineState("ERROR");
+        addToast("error", `${step}단계 재시도 요청 실패`);
+      });
+  }, [addLog, addToast, startSSE]);
 
   // ── 전체 거부 ────────────────────────────────────────────────────────────
   function rejectAll() {
@@ -1108,19 +1118,20 @@ export function MainPage() {
           ))}
         </div>
 
-        {/* ── 2-컬럼 그리드 ──────────────────────────────────────────────── */}
-        <div className="grid grid-cols-12 gap-8">
+        {/* ── 2-컬럼 그리드 (1:6 비율) ──────────────────────────────────── */}
+        <div className="grid grid-cols-1 lg:grid-cols-[1fr_5fr] gap-8">
 
-          {/* ══ LEFT COLUMN ══ (PRD-extra-UI-v3 §1: 전체 숨김 처리) ══ */}
-          <section className="hidden flex-col space-y-6">
-
-            {/* 파이프라인 흐름 — PRD-UI-V2 §3 StepStatus 인디케이터 */}
+          {/* ══ LEFT COLUMN ══ 파이프라인 단계별 진행상황 (sticky 세로 스텝 사이드바) ══ */}
+          <aside className="lg:sticky lg:top-24 h-fit">
             <div className="bg-white rounded-2xl border border-stone-200/70 p-6 shadow-sm">
-              <h3 className="font-serif text-lg font-bold text-stone-900 mb-4">에이전트 파이프라인 흐름 상태</h3>
+              <h3 className="font-serif text-lg font-bold text-stone-900 mb-4">파이프라인 진행 상황</h3>
               <PipelineStepList statuses={stepStatuses} onRetry={handleRetryStep} />
             </div>
+          </aside>
 
-            {/* 실시간 로그 (compact 패널) */}
+          {/* 실시간 로그 (compact 패널) — 시각적으로는 숨김, T_F12_trigger_flow 등 로그 텍스트
+              검증용으로 DOM에는 유지 (DEBUG DRAWER와 동일 데이터 소스) */}
+          <div className="hidden">
             <div className="bg-stone-900 text-stone-100 rounded-2xl p-5 flex flex-col min-h-[220px]">
               <div className="flex items-center justify-between mb-3 border-b border-stone-800 pb-2">
                 <span className="text-sm font-mono font-bold tracking-wider text-[#0F766E]">REALTIME RUNTIME LOGS</span>
@@ -1146,10 +1157,10 @@ export function MainPage() {
                 ))}
               </div>
             </div>
-          </section>
+          </div>
 
           {/* ══ RIGHT COLUMN ══ */}
-          <section className="col-span-12 flex flex-col space-y-6">
+          <section className="flex flex-col space-y-6">
 
             {/* URL 대기열 — PRD-extra-UI-v3 §1: RIGHT COLUMN 최상단으로 이동 */}
             <div className="bg-white rounded-2xl border border-stone-200/70 p-6 shadow-sm">
