@@ -23,7 +23,7 @@ build/
 .coverage
 htmlcov/
 .ruff_cache/
-
+settings.local.json
 # uv
 .uv/
 
