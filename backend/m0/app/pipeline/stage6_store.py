@@ -162,14 +162,16 @@ async def _save_document(
                 neo4j_synced, upload_status, created_at,
                 parser_used, doc_complexity, parsing_time_ms, original_filename,
                 quality_score,
-                department_id, user_id, permission_level, visibility
+                department_id, user_id, permission_level, visibility,
+                file_hash
             )
             VALUES (
                 :doc_id, :title, :source, :category, :file_type,
                 :file_path, :markdown_path, TRUE, FALSE, 'processing', NOW(),
                 :parser_used, :doc_complexity, :parsing_time_ms, :original_filename,
                 :quality_score,
-                :department_id, :user_id, :permission_level, :visibility
+                :department_id, :user_id, :permission_level, :visibility,
+                :file_hash
             )
             ON CONFLICT (doc_id) DO UPDATE SET
                 title             = EXCLUDED.title,
@@ -188,7 +190,8 @@ async def _save_document(
                 department_id     = COALESCE(EXCLUDED.department_id, documents.department_id),
                 user_id           = COALESCE(EXCLUDED.user_id, documents.user_id),
                 permission_level  = EXCLUDED.permission_level,
-                visibility        = EXCLUDED.visibility
+                visibility        = EXCLUDED.visibility,
+                file_hash         = COALESCE(EXCLUDED.file_hash, documents.file_hash)
         """),
         {
             "doc_id": str(state["doc_id"]),
@@ -207,6 +210,7 @@ async def _save_document(
             "user_id": state.get("user_id"),
             "permission_level": state.get("permission_level") or "public",
             "visibility": state.get("visibility") or "all",
+            "file_hash": state.get("file_hash"),
         },
     )
 

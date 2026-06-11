@@ -69,6 +69,8 @@ class Document(Base):
     user_id: Mapped[str | None] = mapped_column(String(100), nullable=True)
     permission_level: Mapped[str] = mapped_column(String(20), nullable=False, default="public")
     visibility: Mapped[str] = mapped_column(String(20), nullable=False, default="all")
+    # 중복 감지용 SHA256 해시 (기존 문서는 NULL)
+    file_hash: Mapped[str | None] = mapped_column(String(64), nullable=True)
 
     chunks: Mapped[list["Chunk"]] = relationship(
         "Chunk", back_populates="document", cascade="all, delete-orphan"

@@ -176,6 +176,29 @@ class DocEntitiesResponse(BaseModel):
 
 
 # ---------------------------------------------------------------------------
+# 중복 감지 응답 모델
+# ---------------------------------------------------------------------------
+
+class DuplicateExistingDoc(BaseModel):
+    doc_id: str
+    original_filename: str | None = None
+    upload_status: str | None = None
+    created_at: str | None = None
+
+
+class CheckDuplicateResponse(BaseModel):
+    status: str  # "identical" | "modified" | "new"
+    existing_doc: DuplicateExistingDoc | None = None
+
+
+class ReplaceDocumentResponse(BaseModel):
+    new_doc_id: str
+    old_doc_id: str
+    status: str
+    message: str
+
+
+# ---------------------------------------------------------------------------
 # 의존성 — main.py lifespan에서 주입
 # ---------------------------------------------------------------------------
 
@@ -215,6 +238,7 @@ async def upload_document(
     user_id: str | None = Form(default=None),
     permission_level: str = Form(default="public"),
     visibility: str = Form(default="all"),
+    file_hash: str | None = Form(default=None),
 ) -> UploadResponse:
     """
     문서를 업로드하고 KMS 파이프라인을 실행한다.
@@ -286,6 +310,7 @@ async def upload_document(
         user_id=user_id,
         permission_level=permission_level,
         visibility=visibility,
+        file_hash=file_hash,
     )
     background_tasks.add_task(_run_pipeline_background, initial_state)
 
@@ -308,6 +333,7 @@ def _build_initial_state(
     user_id: str | None = None,
     permission_level: str = "public",
     visibility: str = "all",
+    file_hash: str | None = None,
 ) -> DocPipelineState:
     return {
         "doc_id": doc_id,
@@ -351,6 +377,7 @@ def _build_initial_state(
         "user_id": user_id,
         "permission_level": permission_level,
         "visibility": visibility,
+        "file_hash": file_hash,
     }
 
 
@@ -946,3 +973,176 @@ async def get_doc_page_image(doc_id: str, page_num: int):
         raise HTTPException(status_code=503, detail=f"Storage 오류: {e}")
 
     return FastAPIResponse(content=img_bytes, media_type="image/png")
+
+
+# ---------------------------------------------------------------------------
+# 중복 감지 엔드포인트
+# ---------------------------------------------------------------------------
+
+async def check_duplicate(
+    file_hash: str,
+    original_filename: str,
+    session: AsyncSession,
+) -> dict:
+    """
+    SHA256 hash + filename 기반 중복 케이스 판별.
+
+    반환:
+      { "status": "identical" | "modified" | "new", "existing_doc": {...} | None }
+    """
+    # 1차: 동일 hash 조회
+    result = await session.execute(
+        text("""
+            SELECT doc_id, original_filename, upload_status, created_at
+            FROM documents
+            WHERE file_hash = :file_hash
+              AND upload_status NOT IN ('failed', 'rejected')
+            ORDER BY created_at DESC
+            LIMIT 1
+        """),
+        {"file_hash": file_hash},
+    )
+    row = result.fetchone()
+    if row:
+        return {
+            "status": "identical",
+            "existing_doc": {
+                "doc_id": row[0],
+                "original_filename": row[1],
+                "upload_status": row[2],
+                "created_at": str(row[3]) if row[3] else None,
+            },
+        }
+
+    # 2차: 동일 파일명 조회 (hash 다름 → 수정본)
+    result2 = await session.execute(
+        text("""
+            SELECT doc_id, original_filename, upload_status, created_at
+            FROM documents
+            WHERE original_filename = :filename
+              AND upload_status NOT IN ('failed', 'rejected')
+            ORDER BY created_at DESC
+            LIMIT 1
+        """),
+        {"filename": original_filename},
+    )
+    row2 = result2.fetchone()
+    if row2:
+        return {
+            "status": "modified",
+            "existing_doc": {
+                "doc_id": row2[0],
+                "original_filename": row2[1],
+                "upload_status": row2[2],
+                "created_at": str(row2[3]) if row2[3] else None,
+            },
+        }
+
+    return {"status": "new", "existing_doc": None}
+
+
+@router.post("/check-duplicate", response_model=CheckDuplicateResponse)
+async def check_duplicate_endpoint(
+    file_hash: str = Form(...),
+    original_filename: str = Form(...),
+) -> CheckDuplicateResponse:
+    """업로드 전 SHA256 해시 기반 중복 여부를 확인한다."""
+    session_factory = _get_session_factory()
+    async with session_factory() as session:
+        result = await check_duplicate(file_hash, original_filename, session)
+    existing = (
+        DuplicateExistingDoc(**result["existing_doc"])
+        if result.get("existing_doc")
+        else None
+    )
+    return CheckDuplicateResponse(status=result["status"], existing_doc=existing)
+
+
+@router.post("/replace-document", response_model=ReplaceDocumentResponse)
+async def replace_document(
+    background_tasks: BackgroundTasks,
+    old_doc_id: str = Form(...),
+    file: UploadFile = File(...),
+    file_hash: str | None = Form(default=None),
+    source: str = Form(default="upload"),
+    department_id: str | None = Form(default=None),
+    user_id: str | None = Form(default=None),
+    permission_level: str = Form(default="public"),
+    visibility: str = Form(default="all"),
+) -> ReplaceDocumentResponse:
+    """기존 문서를 새 버전으로 교체한다. Graph Sync Agent로 이전 버전을 정리 후 새 파이프라인을 실행한다."""
+    from app.pipeline.graph_sync import sync_old_document_version
+
+    filename = file.filename or "unknown"
+    ext = Path(filename).suffix.lstrip(".").lower()
+
+    if ext not in SUPPORTED_EXTENSIONS:
+        raise HTTPException(
+            status_code=422,
+            detail=f"지원하지 않는 파일 형식: .{ext}",
+        )
+
+    content = await file.read()
+    if len(content) > MAX_UPLOAD_BYTES:
+        raise HTTPException(
+            status_code=413,
+            detail=f"파일 크기 초과: {len(content) // (1024 * 1024)}MB",
+        )
+
+    new_doc_id = str(uuid4())
+    session_factory = _get_session_factory()
+
+    # 이전 버전 정리 (PG + Neo4j + GCS)
+    async with session_factory() as session:
+        await sync_old_document_version(
+            old_doc_id=old_doc_id,
+            session=session,
+            delete_gcs=True,
+            delete_neo4j=True,
+        )
+
+    # 새 문서 초기 레코드 삽입
+    try:
+        async with session_factory() as session:
+            await session.execute(
+                text("""
+                    INSERT INTO documents
+                        (doc_id, title, source, file_type, original_filename, upload_status, created_at)
+                    VALUES
+                        (:doc_id, :title, :source, :file_type, :original_filename, 'processing', NOW())
+                    ON CONFLICT (doc_id) DO NOTHING
+                """),
+                {
+                    "doc_id": new_doc_id,
+                    "title": filename,
+                    "source": source,
+                    "file_type": ext,
+                    "original_filename": filename,
+                },
+            )
+            await session.commit()
+    except (ConnectionRefusedError, OSError) as e:
+        raise HTTPException(status_code=503, detail=f"DB 연결 실패: {e}")
+
+    with tempfile.NamedTemporaryFile(
+        delete=False, suffix=f".{ext}", prefix=f"kms_{new_doc_id}_"
+    ) as tmp:
+        tmp.write(content)
+        tmp_path = tmp.name
+
+    initial_state = _build_initial_state(
+        new_doc_id, source, tmp_path, ext, filename,
+        department_id=department_id,
+        user_id=user_id,
+        permission_level=permission_level,
+        visibility=visibility,
+        file_hash=file_hash,
+    )
+    background_tasks.add_task(_run_pipeline_background, initial_state)
+
+    return ReplaceDocumentResponse(
+        new_doc_id=new_doc_id,
+        old_doc_id=old_doc_id,
+        status="processing",
+        message=f"기존 문서 {old_doc_id} 정리 완료. 새 문서 {new_doc_id} 처리 중.",
+    )

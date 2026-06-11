@@ -135,6 +135,8 @@ class DocPipelineState(TypedDict):
     user_id: Optional[str]
     permission_level: Optional[str]     # 'public' | 'team' | 'private'
     visibility: Optional[str]           # 'all' | 'department' | 'owner'
+    # SHA256 hex digest — 중복 감지용 (프론트에서 계산 후 전달)
+    file_hash: Optional[str]
 
     # 파이프라인 제어
     status: str                         # "processing|validated|stored|stored_partial|failed|hitl_pending"
