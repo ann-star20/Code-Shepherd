@@ -83,3 +83,8 @@ frontend/vite.config.d.ts
 
 # KMS 사내문서 (git 제외)
 backend/m4/data/kms/
+
+# 로컬 전용 파일
+.claude/settings.local.json
+backend/m2/pj3_data/
+backend/m2/sub2_new/.claude/settings.local.json
