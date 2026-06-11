@@ -161,7 +161,7 @@ const DRAFT_CONCEPT_MERGE: ConceptItem = {
 };
 
 // ── 타입 정의 ─────────────────────────────────────────────────────────────────
-type PipelineState = "IDLE" | "RUNNING" | "WAITING_APPROVAL" | "COMMITTING" | "FINISHED";
+type PipelineState = "IDLE" | "RUNNING" | "WAITING_APPROVAL" | "COMMITTING" | "FINISHED" | "ERROR";
 export type StepStatus = "IDLE" | "LOADING" | "SUCCESS" | "FAILED";
 export type StepStatuses = Record<number, StepStatus>;
 export type ToastItem = { id: string; kind: "info" | "success" | "warning" | "error"; message: string };
@@ -185,6 +185,15 @@ const STEP_LOADING_TEXTS: Record<number, string> = {
 };
 
 const INITIAL_STEP_STATUSES: StepStatuses = { 1: "IDLE", 2: "IDLE", 3: "IDLE", 4: "IDLE", 5: "IDLE" };
+
+// SSE step_update의 agent 이름 → STEPS_CONFIG의 step 번호
+const AGENT_STEP_MAP: Record<string, number> = {
+  Input: 1,
+  Crawler: 2,
+  Extractor: 3,
+  Writer: 5,
+  Resolver: 5,
+};
 
 // 메인 컴포넌트 껍데기 선언 (React 규격 준수용)
 export default function App() {
@@ -624,6 +633,21 @@ export function MainPage() {
         if (msg.type === "step_update") {
           const { agent, status } = msg;
 
+          if (status === "FAILED" && agent) {
+            const failedStep = AGENT_STEP_MAP[agent];
+            if (failedStep) {
+              setStepStatuses(s => ({ ...s, [failedStep]: "FAILED" }));
+            }
+            setPipelineState("ERROR");
+            const failMessage = agent === "Extractor"
+              ? "Extractor 실패 — 추출된 개념이 없습니다. 문서 내용을 확인 후 재시도하세요."
+              : `${agent} 단계 실패 — 파이프라인이 중단되었습니다.`;
+            addToast("error", failMessage);
+            addLog("ERROR", `[${agent}] 단계 실패 — 파이프라인 중단`);
+            closeSSE();
+            return;
+          }
+
           if (agent === "Input" && status === "DONE") {
             setStepStatuses(s => ({ ...s, 1: "SUCCESS" }));
           } else if (agent === "Crawler" && status === "RUNNING") {
@@ -1050,11 +1074,11 @@ export function MainPage() {
         <div className="flex items-center space-x-4">
           <div className="flex items-center space-x-2">
             <span className="relative flex h-2 w-2">
-              <span className={`animate-ping absolute inline-flex h-full w-full rounded-full ${pipelineState === "RUNNING" ? "bg-amber-400" : "bg-emerald-400"} opacity-75`} />
-              <span className={`relative inline-flex rounded-full h-2 w-2 ${pipelineState === "RUNNING" ? "bg-amber-500" : "bg-emerald-500"}`} />
+              <span className={`animate-ping absolute inline-flex h-full w-full rounded-full ${pipelineState === "RUNNING" ? "bg-amber-400" : pipelineState === "ERROR" ? "bg-rose-400" : "bg-emerald-400"} opacity-75`} />
+              <span className={`relative inline-flex rounded-full h-2 w-2 ${pipelineState === "RUNNING" ? "bg-amber-500" : pipelineState === "ERROR" ? "bg-rose-500" : "bg-emerald-500"}`} />
             </span>
             <span className="text-sm font-medium text-stone-500">
-              {pipelineState === "RUNNING" ? "에이전트 작동 중" : "파이프라인 준비 완료"}
+              {pipelineState === "RUNNING" ? "에이전트 작동 중" : pipelineState === "ERROR" ? "파이프라인 오류 — 재시도 필요" : "파이프라인 준비 완료"}
             </span>
           </div>
           <span className="px-2.5 py-1 text-sm italic bg-stone-100 rounded-full text-stone-700">하이브리드 대응</span>

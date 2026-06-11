@@ -110,8 +110,18 @@ async def _event_stream(
                 new_state: str = doc_row["state"]
                 if new_state != last_state:
                     last_state = new_state
-                    for update in _state_to_step_updates(new_state):
-                        yield _format_sse({"type": "step_update", **update})
+                    if new_state == "FAILED":
+                        err_row = await conn.fetchrow(
+                            "SELECT agent FROM pipeline_logs "
+                            "WHERE session_id = $1::uuid AND level = 'ERROR' "
+                            "ORDER BY created_at DESC LIMIT 1",
+                            session_id,
+                        )
+                        if err_row:
+                            yield _format_sse({"type": "step_update", "agent": err_row["agent"], "status": "FAILED"})
+                    else:
+                        for update in _state_to_step_updates(new_state):
+                            yield _format_sse({"type": "step_update", **update})
 
                 if new_state in ("COMMITTED", "FAILED"):
                     break

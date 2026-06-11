@@ -122,9 +122,14 @@ def extract_task(self, session_id: str, doc_id: str, chunks: list[str]):
         _set_state(conn, doc_id, "EXTRACTING")
         _log(conn, doc_id, session_id, "Extractor", "INFO",
              f"LLM 추출 시작 — {len(chunks)} 청크 (real_llm={_USE_REAL_LLM})")
-        asyncio.run(_do_extract(session_id, doc_id, chunks))
+        n = asyncio.run(_do_extract(session_id, doc_id, chunks))
+        if n == 0:
+            _log(conn, doc_id, session_id, "Extractor", "ERROR",
+                 "추출된 개념 0건 — Gemini가 빈 배열을 반환했습니다. 문서 내용을 확인 후 재시도하세요.")
+            _set_state(conn, doc_id, "FAILED")
+            return
         _set_state(conn, doc_id, "EXTRACTED")
-        _log(conn, doc_id, session_id, "Extractor", "INFO", "추출 완료 — staging 적재 완료")
+        _log(conn, doc_id, session_id, "Extractor", "INFO", f"추출 완료 — staging {n}건 적재 완료")
     except Exception as exc:
         _log(conn, doc_id, session_id, "Extractor", "ERROR", str(exc))
         _set_state(conn, doc_id, "FAILED")
@@ -167,7 +172,7 @@ async def _save_infer_scores(
         )
 
 
-async def _do_extract(session_id: str, doc_id: str, chunks: list[str]) -> None:
+async def _do_extract(session_id: str, doc_id: str, chunks: list[str]) -> int:
     from app.infrastructure.llm.factory import create_llm_client, create_embedding_client, create_embedding_client
     from app.infrastructure.database.domain_repo import get_registered_domains
     from app.usecases.write_staging_draft import write_staging_draft
@@ -217,6 +222,7 @@ async def _do_extract(session_id: str, doc_id: str, chunks: list[str]) -> None:
             result = await compute_resolve_score(concept, pool, embedding_svc)
             resolve_results.append(result)
         await _save_infer_scores(session_id, all_concepts, resolve_results, pool)
+        return len(all_concepts)
     finally:
         await pool.close()
 
