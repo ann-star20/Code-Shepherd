@@ -12,7 +12,6 @@ import asyncio
 import json
 import logging
 import os
-from unittest import mock
 
 import asyncpg
 import psycopg2
@@ -181,7 +180,7 @@ async def _save_infer_scores(
 
 
 async def _do_extract(session_id: str, doc_id: str, chunks: list[str]) -> int:
-    from app.infrastructure.llm.factory import create_llm_client, create_embedding_client, create_embedding_client
+    from app.infrastructure.llm.factory import create_llm_client, create_embedding_client
     from app.infrastructure.database.domain_repo import get_registered_domains
     from app.usecases.write_staging_draft import write_staging_draft
     from app.infrastructure.graph.hybrid_resolver import compute_resolve_score

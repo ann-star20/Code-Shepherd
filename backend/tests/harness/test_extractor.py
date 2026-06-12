@@ -1,7 +1,6 @@
 """G4: extract_concepts usecase 테스트 — domains: list[str] 스키마."""
 
 import pytest
-from pydantic import ValidationError
 
 from app.domain.models import ConceptExtractionSchema
 from app.infrastructure.llm.interface import ILLMClient

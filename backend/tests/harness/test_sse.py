@@ -5,11 +5,7 @@
   State (S*) : _state_to_step_updates 분기 검증
   Endpoint (E*): StreamingResponse 통합 검증 (FakePool 사용)
 """
-import json
 import uuid
-from typing import AsyncIterator
-import pytest
-import asyncio
 
 
 # ── Fake DB 인프라 (단계별 이벤트 제어) ────────────────────────────────────────

@@ -6,7 +6,7 @@ from pydantic import BaseModel, field_validator
 
 from app.interfaces.api._deps import get_conn
 from app.infrastructure.database.domain_repo import (
-    get_registered_domains, classify_domains, suggest_similar_domains,
+    get_registered_domains, suggest_similar_domains,
 )
 
 router = APIRouter(prefix="/api/domains", tags=["domains"])

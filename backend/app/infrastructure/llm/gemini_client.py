@@ -1,14 +1,16 @@
 """GeminiClient — PROD 모드 실제 Gemini API 호출. PRD §16.4."""
 
 from __future__ import annotations
+
 import json
 import logging
 import re
 
-logger = logging.getLogger(__name__)
-
 from app.domain.models import ConceptExtractionSchema
 from app.infrastructure.llm.interface import ILLMClient
+
+logger = logging.getLogger(__name__)
+
 
 
 def _parse_json_safely(raw: str) -> list[dict]:

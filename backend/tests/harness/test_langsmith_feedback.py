@@ -48,8 +48,10 @@ def test_T_ls_02_prod_mode_calls_create_feedback():
     _inject_mock_langsmith(mock_client)
 
     try:
+        import importlib
+
         from app.infrastructure.langsmith import feedback as fb_mod
-        import importlib; importlib.reload(fb_mod)
+        importlib.reload(fb_mod)
         result = fb_mod.record_hitl_feedback("run-456", BEFORE, AFTER, app_mode="production")
     finally:
         _remove_mock_langsmith()
@@ -79,16 +81,20 @@ def test_T_ls_04_prod_mode_calls_create_example():
     Act: add_to_eval_dataset 호출.
     Assert: create_example inputs={'text':...}, outputs=AFTER.
     """
-    mock_dataset = MagicMock(); mock_dataset.id = "ds-001"
-    mock_example = MagicMock(); mock_example.id = "ex-xyz"
+    mock_dataset = MagicMock()
+    mock_dataset.id = "ds-001"
+    mock_example = MagicMock()
+    mock_example.id = "ex-xyz"
     mock_client = MagicMock()
     mock_client.read_dataset.return_value = mock_dataset
     mock_client.create_example.return_value = mock_example
     _inject_mock_langsmith(mock_client)
 
     try:
+        import importlib
+
         from app.infrastructure.langsmith import dataset as ds_mod
-        import importlib; importlib.reload(ds_mod)
+        importlib.reload(ds_mod)
         result = ds_mod.add_to_eval_dataset(
             input_text="security chunk",
             corrected_output=AFTER,

@@ -1,7 +1,7 @@
 import uvicorn
 from fastapi import FastAPI, APIRouter
-from pydantic import BaseModel, Field
-from typing import List, Optional, Dict, Any
+from pydantic import BaseModel
+from typing import List
 
 app = FastAPI(title="Security Knowledge Graph API")
 router = APIRouter()

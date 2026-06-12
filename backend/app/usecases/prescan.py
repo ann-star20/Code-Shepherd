@@ -1,7 +1,7 @@
 """G3: Pre-scan Layer — URL 패턴 + HTML 메타 추론."""
 
 import re
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 
 from bs4 import BeautifulSoup
 

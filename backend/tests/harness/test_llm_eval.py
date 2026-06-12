@@ -1,8 +1,8 @@
 """레이어 D — LLM 품질 테스트 (T07). PRD §10.5 — domains: list[str] 스키마."""
 
 import pytest
-from pydantic import ValidationError
 from app.domain.models import ConceptExtractionSchema
+from pydantic import ValidationError
 
 
 def test_extractor_schema_validation_security():
@@ -72,7 +72,7 @@ def test_extractor_schema_optional_fields_default():
     schema = ConceptExtractionSchema(
         concept_name="SQLi",
         domains=["security"],
-        severity=critical,
+        severity="critical",
         description_ko="SQL 인젝션",
     )
     assert schema.aliases == []

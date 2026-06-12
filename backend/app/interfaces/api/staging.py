@@ -8,7 +8,7 @@ PATCH  /api/staging/{session_id}/nodes/{node_id}
 """
 
 import json
-from typing import Literal, Optional
+from typing import Literal
 
 from fastapi import APIRouter, Depends, HTTPException, status
 import asyncpg

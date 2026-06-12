@@ -9,16 +9,15 @@ SDD 스펙:
 
 import json
 import uuid
+
 import pytest
+from app.domain.models import ConceptExtractionSchema
+from app.usecases.write_staging_draft import write_staging_draft
 
 
 def _parse_jsonb(val) -> dict:
     """asyncpg는 JSONB를 str로 반환 — dict로 변환."""
     return json.loads(val) if isinstance(val, str) else val
-
-from app.domain.models import ConceptExtractionSchema
-from app.usecases.write_staging_draft import write_staging_draft
-
 
 def _concept(name: str, domains: list[str]) -> ConceptExtractionSchema:
     return ConceptExtractionSchema(

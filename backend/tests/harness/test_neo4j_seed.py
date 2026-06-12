@@ -8,8 +8,6 @@ T11: MERGE 멱등성 — 동일 Concept MERGE 2회 시 노드 1개만 존재
 """
 
 import uuid
-import pytest
-
 
 # ── 헬퍼 Cypher ────────────────────────────────────────────────────────────
 
@@ -106,7 +104,7 @@ def test_T07_owasp_category_merge(neo4j_driver):
                 session.run(
                     _MERGE_OWASP,
                     owasp_id=owasp_id, name="Injection-test",
-                    severity=critical, description_ko="인젝션 테스트",
+                    severity="critical", description_ko="인젝션 테스트",
                 )
             count = session.run(
                 "MATCH (o:OWASPCategory {owasp_id:$id}) RETURN count(o) AS n",

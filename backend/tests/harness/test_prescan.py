@@ -1,7 +1,6 @@
 """G3: Pre-scan Layer 테스트."""
 
-import pytest
-from app.usecases.prescan import PreScanResult, prescan_url, prescan_html, prescan
+from app.usecases.prescan import prescan_url, prescan_html, prescan
 
 
 # T_prescan_django_url

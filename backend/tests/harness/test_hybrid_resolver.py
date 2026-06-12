@@ -34,16 +34,13 @@ from app.infrastructure.graph.hybrid_resolver import (
     MERGE_THRESHOLD,
     RELATED_THRESHOLD,
     MergeAction,
-    ResolveResult,
-    _cosine,
-    _jaro,
     _jaro_winkler,
     _parse_vec,
     compute_hybrid_score,
     hybrid_resolve,
     max_jaro_winkler,
 )
-from app.infrastructure.llm.mock_embedding import MockEmbeddingService, bag_embed, cosine_sim
+from app.infrastructure.llm.mock_embedding import MockEmbeddingService, cosine_sim
 
 # ─────────────────────────────────────────────────────────────────────────────
 # 테스트용 인프라 더미 (외부 의존성 없음)
