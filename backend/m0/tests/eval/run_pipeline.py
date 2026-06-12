@@ -8,6 +8,10 @@ golden_dataset.json의 테스트 문서를 /kms/upload API로 전송하고,
     uv run python tests/eval/run_pipeline.py
     uv run python tests/eval/run_pipeline.py --base-url http://localhost:8000
     uv run python tests/eval/run_pipeline.py --doc-id md_01 md_02
+
+Security Guardrail 적용 환경:
+    EVAL_AUTH_TOKEN=<jwt_token> uv run python tests/eval/run_pipeline.py
+    또는 --token <jwt_token> 플래그 사용
 """
 
 from __future__ import annotations
@@ -65,16 +69,23 @@ def load_eval_docs(doc_ids: list[str] | None = None) -> list[dict]:
 # API 클라이언트 함수
 # ---------------------------------------------------------------------------
 
-async def upload_document(base_url: str, file_path: Path) -> str:
+async def upload_document(base_url: str, file_path: Path, token: str | None = None) -> str:
     """
     POST /kms/upload 로 파일을 업로드하고 doc_id를 반환한다.
+
+    token: Bearer 토큰 (Security Guardrail 환경). None이면 인증 헤더 미포함.
     """
+    headers: dict[str, str] = {}
+    if token:
+        headers["Authorization"] = f"Bearer {token}"
+
     async with httpx.AsyncClient(timeout=60.0) as client:
         with open(file_path, "rb") as f:
             response = await client.post(
                 f"{base_url}/kms/upload",
                 files={"file": (file_path.name, f, _mime_type(file_path))},
                 data={"source": "upload"},
+                headers=headers,
             )
         response.raise_for_status()
         return response.json()["doc_id"]
@@ -205,11 +216,15 @@ async def run(
     output_path: Path,
     poll_interval: float,
     max_retries: int,
+    token: str | None = None,
 ) -> None:
     docs = load_eval_docs(doc_ids)
     if not docs:
         logger.error("평가 가능한 문서 없음")
         sys.exit(1)
+
+    if token:
+        logger.info("Security Guardrail: Bearer 토큰 인증 활성화")
 
     logger.info("평가 대상: %d개 문서", len(docs))
     results: list[dict] = []
@@ -223,7 +238,7 @@ async def run(
             t_start = time.monotonic()
 
             # 1. 업로드
-            doc_id = await upload_document(base_url, file_path)
+            doc_id = await upload_document(base_url, file_path, token=token)
             logger.info("  업로드 완료 → doc_id=%s", doc_id)
 
             # 2. 처리 완료 대기
@@ -290,6 +305,8 @@ async def run(
 
 
 def main() -> None:
+    import os as _os
+
     parser = argparse.ArgumentParser(description="KMS 파이프라인 평가 실행")
     parser.add_argument("--base-url", default=DEFAULT_BASE_URL)
     parser.add_argument("--doc-id", nargs="*", help="평가할 문서 ID (생략 시 전체)")
@@ -300,6 +317,11 @@ def main() -> None:
     )
     parser.add_argument("--poll-interval", type=float, default=DEFAULT_POLL_INTERVAL)
     parser.add_argument("--max-retries", type=int, default=DEFAULT_MAX_RETRIES)
+    parser.add_argument(
+        "--token",
+        default=_os.environ.get("EVAL_AUTH_TOKEN"),
+        help="Bearer 토큰 (Security Guardrail 환경). EVAL_AUTH_TOKEN 환경변수로도 설정 가능.",
+    )
     args = parser.parse_args()
 
     asyncio.run(run(
@@ -308,6 +330,7 @@ def main() -> None:
         output_path=args.output,
         poll_interval=args.poll_interval,
         max_retries=args.max_retries,
+        token=args.token,
     ))
 
 

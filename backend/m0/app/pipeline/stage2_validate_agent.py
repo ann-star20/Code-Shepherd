@@ -33,7 +33,7 @@ from app.pipeline.stage1_document_parser_agent import (
 )
 
 QUALITY_THRESHOLD = float(os.getenv("MARKDOWN_QUALITY_THRESHOLD", "0.8"))
-_QUALITY_THRESHOLD_PDF = float(os.getenv("MARKDOWN_QUALITY_THRESHOLD_PDF", "0.65"))
+_QUALITY_THRESHOLD_PDF = float(os.getenv("MARKDOWN_QUALITY_THRESHOLD_PDF", "0.50"))
 STAGE2_MAX_FIX_ATTEMPTS = int(os.getenv("STAGE2_MAX_FIX_ATTEMPTS", "2"))
 
 

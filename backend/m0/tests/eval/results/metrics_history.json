@@ -1,0 +1,137 @@
+[
+  {
+    "label": "baseline",
+    "evaluation_date": "2026-06-09T20:02:10.735506",
+    "saved_at": "2026-06-09T21:13:56.902008",
+    "git_commit_hash": "133344e",
+    "git_commit_full": "133344e0558c1a48ab6d227981ac11bd6794eb92",
+    "git_branch": "feature/module0-kms",
+    "git_message": "",
+    "dataset_version": "v1",
+    "note": "Stage 2 fix 이전 기준값. completion_rate=60% hitl=33%",
+    "ci_gate": "FAIL",
+    "metrics": {
+      "maturity_score": 68.5,
+      "total_documents": 15,
+      "stored": 9,
+      "hitl_pending": 5,
+      "error_or_timeout": 1,
+      "completion_rate": 0.6,
+      "hitl_rate": 0.3333333333333333,
+      "error_rate": 0.06666666666666667,
+      "title_accuracy": 1.0,
+      "category_accuracy": 1.0,
+      "tags_f1": 0.47600663679095045,
+      "entity_name_recall": 0.5396825396825397,
+      "entity_partial_score": 0.478968253968254,
+      "quality_score": 0.9499999999999998,
+      "avg_processing_time_ms": null
+    },
+    "status_breakdown": {
+      "stored": 9,
+      "hitl_pending": 5,
+      "error": 1
+    }
+  },
+  {
+    "label": "improved_v1",
+    "evaluation_date": "2026-06-09T21:34:06.200409",
+    "saved_at": "2026-06-09T21:35:00.386507",
+    "git_commit_hash": "133344e",
+    "git_commit_full": "133344e0558c1a48ab6d227981ac11bd6794eb92",
+    "git_branch": "feature/module0-kms",
+    "git_message": "",
+    "dataset_version": "v1",
+    "note": "Stage 2: structure_loss 제거 + PDF threshold 0.65 적용",
+    "ci_gate": "FAIL",
+    "metrics": {
+      "maturity_score": 78.1,
+      "total_documents": 15,
+      "stored": 13,
+      "hitl_pending": 1,
+      "error_or_timeout": 1,
+      "completion_rate": 0.8666666666666667,
+      "hitl_rate": 0.06666666666666667,
+      "error_rate": 0.06666666666666667,
+      "title_accuracy": 0.8461538461538461,
+      "category_accuracy": 1.0,
+      "tags_f1": 0.43300040173105186,
+      "entity_name_recall": 0.5584152689415848,
+      "entity_partial_score": 0.4918112589165221,
+      "quality_score": 0.9038461538461539,
+      "avg_processing_time_ms": 36971
+    },
+    "status_breakdown": {
+      "stored": 13,
+      "error": 1,
+      "hitl_pending": 1
+    }
+  },
+  {
+    "label": "improved_v2",
+    "evaluation_date": "2026-06-09T21:51:43.522597",
+    "saved_at": "2026-06-09T21:52:27.565076",
+    "git_commit_hash": "133344e",
+    "git_commit_full": "133344e0558c1a48ab6d227981ac11bd6794eb92",
+    "git_branch": "feature/module0-kms",
+    "git_message": "",
+    "dataset_version": "v1",
+    "note": "md_10 메타데이터 복구 — 실제 14/15 stored, pdf_03만 HITL 잔존",
+    "ci_gate": "FAIL",
+    "metrics": {
+      "maturity_score": 80.3,
+      "total_documents": 15,
+      "stored": 14,
+      "hitl_pending": 1,
+      "error_or_timeout": 0,
+      "completion_rate": 0.9333333333333333,
+      "hitl_rate": 0.06666666666666667,
+      "error_rate": 0.0,
+      "title_accuracy": 0.8571428571428571,
+      "category_accuracy": 1.0,
+      "tags_f1": 0.42404982358542725,
+      "entity_name_recall": 0.5363856068743287,
+      "entity_partial_score": 0.26819280343716434,
+      "quality_score": 0.9071428571428571,
+      "avg_processing_time_ms": 82125
+    },
+    "status_breakdown": {
+      "stored": 14,
+      "hitl_pending": 1
+    }
+  },
+  {
+    "label": "security_guardrail_baseline",
+    "evaluation_date": "2026-06-12T11:32:45.861087",
+    "saved_at": "2026-06-12T14:53:07.806820",
+    "git_commit_hash": "6ef290a",
+    "git_commit_full": "6ef290add3f0bba61902a84f07b0fad5cb5c93b3",
+    "git_branch": "feature/module0-kms",
+    "git_message": "",
+    "dataset_version": "v1",
+    "note": "Security Guardrail 적용 시점 — JWT 인증 + permission 필터. pdf_03 HITL, md_04/pdf_01 error (인증 미적용 eval 스크립트). PDF threshold 0.65 → 0.50 fix 전 기준.",
+    "ci_gate": "PASS",
+    "metrics": {
+      "maturity_score": 80.2,
+      "total_documents": 15,
+      "stored": 12,
+      "hitl_pending": 1,
+      "error_or_timeout": 2,
+      "completion_rate": 0.8,
+      "hitl_rate": 0.06666666666666667,
+      "error_rate": 0.13333333333333333,
+      "title_accuracy": 0.8333333333333334,
+      "category_accuracy": 0.9166666666666666,
+      "tags_f1": 0.6244248798252491,
+      "entity_name_recall": 0.7589076858813701,
+      "entity_partial_score": 0.6708803258145363,
+      "quality_score": 0.9133333333333332,
+      "avg_processing_time_ms": 35324
+    },
+    "status_breakdown": {
+      "stored": 12,
+      "error": 2,
+      "hitl_pending": 1
+    }
+  }
+]
