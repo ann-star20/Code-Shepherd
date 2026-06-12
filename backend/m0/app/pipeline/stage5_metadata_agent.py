@@ -45,6 +45,12 @@ Markdown 형식의 기술 문서에서 구조화된 메타데이터와 핵심 �
 - category_alternatives: 기존 카테고리 중 차선책 1~2개를 배열로 제시하세요.
 - team, author: 문서에 명시된 경우만 추출, 불명확하면 null
 - entities[].type: "Technology", "Pattern", "Concept" 중 정확히 하나
+  각 타입의 범위:
+  - Technology: 기술 스택, 도구(tool), 제품(product), 표준(standard), API 엔드포인트(endpoint)
+  - Pattern: 방법론(methodology), 프로세스(process), 절차, 아키텍처 패턴
+  - Concept: 기술 개념, 역할(role) — 예: DevOps, 팀장, CDO, HR,
+              조직/단체(organization) — 예: OpenAI, Google, 팀 이름, 회사명,
+              지표(metric) — 예: 테스트 커버리지 82%, P95 응답 시간
 - entities[].name: 원문 표기 그대로 유지 (대소문자·언어 변환 금지)
 
 기존 카테고리 참고 (새 카테고리 제안 시 alternatives 에 활용):
@@ -53,11 +59,26 @@ Markdown 형식의 기술 문서에서 구조화된 메타데이터와 핵심 �
 추출 원칙:
 - 문서에 명시되지 않은 정보는 추측하지 않습니다.
 - 제목은 문서 최상위 헤딩(#)을 우선하고, 없으면 내용을 요약합니다.
-- 엔티티는 실질적으로 등장하는 기술 도구, 패턴, 개념만 추출합니다.\
+- 엔티티는 Technology(기술·도구·엔드포인트), Pattern(방법론·프로세스),
+  Concept(개념·역할·조직·지표) 세 타입으로 분류하여 실질적으로 등장하는 것만 추출합니다.\
 """
 
 _METADATA_PROMPT = f"""\
 아래 기술 문서에서 메타데이터와 핵심 엔티티를 추출해주세요.
+
+태그 작성 기준:
+- 7~8개의 구체적인 태그를 생성하세요.
+- 문서가 한국어로 작성된 경우 한국어 태그를 우선하되, 고유명사(제품명·브랜드명·약어)는 원어 표기를 유지하세요.
+  예) 한국어 문서: ["트랜스포머", "자연어처리", "사전학습", "GPT", "LLM", "RLHF", "Attention", "임베딩"]
+- 태그는 문서 핵심 기술, 도구, 방법론, 주요 개념을 균형 있게 포함하세요.
+
+엔티티 추출 기준:
+- Technology: 기술 스택, 도구, 제품, 표준, API 엔드포인트 — 예: pgvector, Docker, /api/v1/users
+- Pattern: 방법론, 프로세스, 절차 — 예: TDD, 카나리 배포, Contract First
+- Concept: 기술 개념 + 역할(Role) + 조직/단체(Organization) + 지표(Metric)
+  예 (역할): DevOps, CDO, 팀장, HR, CISO
+  예 (조직): OpenAI, Google, Anthropic, 네이버, LG헬로비전
+  예 (지표): 테스트 커버리지 82%, P95 응답 시간, Precision@5
 
 다음 JSON 형식으로만 응답하세요 (다른 텍스트 포함 금지):
 {{{{
@@ -67,12 +88,22 @@ _METADATA_PROMPT = f"""\
   "category_alternatives": ["기존 카테고리 중 차선책1", "차선책2"],
   "team": "팀 이름 또는 null",
   "author": "작성자 또는 null",
-  "tags": ["태그1", "태그2"],
+  "tags": ["태그1", "태그2", "태그3", "태그4", "태그5", "태그6", "태그7"],
   "entities": [
     {{{{
       "name": "엔티티 이름",
       "type": "Technology | Pattern | Concept",
       "description": "한 줄 설명"
+    }}}},
+    {{{{
+      "name": "팀장",
+      "type": "Concept",
+      "description": "역할 — 문서 관리·승인 담당자"
+    }}}},
+    {{{{
+      "name": "OpenAI",
+      "type": "Concept",
+      "description": "조직 — GPT 모델 개발사"
     }}}}
   ]
 }}}}

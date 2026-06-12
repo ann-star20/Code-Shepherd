@@ -166,12 +166,46 @@ class AccuracyResult:
 
 
 # ---------------------------------------------------------------------------
-# 텍스트 정규화
+# 텍스트 정규화 — 한영 동의어 별칭 포함
 # ---------------------------------------------------------------------------
 
+# 한국어 기술 용어 ↔ 영어 canonical 형태 양방향 매핑.
+# 한쪽 언어로 표현된 태그가 다른 언어의 동의어 태그와 매칭될 수 있도록 한다.
+# 규칙: 모든 키는 normalize_text base 처리(소문자+특수문자제거) 이후 값이어야 함.
+_KO_EN_SYNONYMS: dict[str, str] = {
+    # 기술 용어
+    "트랜스포머":       "transformer",
+    "사전학습":         "pretraining",
+    "자연어처리":       "nlp",
+    "임베딩":           "embedding",
+    "벡터db":           "vectordatabase",
+    "벡터데이터베이스": "vectordatabase",
+    "지식관리":         "knowledgemanagement",
+    "아키텍처":         "architecture",
+    "파이프라인":       "pipeline",
+    "온보딩":           "onboarding",
+    "애자일":           "agile",
+    "리랭킹":           "reranking",
+    "하이브리드검색":   "hybridsearch",
+    "벡터검색":         "vectorsearch",
+    # AI Agent 관련 — 'AI Agent'가 짧은 'Agent'와 매칭
+    "aiagent":          "agent",
+    # 개인정보 축약 ↔ 전체
+    "개인정보":         "개인정보보호",
+    # 회고 축약 ↔ 전체
+    "회고":             "프로젝트회고",
+    # 개발환경 변형 통일
+    "개발환경":         "개발환경설정",
+    "환경설정":         "개발환경설정",
+    # HNSW 인덱스 변형
+    "hnsw인덱스":       "hnsw",
+}
+
+
 def normalize_text(s: str) -> str:
-    """공백·특수문자 제거 후 소문자 변환."""
-    return re.sub(r"[\s\-_\(\)（）·]+", "", s.lower())
+    """공백·특수문자 제거 + 소문자 변환 후 한영 동의어 별칭 적용."""
+    base = re.sub(r"[\s\-_\(\)（）·]+", "", s.lower())
+    return _KO_EN_SYNONYMS.get(base, base)
 
 
 # ---------------------------------------------------------------------------
