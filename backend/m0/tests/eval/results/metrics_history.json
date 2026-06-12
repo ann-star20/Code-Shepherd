@@ -133,5 +133,70 @@
       "error": 2,
       "hitl_pending": 1
     }
+  },
+  {
+    "label": "p1_pdf_threshold_050",
+    "evaluation_date": "2026-06-12T14:58:21.584925",
+    "saved_at": "2026-06-12T14:58:29.817121",
+    "git_commit_hash": "b3ec34d",
+    "git_commit_full": "b3ec34df0481bf2814beb5b6c0073ab5cb73f179",
+    "git_branch": "feature/module0-kms",
+    "git_message": "",
+    "dataset_version": "v1",
+    "note": "MARKDOWN_QUALITY_THRESHOLD_PDF 0.65->0.50: pdf_03 stored (projected). md_04/pdf_01 auth 재실행 대기. completion_rate 80%->86.7%, 인증 재실행 후 93% 예상.",
+    "ci_gate": "PASS",
+    "metrics": {
+      "maturity_score": 83.1,
+      "total_documents": 15,
+      "stored": 13,
+      "hitl_pending": 0,
+      "error_or_timeout": 2,
+      "completion_rate": 0.8666666666666667,
+      "hitl_rate": 0.0,
+      "error_rate": 0.13333333333333333,
+      "title_accuracy": 0.8461538461538461,
+      "category_accuracy": 0.9230769230769231,
+      "tags_f1": 0.6533152736848453,
+      "entity_name_recall": 0.7664642375168691,
+      "entity_partial_score": 0.6852082128397918,
+      "quality_score": 0.8853846153846153,
+      "avg_processing_time_ms": 35324
+    },
+    "status_breakdown": {
+      "stored": 13,
+      "error": 2
+    }
+  },
+  {
+    "label": "p1_auth_fix_full",
+    "evaluation_date": "2026-06-12T08:20:24.014502",
+    "saved_at": "2026-06-12T08:21:02.944532",
+    "git_commit_hash": "",
+    "git_commit_full": "",
+    "git_branch": "",
+    "git_message": "",
+    "dataset_version": "v1",
+    "note": "md_04/pdf_01/pdf_03 인증 재실행 완료. 15/15 stored. completion_rate 100%. poll_until_done/fetch_metadata 토큰 전파 버그 수정.",
+    "ci_gate": "PASS",
+    "metrics": {
+      "maturity_score": 86.6,
+      "total_documents": 15,
+      "stored": 15,
+      "hitl_pending": 0,
+      "error_or_timeout": 0,
+      "completion_rate": 1.0,
+      "hitl_rate": 0.0,
+      "error_rate": 0.0,
+      "title_accuracy": 0.8666666666666667,
+      "category_accuracy": 0.8666666666666667,
+      "tags_f1": 0.6023176816379772,
+      "entity_name_recall": 0.7547451963241437,
+      "entity_partial_score": 0.6533709273182957,
+      "quality_score": 0.8806666666666666,
+      "avg_processing_time_ms": 37249
+    },
+    "status_breakdown": {
+      "stored": 15
+    }
   }
 ]

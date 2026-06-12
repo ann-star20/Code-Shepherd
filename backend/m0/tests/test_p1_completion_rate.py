@@ -188,3 +188,116 @@ class TestEvalScriptAuthSupport:
         assert "token" in sig.parameters, (
             "run(base_url, doc_ids, output_path, ..., token=None) — token 파라미터 필요"
         )
+
+
+# ---------------------------------------------------------------------------
+# 3. pipeline_output.json — md_04 / pdf_01 최종 상태 검증
+# ---------------------------------------------------------------------------
+
+class TestEvalScriptAuthPropagation:
+    """poll_until_done, fetch_metadata도 토큰을 전달해야 한다."""
+
+    @pytest.mark.asyncio
+    async def test_poll_until_done_sends_auth_header(self):
+        """poll_until_done가 token 있을 때 Authorization: Bearer 헤더를 포함해야 한다."""
+        import tests.eval.run_pipeline as rp
+        from pathlib import Path
+
+        captured_headers: dict = {}
+
+        class MockResponse:
+            status_code = 200
+            def raise_for_status(self): pass
+            def json(self): return {"status": "stored", "quality_score": 0.9}
+
+        class MockClient:
+            async def __aenter__(self): return self
+            async def __aexit__(self, *_): pass
+            async def get(self, url, **kwargs):
+                captured_headers.update(kwargs.get("headers", {}))
+                return MockResponse()
+
+        with patch("tests.eval.run_pipeline.httpx.AsyncClient", return_value=MockClient()):
+            await rp.poll_until_done(
+                base_url="http://localhost:8002",
+                doc_id="test-doc-id",
+                poll_interval=0,
+                max_retries=1,
+                token="my-poll-token",
+            )
+
+        assert "Authorization" in captured_headers, (
+            "poll_until_done: token 있을 때 Authorization 헤더 누락"
+        )
+        assert captured_headers["Authorization"] == "Bearer my-poll-token"
+
+    @pytest.mark.asyncio
+    async def test_fetch_metadata_sends_auth_header(self):
+        """fetch_metadata가 token 있을 때 Authorization: Bearer 헤더를 포함해야 한다."""
+        import tests.eval.run_pipeline as rp
+        from pathlib import Path
+
+        captured_headers: dict = {}
+
+        class MockResponse:
+            status_code = 200
+            def raise_for_status(self): pass
+            def json(self):
+                return {
+                    "doc_id": "test-doc-id",
+                    "title": "테스트",
+                    "category": "AI_ML",
+                    "tags": [],
+                    "source": "upload",
+                    "file_type": "md",
+                }
+
+        class MockClient:
+            async def __aenter__(self): return self
+            async def __aexit__(self, *_): pass
+            async def get(self, url, **kwargs):
+                captured_headers.update(kwargs.get("headers", {}))
+                return MockResponse()
+
+        with patch("tests.eval.run_pipeline.httpx.AsyncClient", return_value=MockClient()):
+            await rp.fetch_metadata(
+                base_url="http://localhost:8002",
+                doc_id="test-doc-id",
+                token="my-meta-token",
+            )
+
+        assert "Authorization" in captured_headers, (
+            "fetch_metadata: token 있을 때 Authorization 헤더 누락"
+        )
+        assert captured_headers["Authorization"] == "Bearer my-meta-token"
+
+
+class TestPipelineOutputCompleteness:
+    def test_md04_pdf01_stored_in_pipeline_output(self):
+        """md_04와 pdf_01이 pipeline_output.json에서 stored 상태여야 한다.
+
+        RED : 두 문서 모두 status='error', doc_id='' — Security Guardrail 적용 후
+              EVAL_AUTH_TOKEN 없이 실행됐기 때문.
+        GREEN: EVAL_AUTH_TOKEN으로 재실행 후 stored 상태가 기록됨.
+        """
+        import json
+        from pathlib import Path
+
+        output_path = (
+            Path(__file__).parent / "eval" / "results" / "pipeline_output.json"
+        )
+        assert output_path.exists(), f"pipeline_output.json 없음: {output_path}"
+
+        data = json.loads(output_path.read_text(encoding="utf-8"))
+        results = {item["golden_id"]: item for item in data}
+
+        for gid in ["md_04", "pdf_01"]:
+            assert gid in results, f"{gid}가 pipeline_output.json에 없음"
+            item = results[gid]
+            assert item["doc_id"] != "", (
+                f"{gid}: doc_id 비어있음 — 업로드 실패 "
+                f"(EVAL_AUTH_TOKEN 없이 실행). status={item['status']!r}"
+            )
+            assert item["status"] in {"stored", "hitl_pending", "stored_partial"}, (
+                f"{gid}: status={item['status']!r} — stored/hitl_pending이어야 함"
+            )

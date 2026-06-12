@@ -96,14 +96,21 @@ async def poll_until_done(
     doc_id: str,
     poll_interval: float = DEFAULT_POLL_INTERVAL,
     max_retries: int = DEFAULT_MAX_RETRIES,
+    token: str | None = None,
 ) -> dict:
     """
     GET /kms/status/{doc_id} 를 폴링하여 처리 완료 상태를 반환한다.
     TERMINAL_STATUSES에 도달하거나 max_retries 초과 시 종료.
     """
+    headers: dict[str, str] = {}
+    if token:
+        headers["Authorization"] = f"Bearer {token}"
+
     async with httpx.AsyncClient(timeout=30.0) as client:
         for attempt in range(max_retries):
-            response = await client.get(f"{base_url}/kms/status/{doc_id}")
+            response = await client.get(
+                f"{base_url}/kms/status/{doc_id}", headers=headers
+            )
             response.raise_for_status()
             data = response.json()
             status = data.get("status", "unknown")
@@ -120,16 +127,26 @@ async def poll_until_done(
     )
 
 
-async def fetch_metadata(base_url: str, doc_id: str) -> dict:
+async def fetch_metadata(
+    base_url: str, doc_id: str, token: str | None = None
+) -> dict:
     """GET /kms/docs/{doc_id}/metadata + /entities + /details 로 메타데이터를 반환한다."""
+    headers: dict[str, str] = {}
+    if token:
+        headers["Authorization"] = f"Bearer {token}"
+
     async with httpx.AsyncClient(timeout=30.0) as client:
-        meta_resp = await client.get(f"{base_url}/kms/docs/{doc_id}/metadata")
+        meta_resp = await client.get(
+            f"{base_url}/kms/docs/{doc_id}/metadata", headers=headers
+        )
         meta_resp.raise_for_status()
         data = meta_resp.json()
 
         entities: list[dict] = []
         try:
-            ent_resp = await client.get(f"{base_url}/kms/docs/{doc_id}/entities")
+            ent_resp = await client.get(
+                f"{base_url}/kms/docs/{doc_id}/entities", headers=headers
+            )
             if ent_resp.status_code == 200:
                 entities = ent_resp.json().get("entities") or []
         except Exception as e:
@@ -137,7 +154,9 @@ async def fetch_metadata(base_url: str, doc_id: str) -> dict:
 
         quality_score: float = 0.0
         try:
-            det_resp = await client.get(f"{base_url}/kms/docs/{doc_id}/details")
+            det_resp = await client.get(
+                f"{base_url}/kms/docs/{doc_id}/details", headers=headers
+            )
             if det_resp.status_code == 200:
                 quality_score = float(det_resp.json().get("quality_score") or 0.0)
         except Exception as e:
@@ -243,14 +262,14 @@ async def run(
 
             # 2. 처리 완료 대기
             status_data = await poll_until_done(
-                base_url, doc_id, poll_interval, max_retries
+                base_url, doc_id, poll_interval, max_retries, token=token
             )
             status = status_data.get("status", "unknown")
             processing_time_ms = round((time.monotonic() - t_start) * 1000)
             logger.info("  처리 완료 → status=%s (%dms)", status, processing_time_ms)
 
             # 3. 메타데이터 수집 (quality_score도 /details에서 가져옴)
-            meta = await fetch_metadata(base_url, doc_id)
+            meta = await fetch_metadata(base_url, doc_id, token=token)
             quality_score = meta.get("quality_score", 0.0)
             logger.info(
                 "  메타데이터 → title=%s, category=%s, tags=%d개, quality_score=%.2f",
