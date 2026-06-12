@@ -239,7 +239,7 @@ async def _mark_plan_completed(session: AsyncSession, plan_id: uuid.UUID) -> Cur
     if plan is None:
         return None
     if plan.completed_at is None:
-        plan.completed_at = datetime.now(UTC)
+        plan.completed_at = datetime.now(UTC).replace(tzinfo=None)
         await session.commit()
         await session.refresh(plan)
     return plan

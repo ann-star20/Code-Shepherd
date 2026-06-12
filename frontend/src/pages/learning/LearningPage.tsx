@@ -65,11 +65,30 @@ export default function LearningPage() {
         </div>
       )}
       {/* [REVIEW] 신규 추가 블록 — Slice 3 (Slice 2 종료 시점엔 카드 렌더링 코드가 전혀 없었음) */}
-      {issues && (
+      {issues && issues.length > 0 && issues.every((issue) => issue.plan.status === "failed") && (
+        <div className="flex flex-col items-center justify-center gap-1 p-12 text-center text-notion-text-secondary">
+          <p>카드를 생성하는 중 문제가 발생했어요</p>
+          <p>잠시 후 다시 시도해주세요</p>
+        </div>
+      )}
+      {issues && issues.length > 0 && !issues.every((issue) => issue.plan.status === "failed") && (
         <div className="space-y-4 p-6">
           {issues.map((issue) => (
             <LearningCard key={issue.id} issue={issue} />
           ))}
+        </div>
+      )}
+      {issues && issues.length === 0 && (
+        <div className="flex flex-col items-center justify-center gap-3 p-12 text-center text-notion-text-secondary">
+          <p className="text-lg font-medium text-notion-text">학습할 이슈를 찾지 못했어요</p>
+          <p>PR 리뷰가 진행 중이거나 발견된 이슈가 없을 수 있어요</p>
+          <button
+            type="button"
+            onClick={handleConfirm}
+            className="px-5 py-2 rounded-lg text-sm font-medium text-notion-text border border-notion-border hover:bg-notion-bg-secondary transition-colors"
+          >
+            다시 확인하기
+          </button>
         </div>
       )}
     </>

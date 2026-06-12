@@ -184,9 +184,9 @@ async def generate_card(issue: ReviewIssue, adapter: SearchAdapter, mistake_coun
             card_content=None,
         )
 
-    docs_concept = await rag_search(adapter, embedding1, category="security_guide")
-    docs_example = await rag_search(adapter, embedding2, category="coding_convention")
-    docs_recommend = await rag_search(adapter, embedding3, category="learning_resource")
+    docs_concept = await rag_search(adapter, embedding1, category="보안")
+    docs_example = await rag_search(adapter, embedding2, category="코딩컨벤션")
+    docs_recommend = await rag_search(adapter, embedding3, category="코드성능검증")
 
     llm_fallback = docs_concept is None or docs_example is None
     depth = determine_depth(issue, mistake_count=mistake_count)

@@ -76,7 +76,7 @@ class SearchAdapter(ABC):
     """RAG 검색 백엔드 인터페이스 (D33). Phase 1: PgvectorAdapter, 추후 FTS/Hybrid로 교체 가능 (pipeline 코드 변경 없음)."""
 
     @abstractmethod
-    async def search(self, embedding: list[float], category: str | None = None, limit: int = 5) -> list[dict]:
+    async def search(self, embedding: list[float], category: str | None = None, limit: int = 3) -> list[dict]:
         ...
 
 

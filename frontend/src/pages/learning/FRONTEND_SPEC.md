@@ -168,11 +168,11 @@ POST /api/learn → 202 { scan_id, plan_ids }
 │  ← 인풋 그대로 표시           │  (RAG 또는 LLM 생성)                │
 ├──────────────────────────────┴──────────────────────────────────────┤
 │ 설명                                                                 │
-│  개념 설명 본문 (e-commerce 맥락 기반)                               │
+│  정의 + 발생 원인 (한 줄, e-commerce 맥락 기반)                       │
 │  인라인 코드 칩 포함 (예: `Optional`, `null`)                        │
 │                                                                      │
-│  왜 위험한가 (e-commerce 맥락):                                      │
-│    서버가 e-commerce 도메인 기반으로 생성                             │
+│  왜 위험한가 (e-commerce 맥락 — 영향/리스크, 상세히):                  │
+│    서버가 e-commerce 도메인 기반으로 생성                              │
 │                                                                      │
 │ 학습 추천                                                            │
 │  이 이슈를 더 깊게 이해하려면 공부해보세요:                           │
@@ -212,7 +212,7 @@ POST /api/learn → 202 { scan_id, plan_ids }
 | 헤더 | keyword + name_of_function | keyword + name_of_function + sub_category |
 | Before | code_snippet 그대로 | code_snippet 그대로 |
 | After | 수정 코드 (짧게) | 수정 코드 (상세, 주석 포함) |
-| 설명 | 개념 요약 + e-commerce 맥락 위험 | 개념 원리 상세 + e-commerce 맥락 위험 + (Phase 2) 실제 장애 사례 |
+| 설명 | 정의 + 발생 원인 (한 줄) + e-commerce 맥락 위험 | 정의 + 발생 원인 (한 줄) + e-commerce 맥락 위험 (상세) + (Phase 2) 실제 장애 사례 |
 | 핵심 요약 박스 | 한 줄 규칙 | 한 줄 규칙 + 사내 컨벤션 명시 |
 | 학습 추천 | 2개 이내 추천 | 3개 이내 추천 |
 
@@ -237,7 +237,7 @@ POST /api/learn → 202 { scan_id, plan_ids }
   },
   "before_code": "def search_products(keyword):\n    ...",  // null 가능 — code_snippet 없으면 null, 프론트는 단일컬럼 렌더링
   "after_code": "def search_products(keyword):\n    ...",
-  "explanation": "e-commerce 맥락 기반 개념 설명 본문",
+  "explanation": "e-commerce 맥락 기반 정의 + 발생 원인",
   "why_dangerous": "상품 검색에 SQL Injection 발생 시 전체 DB 노출 가능",
   "core_summary": "SQL Injection: 사용자 입력은 Parameterized Query로만 처리한다",
   "learning_recommendations": [
