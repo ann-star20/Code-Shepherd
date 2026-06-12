@@ -1,0 +1,1 @@
+docker compose up api-core m6 neo4j_m6 celery_worker_m6 frontend api-core

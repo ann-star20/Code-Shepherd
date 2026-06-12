@@ -1,0 +1,631 @@
+[
+  {
+    "concept_name": "XSS",
+    "concept_type": "vulnerability_root_cause",
+    "cwe_id": "CWE-79",
+    "owasp_id": "A03:2025",
+    "severity": "high",
+    "domains": ["security"],
+    "description_ko": "크로스 사이트 스크립팅(XSS)은 공격자가 악성 스크립트를 신뢰된 웹 페이지에 주입하여 피해자의 브라우저에서 실행시키는 공격. 세션 탈취, 리다이렉션, 피싱 등을 유발한다.",
+    "aliases": ["Cross-Site Scripting", "XSS Attack", "CrossSiteScripting", "CrossSiteScriptingAttack", "XssVulnerability", "CrossSiteScriptingVulnerability", "크로스 사이트 스크립팅"],
+    "root_cause": "unsanitized_user_input_in_html_context",
+    "affected_components": ["template_rendering_layer", "api_response_serialization"],
+    "mechanism": [
+      {
+        "mechanism_name": "output_encoding",
+        "code_examples": [
+          {
+            "lang": "python",
+            "lang_version": ">=3.10",
+            "framework": "django",
+            "framework_version": ">=4.0",
+            "code": "from django.utils.html import escape\nsafe = escape(user_input)",
+            "description": "Django 템플릿 외부에서 사용자 입력을 안전하게 HTML 이스케이프"
+          }
+        ]
+      },
+      {
+        "mechanism_name": "content_security_policy",
+        "code_examples": [
+          {
+            "lang": "python",
+            "lang_version": ">=3.10",
+            "framework": "django",
+            "framework_version": ">=4.0",
+            "code": "# settings.py\nSECURE_CONTENT_TYPE_NOSNIFF = True\nX_FRAME_OPTIONS = 'DENY'",
+            "description": "Django CSP 헤더 설정으로 XSS 공격 표면 축소"
+          }
+        ]
+      }
+    ],
+    "config_properties": [
+      {"key": "secure_browser_xss_filter", "value": "True", "type": "security"},
+      {"key": "content_type_nosniff", "value": "True", "type": "security"}
+    ]
+  },
+  {
+    "concept_name": "SQLi",
+    "concept_type": "vulnerability_root_cause",
+    "cwe_id": "CWE-89",
+    "owasp_id": "A03:2025",
+    "severity": "critical",
+    "domains": ["security"],
+    "description_ko": "SQL 인젝션은 공격자가 악의적인 SQL 구문을 입력값에 삽입하여 데이터베이스를 조작하는 공격. 데이터 유출, 삭제, 권한 상승을 유발한다.",
+    "aliases": ["SQL Injection", "SQLInjection", "SqlInjection", "SQLi Attack", "SqlInjectionVulnerability", "SqlInjectionAttack", "SQL 인젝션"],
+    "root_cause": "unsanitized_user_input_in_sql_query",
+    "affected_components": ["database_query_layer", "orm_layer"],
+    "mechanism": [
+      {
+        "mechanism_name": "parameterized_query",
+        "code_examples": [
+          {
+            "lang": "python",
+            "lang_version": ">=3.10",
+            "framework": "django",
+            "framework_version": ">=4.0",
+            "code": "# ORM 사용 (안전)\nUser.objects.filter(username=username)\n\n# Raw SQL — 파라미터 바인딩 필수\nfrom django.db import connection\nwith connection.cursor() as c:\n    c.execute('SELECT * FROM users WHERE name = %s', [username])",
+            "description": "Django ORM 또는 파라미터 바인딩을 통한 SQL 인젝션 방어"
+          }
+        ]
+      },
+      {
+        "mechanism_name": "input_type_validation",
+        "code_examples": [
+          {
+            "lang": "python",
+            "lang_version": ">=3.10",
+            "framework": "fastapi",
+            "framework_version": ">=0.100",
+            "code": "from pydantic import BaseModel, conint\n\nclass UserQuery(BaseModel):\n    user_id: conint(gt=0)  # 양의 정수만 허용",
+            "description": "Pydantic 타입 제약으로 SQL 특수문자 주입 원천 차단"
+          }
+        ]
+      }
+    ],
+    "config_properties": []
+  },
+  {
+    "concept_name": "CSRF",
+    "concept_type": "vulnerability_root_cause",
+    "cwe_id": "CWE-352",
+    "owasp_id": "A01:2025",
+    "severity": "high",
+    "domains": ["security"],
+    "description_ko": "크로스 사이트 요청 위조(CSRF)는 인증된 사용자의 브라우저를 통해 공격자가 원하는 요청을 서버에 강제로 전송하는 공격. 계정 설정 변경, 결제 등을 피해자 모르게 실행한다.",
+    "aliases": ["Cross-Site Request Forgery", "XSRF", "Sea Surf", "CrossSiteRequestForgery", "CSRFAttack", "CrossSiteRequestForgeryAttack", "CrossSiteRequestForgeryVulnerability", "크로스 사이트 요청 위조", "CSRF Attack"],
+    "root_cause": "missing_request_origin_verification",
+    "affected_components": ["form_submission_handler", "state_changing_api", "session_management"],
+    "mechanism": [
+      {
+        "mechanism_name": "csrf_token_validation",
+        "code_examples": [
+          {
+            "lang": "python",
+            "lang_version": ">=3.10",
+            "framework": "django",
+            "framework_version": ">=4.0",
+            "code": "# settings.py\nMIDDLEWARE = [\n    'django.middleware.csrf.CsrfViewMiddleware',\n    ...\n]\n\n# 템플릿\n# <form method='post'>{% csrf_token %}</form>",
+            "description": "Django CsrfViewMiddleware + {% csrf_token %} 태그로 토큰 검증"
+          }
+        ]
+      },
+      {
+        "mechanism_name": "samesite_cookie",
+        "code_examples": [
+          {
+            "lang": "python",
+            "lang_version": ">=3.10",
+            "framework": "django",
+            "framework_version": ">=4.0",
+            "code": "# settings.py\nCSRF_COOKIE_SAMESITE = 'Strict'\nSESSION_COOKIE_SAMESITE = 'Lax'\nCSRF_COOKIE_SECURE = True",
+            "description": "SameSite 쿠키 속성으로 크로스 사이트 요청 시 쿠키 전송 차단"
+          }
+        ]
+      }
+    ],
+    "config_properties": [
+      {"key": "csrf_cookie_secure", "value": "True", "type": "security"},
+      {"key": "csrf_cookie_samesite", "value": "Strict", "type": "security"}
+    ]
+  },
+  {
+    "concept_name": "SSRF",
+    "concept_type": "vulnerability_root_cause",
+    "cwe_id": "CWE-918",
+    "owasp_id": "A10:2025",
+    "severity": "high",
+    "domains": ["security"],
+    "description_ko": "서버 사이드 요청 위조(SSRF)는 서버가 공격자가 지정한 내부 또는 외부 리소스로 요청을 전송하도록 유도하는 공격. 내부망 스캔, 클라우드 메타데이터 탈취에 악용된다.",
+    "aliases": ["Server-Side Request Forgery", "ServerSideRequestForgery", "SSRFAttack", "ServerSideRequestForgeryAttack", "ServerSideRequestForgeryVulnerability", "SsrfVulnerability", "서버 사이드 요청 위조"],
+    "root_cause": "unvalidated_user_supplied_url_in_server_request",
+    "affected_components": ["http_client_layer", "webhook_handler", "url_fetch_service"],
+    "mechanism": [
+      {
+        "mechanism_name": "allowlist_url_validation",
+        "code_examples": [
+          {
+            "lang": "python",
+            "lang_version": ">=3.10",
+            "framework": "fastapi",
+            "framework_version": ">=0.100",
+            "code": "from urllib.parse import urlparse\n\nALLOWED_HOSTS = {'api.example.com', 'cdn.example.com'}\n\ndef safe_fetch(url: str) -> bytes:\n    host = urlparse(url).hostname\n    if host not in ALLOWED_HOSTS:\n        raise ValueError(f'Blocked: {host}')\n    import httpx\n    return httpx.get(url, timeout=5).content",
+            "description": "허용 도메인 목록(allowlist) 검증으로 임의 URL 요청 차단"
+          }
+        ]
+      }
+    ],
+    "config_properties": []
+  },
+  {
+    "concept_name": "PathTraversal",
+    "concept_type": "vulnerability_root_cause",
+    "cwe_id": "CWE-22",
+    "owasp_id": "A01:2025",
+    "severity": "high",
+    "domains": ["security"],
+    "description_ko": "경로 순회 공격은 '../' 시퀀스를 사용하여 허용된 디렉토리 밖의 파일에 접근하는 공격. 설정 파일, 시스템 파일 노출로 이어진다.",
+    "aliases": ["Directory Traversal", "DirectoryTraversal", "PathTraversalAttack", "PathTraversalVulnerability", "DirectoryTraversalAttack", "DirectoryTraversalVulnerability", "DotDotSlash", "경로 순회 공격", "../ Attack"],
+    "root_cause": "unvalidated_file_path_from_user_input",
+    "affected_components": ["file_download_endpoint", "static_file_server"],
+    "mechanism": [
+      {
+        "mechanism_name": "canonical_path_validation",
+        "code_examples": [
+          {
+            "lang": "python",
+            "lang_version": ">=3.10",
+            "framework": "fastapi",
+            "framework_version": ">=0.100",
+            "code": "from pathlib import Path\n\nBASE_DIR = Path('/app/uploads').resolve()\n\ndef safe_path(filename: str) -> Path:\n    target = (BASE_DIR / filename).resolve()\n    if not str(target).startswith(str(BASE_DIR)):\n        raise PermissionError('Path traversal detected')\n    return target",
+            "description": "resolve()로 절대경로 정규화 후 기준 디렉토리 접두사 검증"
+          }
+        ]
+      }
+    ],
+    "config_properties": []
+  },
+  {
+    "concept_name": "CommandInjection",
+    "concept_type": "vulnerability_root_cause",
+    "cwe_id": "CWE-78",
+    "owasp_id": "A03:2025",
+    "severity": "critical",
+    "domains": ["security"],
+    "description_ko": "명령어 인젝션은 사용자 입력이 OS 명령어로 직접 실행될 때 발생하는 취약점. 서버 시스템의 완전한 장악이 가능하다.",
+    "aliases": ["OS Command Injection", "Shell Injection", "OsCommandInjection", "ShellInjection", "CommandInjectionAttack", "CommandInjectionVulnerability", "OsCommandInjectionAttack", "ShellInjectionAttack", "명령어 인젝션"],
+    "root_cause": "shell_true_with_unsanitized_user_input",
+    "affected_components": ["subprocess_caller", "system_command_api"],
+    "mechanism": [
+      {
+        "mechanism_name": "subprocess_args_list",
+        "code_examples": [
+          {
+            "lang": "python",
+            "lang_version": ">=3.10",
+            "framework": "fastapi",
+            "framework_version": ">=0.100",
+            "code": "import subprocess\n\n# 위험 — 절대 사용 금지\n# subprocess.run(f'ls {user_dir}', shell=True)\n\n# 안전 — 리스트로 분리\nresult = subprocess.run(\n    ['ls', '-la', user_dir],\n    capture_output=True,\n    text=True,\n    timeout=10,\n)",
+            "description": "shell=True 금지, 인자를 리스트로 전달하여 셸 메타문자 해석 차단"
+          }
+        ]
+      }
+    ],
+    "config_properties": []
+  },
+  {
+    "concept_name": "InsecureDeserialization",
+    "concept_type": "vulnerability_root_cause",
+    "cwe_id": "CWE-502",
+    "owasp_id": "A08:2025",
+    "severity": "critical",
+    "domains": ["security"],
+    "description_ko": "불안전한 역직렬화는 신뢰할 수 없는 데이터를 객체로 복원할 때 발생하는 취약점. 임의 코드 실행(RCE)으로 이어질 수 있다.",
+    "aliases": ["Unsafe Deserialization", "UnsafeDeserialization", "InsecureDeserializationAttack", "InsecureDeserializationVulnerability", "UnsafeDeserializationAttack", "UnsafeDeserializationVulnerability", "불안전한 역직렬화"],
+    "root_cause": "deserialization_of_untrusted_data",
+    "affected_components": ["api_request_body_parser", "cache_layer", "message_queue_consumer"],
+    "mechanism": [
+      {
+        "mechanism_name": "safe_serialization_format",
+        "code_examples": [
+          {
+            "lang": "python",
+            "lang_version": ">=3.10",
+            "framework": "fastapi",
+            "framework_version": ">=0.100",
+            "code": "# pickle 사용 금지 (RCE 위험)\n# data = pickle.loads(user_bytes)\n\nfrom pydantic import BaseModel\n\nclass SafePayload(BaseModel):\n    action: str\n    value: int\n\n# 스키마 검증 후 역직렬화\npayload = SafePayload.model_validate_json(user_json)",
+            "description": "pickle 대신 JSON + Pydantic 스키마 검증으로 역직렬화 안전성 확보"
+          }
+        ]
+      }
+    ],
+    "config_properties": []
+  },
+  {
+    "concept_name": "HardcodedSecret",
+    "concept_type": "vulnerability_root_cause",
+    "cwe_id": "CWE-798",
+    "owasp_id": "A02:2025",
+    "severity": "critical",
+    "domains": ["security"],
+    "description_ko": "하드코딩된 자격증명은 소스코드에 비밀키, 비밀번호, API 키가 평문으로 포함된 취약점. Git 저장소 노출 시 즉각적인 보안 침해로 이어진다.",
+    "aliases": ["Hardcoded Credentials", "Hardcoded Password", "HardcodedCredentials", "HardcodedPassword", "HardcodedSecret", "HardcodedSecretVulnerability", "HardcodedApiKey", "HardcodedToken", "SecretInSourceCode", "SecretsInCode", "하드코딩된 비밀번호"],
+    "root_cause": "secret_stored_in_source_code",
+    "affected_components": ["configuration_file", "source_code_repository"],
+    "mechanism": [
+      {
+        "mechanism_name": "environment_variable_injection",
+        "code_examples": [
+          {
+            "lang": "python",
+            "lang_version": ">=3.10",
+            "framework": "fastapi",
+            "framework_version": ">=0.100",
+            "code": "from pydantic_settings import BaseSettings\n\nclass Settings(BaseSettings):\n    secret_key: str\n    db_password: str\n\n    model_config = {'env_file': '.env'}\n\nsettings = Settings()",
+            "description": "pydantic-settings로 환경변수/.env에서 시크릿 주입, 소스코드에 기록 금지"
+          }
+        ]
+      }
+    ],
+    "config_properties": [
+      {"key": "debug", "value": "False", "type": "security"}
+    ]
+  },
+  {
+    "concept_name": "BrokenAuthentication",
+    "concept_type": "vulnerability_root_cause",
+    "cwe_id": "CWE-287",
+    "owasp_id": "A07:2025",
+    "severity": "critical",
+    "domains": ["security"],
+    "description_ko": "취약한 인증은 세션 관리, 자격증명 검증, 비밀번호 정책의 결함으로 계정 탈취를 가능하게 하는 취약점.",
+    "aliases": ["Authentication Bypass", "BrokenAuthentication", "AuthenticationBypass", "WeakAuthentication", "BrokenAuthenticationVulnerability", "WeakAuthenticationVulnerability", "AuthenticationBypassVulnerability", "취약한 인증"],
+    "root_cause": "weak_session_or_credential_management",
+    "affected_components": ["login_endpoint", "session_storage", "password_reset_flow"],
+    "mechanism": [
+      {
+        "mechanism_name": "secure_password_hashing",
+        "code_examples": [
+          {
+            "lang": "python",
+            "lang_version": ">=3.10",
+            "framework": "fastapi",
+            "framework_version": ">=0.100",
+            "code": "from passlib.context import CryptContext\n\npwd_ctx = CryptContext(schemes=['bcrypt'], deprecated='auto')\n\ndef hash_pw(plain: str) -> str:\n    return pwd_ctx.hash(plain)\n\ndef verify_pw(plain: str, hashed: str) -> bool:\n    return pwd_ctx.verify(plain, hashed)",
+            "description": "bcrypt 단방향 해싱으로 비밀번호 평문 저장 원천 차단"
+          }
+        ]
+      }
+    ],
+    "config_properties": [
+      {"key": "session_cookie_secure", "value": "True", "type": "security"},
+      {"key": "session_cookie_httponly", "value": "True", "type": "security"}
+    ]
+  },
+  {
+    "concept_name": "XXE",
+    "concept_type": "vulnerability_root_cause",
+    "cwe_id": "CWE-611",
+    "owasp_id": "A05:2025",
+    "severity": "high",
+    "domains": ["security"],
+    "description_ko": "XML 외부 엔티티(XXE) 공격은 외부 엔티티 참조를 지원하는 XML 파서를 이용하여 서버 파일 읽기, SSRF, 포트 스캔을 수행하는 취약점.",
+    "aliases": ["XML External Entity", "XmlExternalEntity", "XXEAttack", "XmlExternalEntityAttack", "XxeVulnerability", "XxeAttack", "XxeInjection", "XmlExternalEntityVulnerability", "XML 외부 엔티티 공격"],
+    "root_cause": "xml_parser_external_entity_enabled",
+    "affected_components": ["xml_parser", "soap_endpoint", "file_upload_handler"],
+    "mechanism": [
+      {
+        "mechanism_name": "disable_external_entities",
+        "code_examples": [
+          {
+            "lang": "python",
+            "lang_version": ">=3.10",
+            "framework": "fastapi",
+            "framework_version": ">=0.100",
+            "code": "import defusedxml.ElementTree as ET\n\n# defusedxml — 외부 엔티티 자동 비활성화\ntree = ET.fromstring(xml_string)",
+            "description": "defusedxml 라이브러리로 외부 엔티티 처리를 자동으로 비활성화"
+          }
+        ]
+      }
+    ],
+    "config_properties": []
+  },
+  {
+    "concept_name": "BrokenAccessControl",
+    "concept_type": "vulnerability_root_cause",
+    "cwe_id": "CWE-284",
+    "owasp_id": "A01:2025",
+    "severity": "critical",
+    "domains": ["security"],
+    "description_ko": "취약한 접근 제어는 최소 권한 원칙 미준수, IDOR, 권한 검증 누락 등으로 인증된 사용자가 허용되지 않은 리소스에 접근할 수 있는 취약점. OWASP Top 10 2021/2025 1위.",
+    "aliases": ["Broken Access Control", "IDOR", "BrokenAccessControl", "InsecureDirectObjectReference", "BrokenAccessControlVulnerability", "InsecureDirectObjectReferenceVulnerability", "IdorVulnerability", "AccessControlVulnerability", "취약한 접근 제어", "Insecure Direct Object Reference"],
+    "root_cause": "missing_authorization_check_on_resource",
+    "affected_components": ["authentication_filter", "api_endpoint", "database_access_layer"],
+    "mechanism": [
+      {
+        "mechanism_name": "rbac_rules",
+        "code_examples": [
+          {
+            "lang": "python",
+            "lang_version": ">=3.10",
+            "framework": "django",
+            "framework_version": ">=4.0",
+            "code": "from django.contrib.auth.decorators import permission_required\n\n@permission_required('app.view_resource', raise_exception=True)\ndef protected_view(request):\n    ...",
+            "description": "Django permission_required 데코레이터로 뷰 단위 RBAC 강제 적용"
+          }
+        ]
+      },
+      {
+        "mechanism_name": "abac_rules",
+        "code_examples": [
+          {
+            "lang": "python",
+            "lang_version": ">=3.10",
+            "framework": "fastapi",
+            "framework_version": ">=0.100",
+            "code": "from fastapi import Depends, HTTPException\n\ndef authorize_owner(resource_id: int, current_user=Depends(get_current_user)):\n    resource = db.get(resource_id)\n    if resource.owner_id != current_user.id:\n        raise HTTPException(status_code=403)\n    return resource",
+            "description": "리소스 소유자 속성 검증으로 IDOR 차단 (ABAC 패턴)"
+          }
+        ]
+      },
+      {
+        "mechanism_name": "middleware_authorization",
+        "code_examples": [
+          {
+            "lang": "python",
+            "lang_version": ">=3.10",
+            "framework": "django",
+            "framework_version": ">=4.0",
+            "code": "# settings.py\nMIDDLEWARE = [\n    'django.contrib.auth.middleware.AuthenticationMiddleware',\n    'myapp.middleware.ObjectLevelPermissionMiddleware',\n]",
+            "description": "미들웨어 레이어에서 객체 수준 권한을 일괄 강제하여 뷰 우회 차단"
+          }
+        ]
+      }
+    ],
+    "config_properties": [
+      {"key": "login_url", "value": "/login/", "type": "security"}
+    ]
+  },
+  {
+    "concept_name": "Clickjacking",
+    "concept_type": "vulnerability_root_cause",
+    "cwe_id": "CWE-451",
+    "owasp_id": "A05:2025",
+    "severity": "medium",
+    "domains": ["security"],
+    "description_ko": "투명한 iframe을 웹 페이지 위에 덮어씌워 사용자가 의도치 않은 버튼이나 링크를 클릭하도록 속이는 UI 교정 공격. 계정 설정 변경, 소셜 미디어 공유 등 원하지 않는 행위를 유발한다.",
+    "aliases": ["UI Redressing", "UIRedressing", "ClickjackingAttack", "ClickjackingVulnerability", "UiRedressingAttack", "UiRedressingVulnerability", "클릭재킹"],
+    "root_cause": "transparent_iframe_overlay_without_frame_protection",
+    "affected_components": ["browser_rendering_layer", "iframe_sandbox_policy"],
+    "mechanism": [
+      {
+        "mechanism_name": "x_frame_options_header",
+        "code_examples": [
+          {
+            "lang": "python",
+            "lang_version": ">=3.10",
+            "framework": "django",
+            "framework_version": ">=4.0",
+            "code": "# settings.py\nX_FRAME_OPTIONS = 'DENY'  # 또는 'SAMEORIGIN'",
+            "description": "X-Frame-Options 헤더로 iframe 내 페이지 로드를 전면 차단"
+          }
+        ]
+      },
+      {
+        "mechanism_name": "csp_frame_ancestors",
+        "code_examples": [
+          {
+            "lang": "python",
+            "lang_version": ">=3.10",
+            "framework": "fastapi",
+            "framework_version": ">=0.100",
+            "code": "from fastapi.responses import Response\n\n@app.middleware('http')\nasync def add_csp(request, call_next):\n    response = await call_next(request)\n    response.headers['Content-Security-Policy'] = \"frame-ancestors 'none'\"\n    return response",
+            "description": "CSP frame-ancestors 지시어로 iframe 삽입 출처를 정밀 제어"
+          }
+        ]
+      }
+    ],
+    "config_properties": [
+      {"key": "x_frame_options", "value": "DENY", "type": "security"}
+    ]
+  },
+  {
+    "concept_name": "N+1Query",
+    "concept_type": "performance_antipattern",
+    "cwe_id": "CWE-1048",
+    "owasp_id": null,
+    "severity": "medium",
+    "domains": ["performance"],
+    "description_ko": "N+1 쿼리 문제는 루프 내에서 관련 객체를 개별 쿼리로 지연 로딩(Lazy Loading)하여 DB 쿼리가 N+1회 실행되는 성능 안티패턴. 데이터 건수가 늘수록 응답 시간이 선형 증가한다.",
+    "aliases": ["N+1 Query Problem", "NPlusOneQuery", "NPlusOneQueryProblem", "NPlus1Query", "NPlus1QueryProblem", "NPlusOneQueryAntipattern", "NPlus1QueryAntipattern", "LazyLoadingLoop", "LazyLoadingLoopAntipattern", "LazyLoadingAntipattern", "LazyLoadingProblem", "N+1 쿼리 문제", "Lazy Loading Loop"],
+    "root_cause": "lazy_loading_in_iteration_loop",
+    "affected_components": ["orm_layer", "database_query_layer", "api_list_endpoint"],
+    "mechanism": [
+      {
+        "mechanism_name": "eager_loading",
+        "code_examples": [
+          {
+            "lang": "python",
+            "lang_version": ">=3.10",
+            "framework": "django",
+            "framework_version": ">=4.0",
+            "code": "# 문제: 루프마다 추가 쿼리 발생 (N+1)\n# posts = Post.objects.all()\n# for p in posts: print(p.author.name)\n\n# 해결: select_related\nposts = Post.objects.select_related('author').all()\nfor p in posts:\n    print(p.author.name)  # 단일 JOIN 쿼리",
+            "description": "Django select_related로 외래키 관계를 JOIN으로 미리 로딩"
+          },
+          {
+            "lang": "python",
+            "lang_version": ">=3.10",
+            "framework": "sqlalchemy",
+            "framework_version": ">=2.0",
+            "code": "from sqlalchemy.orm import selectinload\nfrom sqlalchemy import select\n\nstmt = select(Post).options(selectinload(Post.comments))\nposts = session.scalars(stmt).all()",
+            "description": "SQLAlchemy selectinload로 1:N 관계 일괄 로딩"
+          }
+        ]
+      },
+      {
+        "mechanism_name": "batch_fetching",
+        "code_examples": [
+          {
+            "lang": "python",
+            "lang_version": ">=3.10",
+            "framework": "django",
+            "framework_version": ">=4.0",
+            "code": "from django.db.models import Prefetch\n\nposts = Post.objects.prefetch_related(\n    Prefetch('tags', queryset=Tag.objects.only('name'))\n).all()",
+            "description": "Prefetch로 M2M 관계 효율적 일괄 로딩 및 컬럼 선택 최소화"
+          }
+        ]
+      }
+    ],
+    "config_properties": []
+  },
+  {
+    "concept_name": "MissingIndex",
+    "concept_type": "performance_antipattern",
+    "cwe_id": "CWE-1089",
+    "owasp_id": null,
+    "severity": "medium",
+    "domains": ["performance"],
+    "description_ko": "누락된 인덱스는 WHERE·ORDER BY·JOIN 절 컬럼에 인덱스가 없어 테이블 풀스캔(Full Scan)이 반복 발생하는 성능 안티패턴. 데이터 증가에 따라 응답 시간이 급격히 악화된다.",
+    "aliases": ["Missing Database Index", "Full Table Scan", "MissingDatabaseIndex", "MissingIndexAntipattern", "MissingDatabaseIndexAntipattern", "FullTableScan", "FullTableScanAntipattern", "SequentialScan", "SeqScan", "DatabaseIndexMissing", "누락된 인덱스", "Seq Scan"],
+    "root_cause": "unindexed_frequently_filtered_column",
+    "affected_components": ["database_query_layer", "api_list_endpoint", "reporting_layer"],
+    "mechanism": [
+      {
+        "mechanism_name": "composite_index",
+        "code_examples": [
+          {
+            "lang": "sql",
+            "lang_version": "*",
+            "framework": "postgresql",
+            "framework_version": ">=14",
+            "code": "-- 단일 컬럼 인덱스\nCREATE INDEX CONCURRENTLY idx_orders_user_id\n    ON orders (user_id);\n\n-- 부분 복합 인덱스 (조건 조합 최적화)\nCREATE INDEX CONCURRENTLY idx_orders_user_pending\n    ON orders (user_id, created_at)\n    WHERE status = 'pending';",
+            "description": "CONCURRENTLY 옵션으로 운영 중 무중단 인덱스 생성"
+          },
+          {
+            "lang": "python",
+            "lang_version": ">=3.10",
+            "framework": "django",
+            "framework_version": ">=4.0",
+            "code": "class Order(models.Model):\n    user = models.ForeignKey(User, on_delete=models.CASCADE)\n    status = models.CharField(max_length=20)\n\n    class Meta:\n        indexes = [\n            models.Index(\n                fields=['user', 'status'],\n                name='idx_order_user_status'\n            ),\n        ]",
+            "description": "Django Meta.indexes로 복합 인덱스 선언적 관리"
+          }
+        ]
+      },
+      {
+        "mechanism_name": "query_plan_analysis",
+        "code_examples": [
+          {
+            "lang": "sql",
+            "lang_version": "*",
+            "framework": "postgresql",
+            "framework_version": ">=14",
+            "code": "EXPLAIN (ANALYZE, BUFFERS, FORMAT TEXT)\nSELECT * FROM orders\nWHERE user_id = 123 AND status = 'pending'\nORDER BY created_at DESC;",
+            "description": "EXPLAIN ANALYZE로 Seq Scan 탐지 및 인덱스 효율성 검증"
+          }
+        ]
+      }
+    ],
+    "config_properties": []
+  },
+  {
+    "concept_name": "ConnPoolExhaustion",
+    "concept_type": "performance_antipattern",
+    "cwe_id": "CWE-400",
+    "owasp_id": null,
+    "severity": "high",
+    "domains": ["performance", "security"],
+    "description_ko": "커넥션 풀 고갈은 DB·외부 서비스 커넥션이 반납되지 않거나 동시 요청이 풀 크기를 초과할 때 전체 시스템이 응답 불능에 빠지는 안티패턴. DoS와 동일한 결과를 초래한다.",
+    "aliases": ["Connection Pool Exhaustion", "DB Connection Leak", "ConnectionPoolExhaustion", "DbConnectionLeak", "ConnectionLeak", "PoolExhaustion", "ConnectionPoolLeakAntipattern", "ConnectionPoolExhaustionAntipattern", "DbConnectionLeakAntipattern", "ConnectionLeakAntipattern", "커넥션 풀 고갈"],
+    "root_cause": "connection_not_returned_to_pool_or_pool_undersized",
+    "affected_components": ["database_connection_pool", "http_client_pool", "api_gateway"],
+    "mechanism": [
+      {
+        "mechanism_name": "connection_pool_sizing",
+        "code_examples": [
+          {
+            "lang": "python",
+            "lang_version": ">=3.10",
+            "framework": "fastapi",
+            "framework_version": ">=0.100",
+            "code": "import asyncpg\nfrom contextlib import asynccontextmanager\nfrom fastapi import FastAPI\n\n@asynccontextmanager\nasync def lifespan(app: FastAPI):\n    app.state.pool = await asyncpg.create_pool(\n        dsn,\n        min_size=2,\n        max_size=10,\n        max_inactive_connection_lifetime=300,\n        command_timeout=30,\n    )\n    yield\n    await app.state.pool.close()",
+            "description": "asyncpg 풀 max_size·타임아웃 명시 설정으로 자원 한도 보장"
+          }
+        ]
+      },
+      {
+        "mechanism_name": "context_manager_connection",
+        "code_examples": [
+          {
+            "lang": "python",
+            "lang_version": ">=3.10",
+            "framework": "fastapi",
+            "framework_version": ">=0.100",
+            "code": "# 위험: 예외 시 release 누락 가능\n# conn = await pool.acquire()\n\n# 안전: async with 로 자동 반환 보장\nasync with pool.acquire() as conn:\n    result = await conn.fetch(query)",
+            "description": "async with acquire()로 예외 발생 시에도 커넥션 자동 반환 보장"
+          }
+        ]
+      }
+    ],
+    "config_properties": [
+      {"key": "pool_max_size", "value": "10", "type": "tuning"},
+      {"key": "pool_min_size", "value": "2", "type": "tuning"},
+      {"key": "command_timeout", "value": "30", "type": "tuning"}
+    ]
+  },
+  {
+    "concept_name": "MemoryLeak",
+    "concept_type": "performance_antipattern",
+    "cwe_id": "CWE-401",
+    "owasp_id": null,
+    "severity": "high",
+    "domains": ["performance", "security"],
+    "description_ko": "메모리 누수는 더 이상 사용하지 않는 메모리를 해제하지 않아 힙이 지속 증가하는 안티패턴. 장기 운영 시 OOM 크래시 또는 DoS로 이어진다.",
+    "aliases": ["Memory Leak", "Heap Growth", "MemoryLeakAntipattern", "HeapGrowth", "HeapGrowthAntipattern", "OutOfMemory", "OutOfMemoryError", "OomCrash", "OomError", "메모리 누수", "OOM"],
+    "root_cause": "object_reference_retained_preventing_gc",
+    "affected_components": ["long_running_worker", "cache_layer", "event_listener_registry"],
+    "mechanism": [
+      {
+        "mechanism_name": "bounded_cache_eviction",
+        "code_examples": [
+          {
+            "lang": "python",
+            "lang_version": ">=3.10",
+            "framework": "fastapi",
+            "framework_version": ">=0.100",
+            "code": "from functools import lru_cache\nfrom cachetools import TTLCache\n\n# LRU 크기 제한 캐시\n@lru_cache(maxsize=512)\ndef expensive(key: str) -> str:\n    ...\n\n# TTL 만료 캐시\n_ttl: TTLCache = TTLCache(maxsize=1000, ttl=300)",
+            "description": "maxsize 제한 + TTL 만료로 캐시 무한 증가 차단"
+          }
+        ]
+      },
+      {
+        "mechanism_name": "weak_reference_cache",
+        "code_examples": [
+          {
+            "lang": "python",
+            "lang_version": ">=3.10",
+            "framework": "fastapi",
+            "framework_version": ">=0.100",
+            "code": "import weakref\n\n_cache: dict[str, weakref.ref] = {}\n\nasync def get_or_create(key: str):\n    ref = _cache.get(key)\n    obj = ref() if ref else None\n    if obj is None:\n        obj = await _build(key)\n        _cache[key] = weakref.ref(obj)\n    return obj",
+            "description": "weakref로 캐시 참조를 약하게 유지하여 GC 자동 수거 허용"
+          }
+        ]
+      },
+      {
+        "mechanism_name": "explicit_resource_release",
+        "code_examples": [
+          {
+            "lang": "python",
+            "lang_version": ">=3.10",
+            "framework": "fastapi",
+            "framework_version": ">=0.100",
+            "code": "import aiofiles\n\nasync def read_file(path: str) -> str:\n    async with aiofiles.open(path, 'r') as f:\n        return await f.read()\n    # f 자동 close → 파일 핸들 누수 없음",
+            "description": "컨텍스트 매니저로 파일·소켓 핸들 누수를 구조적으로 차단"
+          }
+        ]
+      }
+    ],
+    "config_properties": [
+      {"key": "cache_max_size", "value": "512", "type": "tuning"},
+      {"key": "cache_ttl_seconds", "value": "300", "type": "tuning"}
+    ]
+  }
+]
