@@ -7,14 +7,14 @@ networks:
 services:
   api-core:
     build:
-      context: ./backend
-      dockerfile: api-core/Dockerfile
+      context: ../..
+      dockerfile: backend/api-core/Dockerfile
     ports:
       - "8000:8000"
     env_file: .env
     volumes:
-      - ./backend/_shared:/app/_shared:ro
-      - ./backend/api-core:/app/service
+      - ../../backend/_shared:/app/_shared:ro
+      - ../../backend/api-core:/app/service
     networks:
       - code-shepherd
     restart: unless-stopped
@@ -22,14 +22,14 @@ services:
 
   m1:
     build:
-      context: ./backend
-      dockerfile: m1/Dockerfile
+      context: ../..
+      dockerfile: backend/m1/Dockerfile
     ports:
       - "8001:8001"
     env_file: .env
     volumes:
-      - ./backend/_shared:/app/_shared:ro
-      - ./backend/m1:/app/service
+      - ../../backend/_shared:/app/_shared:ro
+      - ../../backend/m1:/app/service
     networks:
       - code-shepherd
     restart: unless-stopped
@@ -37,8 +37,8 @@ services:
 
   m0:
     build:
-      context: ./backend
-      dockerfile: m0/Dockerfile
+      context: ../..
+      dockerfile: backend/m0/Dockerfile
     ports:
       - "8002:8002"
     env_file: .env
@@ -49,40 +49,51 @@ services:
       NEO4J_USER: neo4j
       NEO4J_PASSWORD: ${NEO4J_PASSWORD:-codeshepherd}
     volumes:
-      - ./backend/_shared:/app/_shared:ro
-      - ./backend/m0:/app/service
+      - ../../backend/_shared:/app/_shared:ro
+      - ../../backend/m0:/app/service
       - ${GOOGLE_ADC_PATH}:/root/.config/gcloud/application_default_credentials.json:ro
-      - ./secrets:/app/secrets:ro
+      - ../../secrets:/app/secrets:ro
     networks:
       - code-shepherd
     restart: unless-stopped
     command: /app/.venv/bin/python -m uvicorn app.main:app --host 0.0.0.0 --port 8002 --reload
 
+    
   m2:
     build:
-      context: ./backend
-      dockerfile: m2/Dockerfile
+      context: ../..
+      dockerfile: backend/m2/Dockerfile
     ports:
       - "8003:8003"
     env_file: .env
+    environment:
+      M0_BASE_URL: http://m0:8002
+      M3_BASE_URL: http://m3:8004
+      M4_BASE_URL: http://m4:8005
+      M2_PERSIST_ENABLED: ${M2_PERSIST_ENABLED:-false}
+      DATABASE_URL: ${DATABASE_URL:-}
+      GITHUB_WEBHOOK_SECRET: ${GITHUB_WEBHOOK_SECRET:-}
     volumes:
-      - ./backend/_shared:/app/_shared:ro
-      - ./backend/m2:/app/service
+      - ../../backend/_shared:/app/_shared:ro
+      - ../../backend/m2:/app/service
     networks:
       - code-shepherd
     restart: unless-stopped
+    depends_on:
+      - m0
+      - m4
     command: uv run uvicorn app.main:app --host 0.0.0.0 --port 8003 --reload
 
   m3:
     build:
-      context: ./backend
-      dockerfile: m3/Dockerfile
+      context: ../..
+      dockerfile: backend/m3/Dockerfile
     ports:
       - "8004:8004"
     env_file: .env
     volumes:
-      - ./backend/_shared:/app/_shared:ro
-      - ./backend/m3:/app/service
+      - ../../backend/_shared:/app/_shared:ro
+      - ../../backend/m3:/app/service
     networks:
       - code-shepherd
     restart: unless-stopped
@@ -90,14 +101,14 @@ services:
 
   m4:
     build:
-      context: ./backend
-      dockerfile: m4/Dockerfile
+      context: ../..
+      dockerfile: backend/m4/Dockerfile
     ports:
       - "8005:8005"
     env_file: .env
     volumes:
-      - ./backend/_shared:/app/_shared:ro
-      - ./backend/m4:/app/service
+      - ../../backend/_shared:/app/_shared:ro
+      - ../../backend/m4:/app/service
     networks:
       - code-shepherd
     restart: unless-stopped
@@ -118,16 +129,16 @@ services:
 
   m5:
     build:
-      context: ./backend
-      dockerfile: m5/Dockerfile
+      context: ../..
+      dockerfile: backend/m5/Dockerfile
     ports:
       - "8006:8006"
     env_file: .env
     environment:
       NEO4J_URI: bolt://neo4j:7687
     volumes:
-      - ./backend/_shared:/app/_shared:ro
-      - ./backend/m5:/app/service
+      - ../../backend/_shared:/app/_shared:ro
+      - ../../backend/m5:/app/service
     networks:
       - code-shepherd
     depends_on:
@@ -137,14 +148,14 @@ services:
 
   frontend:
     build:
-      context: ./frontend
+      context: ../../frontend
       dockerfile: Dockerfile
       target: dev
     ports:
       - "5173:5173"
     env_file: .env
     volumes:
-      - ./frontend:/app
+      - ../../frontend:/app
       - /app/node_modules
     networks:
       - code-shepherd

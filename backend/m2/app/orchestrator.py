@@ -16,6 +16,7 @@
 from __future__ import annotations
 
 import asyncio
+import logging
 
 from app import decision
 from app.analyzer import Agent, analyze
@@ -27,8 +28,11 @@ from app.contract import (
     build_agent_result,
     make_timeout_result,
 )
+from app.db import insert_scan_execution, insert_scan_issues, insert_scan_summary
 from app.services import result_mapper, result_persist
 from shared.contracts import M2AnalyzeRequest
+
+log = logging.getLogger(__name__)
 
 
 def _to_analyze_request(req: M2OrchestrateRequest) -> M2AnalyzeRequest:
@@ -46,15 +50,28 @@ def _to_analyze_request(req: M2OrchestrateRequest) -> M2AnalyzeRequest:
 async def run_single_agent(payload: M2AnalyzeRequest, agent: Agent) -> AgentResult:
     """단일 분석 실행 → AgentResult. 실패 시 빈 결과(파이프라인 비중단).
 
-    기존 main._run_agent와 동일한 계약을 공유한다(main이 이 함수를 재사용).
+    분석 완료 후 scan_executions / scan_issues / scan_summaries 저장(graceful).
     """
     try:
         issues, summary, execution_ms = await asyncio.to_thread(
             analyze, payload.pr_diff, agent
         )
-    except Exception as exc:  # noqa: BLE001 — 어떤 실패든 빈 결과로 graceful degrade
+    except Exception as exc:  # noqa: BLE001
         return make_timeout_result(payload, agent, 0, f"analyze_failed: {exc}")
-    return build_agent_result(payload, agent, issues, summary, execution_ms)
+
+    result = build_agent_result(payload, agent, issues, summary, execution_ms)
+
+    # scan 테이블 저장 (graceful — DB 실패가 분석 응답을 막지 않는다)
+    try:
+        issues_as_dict = [i.model_dump() for i in issues]
+        summary_dict = {"critical": summary.critical, "major": summary.major, "minor": summary.minor}
+        scan_id = await insert_scan_execution(payload.task_id, payload.pr_id, execution_ms)
+        await insert_scan_issues(scan_id, issues_as_dict, agent)
+        await insert_scan_summary(scan_id, agent, summary_dict)
+    except Exception as exc:  # noqa: BLE001
+        log.warning("m2.db.persist_failed agent=%s error=%s", agent, exc)
+
+    return result
 
 
 async def run_m2_orchestration(req: M2OrchestrateRequest) -> M2OrchestrateResponse:
