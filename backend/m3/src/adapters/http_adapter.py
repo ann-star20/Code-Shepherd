@@ -50,6 +50,33 @@ _KEYWORD_MAP: dict[str, str] = {
 
 # ── Pydantic 계약 모델 (shared/contracts 미참조 — 독립 스키마) ────────────────
 
+# 팀 /verify/tests + /analyze/performance 스텁용 (m1이 /review 전에 호출)
+class _TeamVerifyRequest(BaseModel):
+    task_id: str
+    pr_id: str
+    pr_diff: str = ""
+    clone_url: str | None = None
+    commit_sha: str | None = None
+    trace_id: str | None = None
+    context: Any = None
+    developer: Any = None
+
+
+class _TeamIssueSummary(BaseModel):
+    critical: int = 0
+    major: int = 0
+    minor: int = 0
+
+
+class _TeamVerifyResponse(BaseModel):
+    task_id: str
+    agent: Literal["test_verification", "performance"]
+    issues: list[Any] = []
+    summary: _TeamIssueSummary = _TeamIssueSummary()
+    metrics: dict | None = None
+    execution_ms: int = 0
+
+
 class M3ReviewRequest(BaseModel):
     task_id: str
     pr_id: str
@@ -230,6 +257,18 @@ async def get_review(owner: str, repo: str, pr_number: int) -> dict[str, Any]:
         return {**base, "found": False, "verdict": None, "verdict_reason": "",
                 "comment": "", "issues": [], "rich_issues": []}
     return {**base, "found": True, **stored}
+
+
+@app.post("/verify/tests", response_model=_TeamVerifyResponse)
+async def verify_tests(payload: _TeamVerifyRequest) -> _TeamVerifyResponse:
+    """팀 m1 파이프라인 호환 스텁 — 실 테스트 분석 없이 빈 pass 반환."""
+    return _TeamVerifyResponse(task_id=payload.task_id, agent="test_verification")
+
+
+@app.post("/analyze/performance", response_model=_TeamVerifyResponse)
+async def analyze_performance(payload: _TeamVerifyRequest) -> _TeamVerifyResponse:
+    """팀 m1 파이프라인 호환 스텁 — 실 성능 분석 없이 빈 pass 반환."""
+    return _TeamVerifyResponse(task_id=payload.task_id, agent="performance")
 
 
 @app.get("/health")
