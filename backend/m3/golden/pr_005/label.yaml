@@ -1,0 +1,6 @@
+# pr_005 — CONV-SQL-008 위반: f-string SQL 조립
+file_paths:
+  - src/search/product_search.py
+expected:
+  - rule_id: CONV-SQL-008
+    verdict: violation

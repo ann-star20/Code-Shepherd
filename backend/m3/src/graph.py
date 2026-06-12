@@ -1,0 +1,147 @@
+"""LangGraph 조립 — 노드 6개 + ③ 조건 분기 + 실행 trace
+
+문법 기준: examples/langgraph_reference.py 패턴 A(직선) + B(Command 라우팅).
+D3: ③ check_sufficiency가 Command(goto=...) 로 3갈래 분기.
+  proceed    → judge → compose_comment → END
+  requery    → retrieve (루프, 1회 상한)
+  gap_report → compose_comment → END
+Command 반환 노드에는 나가는 edge를 등록하지 않는다 (reference.py §B 규칙).
+
+D5: _traced 래퍼가 노드별 실행 기록(단계·요약·ms·성공여부)을 contextvar 에 누적.
+State(contracts — 동결)는 건드리지 않는다. run_review_traced() 로만 노출되는
+부가 정보이며, requery 루프 시 retrieve·③ 가 두 번 기록된다 (실제 흐름 그대로).
+"""
+from __future__ import annotations
+
+import functools
+import time
+from contextvars import ContextVar
+
+from langgraph.graph import END, START, StateGraph
+from langgraph.types import Command
+
+from contracts import ReviewInput, ReviewOutput, ReviewState
+from src.nodes.assemble_input import assemble_input
+from src.nodes.check_sufficiency import check_sufficiency
+from src.nodes.compose_comment import compose_comment
+from src.nodes.extract_concepts import extract_concepts
+from src.nodes.judge import judge
+from src.nodes.retrieve import retrieve
+
+# run_review_traced 가 설정 — 미설정(None)이면 trace 기록 없이 동작 (오버헤드 0)
+_trace_var: ContextVar[list | None] = ContextVar("dev3_trace", default=None)
+
+_NODE_LABELS: dict[str, str] = {
+    "assemble_input": "⓪ 입력 수집",
+    "extract_concepts": "① 개념 추출",
+    "retrieve": "② KMS 검색",
+    "check_sufficiency": "③ 충분성 판단",
+    "judge": "④ 규칙 판정",
+    "compose_comment": "⑤ 코멘트 생성",
+}
+
+
+def _summarize(node: str, update: dict) -> str:
+    """노드 산출(State 갱신분)에서 핵심 1줄 — 기존 데이터만 사용, 추가 LLM 호출 없음."""
+    if node == "assemble_input":
+        return f"pr_context {len(update.get('pr_context', ''))}자"
+    if node == "extract_concepts":
+        return (f"개념 {len(update.get('concepts', []))}개 · "
+                f"질의 {len(update.get('queries', []))}개")
+    if node == "retrieve":
+        chunks = update.get("chunks", [])
+        rule_ids = sorted({c.rule_id for c in chunks})
+        return f"청크 {len(chunks)}개 ({', '.join(rule_ids) if rule_ids else '없음'})"
+    if node == "check_sufficiency":
+        return f"route={update.get('route', '?')}"
+    if node == "judge":
+        findings = update.get("findings", [])
+        violations = sum(1 for f in findings if f.verdict == "violation")
+        return f"findings {len(findings)}건 (violation {violations})"
+    if node == "compose_comment":
+        if update.get("gap_report"):
+            return "지침공백 리포트 + 신규 지침 제안"
+        return f"코멘트 {len(update.get('comment_md', ''))}자"
+    return ""
+
+
+def _traced(name: str, fn):
+    """노드 실행 기록 래퍼. functools.wraps 가 반환 타입 어노테이션
+    (③의 Command[Literal[...]])을 보존해 LangGraph 라우팅 검증이 유지된다."""
+    @functools.wraps(fn)
+    def wrapper(state):
+        trace = _trace_var.get()
+        t0 = time.perf_counter()
+        try:
+            result = fn(state)
+        except Exception as exc:
+            if trace is not None:
+                trace.append({
+                    "node": name, "label": _NODE_LABELS.get(name, name),
+                    "ms": int((time.perf_counter() - t0) * 1000),
+                    "summary": f"{type(exc).__name__}: {exc}", "ok": False,
+                })
+            raise
+        if trace is not None:
+            update = result.update if isinstance(result, Command) else (result or {})
+            trace.append({
+                "node": name, "label": _NODE_LABELS.get(name, name),
+                "ms": int((time.perf_counter() - t0) * 1000),
+                "summary": _summarize(name, update or {}), "ok": True,
+            })
+        return result
+    return wrapper
+
+
+def build_graph():
+    builder = StateGraph(ReviewState)
+
+    builder.add_node("assemble_input", _traced("assemble_input", assemble_input))
+    builder.add_node("extract_concepts", _traced("extract_concepts", extract_concepts))
+    builder.add_node("retrieve", _traced("retrieve", retrieve))
+    builder.add_node("check_sufficiency", _traced("check_sufficiency", check_sufficiency))  # Command 반환 — 나가는 edge 없음
+    builder.add_node("judge", _traced("judge", judge))
+    builder.add_node("compose_comment", _traced("compose_comment", compose_comment))
+
+    builder.add_edge(START, "assemble_input")
+    builder.add_edge("assemble_input", "extract_concepts")
+    builder.add_edge("extract_concepts", "retrieve")
+    builder.add_edge("retrieve", "check_sufficiency")
+    # check_sufficiency → judge / retrieve / compose_comment (Command가 동적 결정)
+    builder.add_edge("judge", "compose_comment")
+    builder.add_edge("compose_comment", END)
+
+    return builder.compile()
+
+
+_app = None
+
+
+def run_review_traced(inp: ReviewInput) -> tuple[ReviewOutput, list[dict]]:
+    """run_review + 노드 실행 trace. http_adapter·Streamlit 타임라인용."""
+    global _app
+    if _app is None:
+        _app = build_graph()
+
+    trace: list[dict] = []
+    token = _trace_var.set(trace)
+    try:
+        state = _app.invoke({
+            "diff": inp.diff,
+            "file_paths": inp.file_paths,
+            "repo_meta": inp.repo_meta,
+        })
+    finally:
+        _trace_var.reset(token)
+
+    output = ReviewOutput(
+        findings=state.get("findings", []),
+        comment_md=state.get("comment_md", ""),
+        gap_report=state.get("gap_report"),
+    )
+    return output, trace
+
+
+def run_review(inp: ReviewInput) -> ReviewOutput:
+    """어댑터(웹훅/Streamlit/하네스)가 부르는 단일 진입점 — 계약 불변."""
+    return run_review_traced(inp)[0]

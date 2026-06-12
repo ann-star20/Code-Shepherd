@@ -1,0 +1,26 @@
+diff --git a/scripts/batch_sync.py b/scripts/batch_sync.py
+new file mode 100644
+index 0000000..abcdef0
+--- /dev/null
++++ b/scripts/batch_sync.py
+@@ -0,0 +1,20 @@
++"""일회성 배치 동기화 스크립트 (scripts/ 디렉토리 — CONV-API-001 §4 예외 대상)."""
++import requests
++import json
++from datetime import datetime
++
++
++def sync_user_data(api_url: str, output_path: str) -> int:
++    """운영 DB -> 분석 스토리지 일회성 마이그레이션."""
++    response = requests.get(
++        f"{api_url}/users/export",
++        headers={"Authorization": "Bearer $INTERNAL_TOKEN"},
++        timeout=120,
++    )
++    response.raise_for_status()
++    data = response.json()
++
++    with open(output_path, "w", encoding="utf-8") as f:
++        json.dump(data, f, ensure_ascii=False)
++
++    return len(data.get("users", []))

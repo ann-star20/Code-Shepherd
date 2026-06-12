@@ -1,0 +1,5 @@
+# pr_011 — 지침공백: subprocess 사용 규정 없음 (장면 3)
+# 경로 주의: src/deploy/ (scripts/ 아님) — CONV-API-001 §4 scripts/ 예외조항 적용 불가.
+file_paths:
+  - src/deploy/script_runner.py
+expected: gap

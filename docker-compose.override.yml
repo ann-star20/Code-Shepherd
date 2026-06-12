@@ -1,0 +1,27 @@
+# dev3 m3 교체 override — 팀 docker-compose.yml 무수정, 이 파일만 추가.
+# 원복: 이 파일 삭제 후 docker compose up -d m3
+#
+# 병합 규칙 (보정 2):
+#   base volumes(./backend/_shared:ro, ./backend/m3:/app/service)는 유지(보정 3).
+#   override는 .chroma/.cache/corpus 마운트를 추가한다.
+#   실행 코드 소스: 이미지 베이크본(/app/src/) — 마운트본(/app/service/)이 아님.
+#   핫스왑 경로: 호스트 backend/m3/corpus 수정 → 컨테이너 reindex → .chroma 갱신.
+
+services:
+  m3:
+    image: dev3-m3:latest         # 태그 — build context는 팀 규약 유지(보정 1)
+    build:
+      context: ./backend
+      dockerfile: m3/Dockerfile
+    volumes:
+      # 인덱스·캐시 공유 (핫스왑·재시작 후 재인덱싱 방지)
+      - ./backend/m3/.chroma:/app/.chroma
+      - ./backend/m3/.cache:/app/.cache
+      # 핫스왑: 호스트 corpus 수정 → 컨테이너 reindex가 이 경로를 읽음
+      - ./backend/m3/corpus:/app/corpus
+    environment:
+      # .env에 OLLAMA_BASE_URL을 넣으면 덮어씌워지므로 여기서만 지정
+      OLLAMA_BASE_URL: http://host.docker.internal:11434
+      ENABLE_DB_WRITE: "false"
+    # dev3 진입점 — 팀 m3의 app.main:app 대신 src.adapters.http_adapter:app
+    command: uvicorn src.adapters.http_adapter:app --host 0.0.0.0 --port 8004

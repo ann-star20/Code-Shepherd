@@ -1,0 +1,25 @@
+diff --git a/api/external_client.py b/api/external_client.py
+new file mode 100644
+index 0000000..1a2b3c4
+--- /dev/null
++++ b/api/external_client.py
+@@ -0,0 +1,20 @@
++"""외부 API 클라이언트 — httpx.AsyncClient 사용 (핫스왑 전: 정상, 핫스왑 후: 위반)."""
++import httpx
++
++
++async def fetch_user_profile(user_id: str, base_url: str) -> dict:
++    """사용자 프로필 비동기 조회."""
++    async with httpx.AsyncClient(timeout=10.0) as client:
++        response = await client.get(
++            f"{base_url}/users/{user_id}",
++            headers={"Accept": "application/json"},
++        )
++        response.raise_for_status()
++        return response.json()
++
++
++async def post_event(event_data: dict, endpoint: str) -> bool:
++    async with httpx.AsyncClient() as client:
++        r = await client.post(endpoint, json=event_data)
++    return r.status_code == 200

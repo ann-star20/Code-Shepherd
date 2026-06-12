@@ -1,0 +1,6 @@
+# pr_003 — CONV-LOG-003 위반: print(f-string) 로깅
+file_paths:
+  - src/auth/login_handler.py
+expected:
+  - rule_id: CONV-LOG-003
+    verdict: violation

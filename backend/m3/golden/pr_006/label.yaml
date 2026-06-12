@@ -1,0 +1,6 @@
+# pr_006 — CONV-DB-004 위반: 반복문 내 ORM 쿼리 (N+1)
+file_paths:
+  - src/dashboard/user_stats.py
+expected:
+  - rule_id: CONV-DB-004
+    verdict: violation

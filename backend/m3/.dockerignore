@@ -1,0 +1,19 @@
+# 비밀·로컬 아티팩트 — 이미지/빌드 컨텍스트에서 제외
+.env
+.env.*
+.venv/
+.git/
+.chroma/
+.chroma_backup*/
+.cache/
+.pytest_cache/
+__pycache__/
+eval/runs/
+golden/
+fixtures/
+docs/
+tests/
+app/
+examples/
+*.db
+*.log

@@ -1,0 +1,6 @@
+# pr_002 — CONV-TIME-002 위반: datetime.now() 직접 호출
+file_paths:
+  - src/billing/settlement.py
+expected:
+  - rule_id: CONV-TIME-002
+    verdict: violation
