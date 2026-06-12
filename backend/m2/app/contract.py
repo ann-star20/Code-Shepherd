@@ -17,7 +17,13 @@ from typing import Literal
 
 from pydantic import BaseModel, Field
 
-from shared.contracts import IssueItem, IssueSummary, M2AnalyzeRequest
+from shared.contracts import (
+    AnalysisContext,
+    DeveloperProfile,
+    IssueItem,
+    IssueSummary,
+    M2AnalyzeRequest,
+)
 
 Agent = Literal["static_analysis", "security_scan"]
 
@@ -50,6 +56,47 @@ class AgentResult(BaseModel):
     validation_result: Literal["pass", "fail", "skip"] = "pass"
     error_message: str | None = None
     next_agent: None = None
+
+
+class M2OrchestrateRequest(BaseModel):
+    """m2 mini-orchestrator 입력 — PR 1건에 대한 end-to-end 분석 요청.
+
+    기존 M2AnalyzeRequest와 호환 가능한 필드를 유지하되, 오케스트레이션에 필요한
+    repository/pr_number를 추가로 받는다(웹훅/영속화 단계에서 사용).
+    """
+
+    task_id: str
+    pr_id: str
+    pr_diff: str
+    repository: str | None = None  # "owner/repo" — 영속화/코멘트 대상
+    pr_number: int | None = None
+    context: AnalysisContext = Field(default_factory=AnalysisContext)
+    developer: DeveloperProfile | None = None  # developer.id = github_id
+    trace_id: str | None = None
+
+
+class M2OrchestrateResponse(BaseModel):
+    """m2 mini-orchestrator 출력 — 2개 분석 결과 + m4 판정(있으면)."""
+
+    task_id: str
+    pr_id: str
+    status: Literal["success", "skip", "partial", "fail"] = "success"
+    ran_agents: list[Agent] = Field(default_factory=list)
+    skip_reason: str | None = None
+
+    static_analysis: AgentResult | None = None
+    security_scan: AgentResult | None = None
+
+    # m4 /evaluate 결과 (호출 실패·미설정 시 None — graceful)
+    m4_called: bool = False
+    verdict: Literal["lgtm", "rework", "escalate"] | None = None
+    comment_body: str | None = None
+
+    # review_issue에 영속화된 이슈 수 (영속화 비활성·실패 시 0 — graceful)
+    persisted: int = 0
+
+    trace_id: str | None = None
+    error_message: str | None = None
 
 
 def make_sub_trace_id(trace_id: str | None, agent: Agent) -> str:

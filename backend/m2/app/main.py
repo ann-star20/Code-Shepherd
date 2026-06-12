@@ -5,13 +5,17 @@ AgentResult는 M2AnalyzeResponse 상위집합이라 m1/m3 호출 경로와 하�
 (backend/m2/MODULE_CONTRACT.md 참조)
 """
 
-import asyncio
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
 
-from app.analyzer import Agent, analyze
-from app.contract import AgentResult, build_agent_result, make_timeout_result
+from app.contract import (
+    AgentResult,
+    M2OrchestrateRequest,
+    M2OrchestrateResponse,
+)
+from app.orchestrator import run_m2_orchestration, run_single_agent
+from app.webhook import router as webhook_router
 from shared.contracts import M2AnalyzeRequest
 from shared.logging import TraceIDMiddleware, configure_logging
 
@@ -24,15 +28,7 @@ async def lifespan(_app: FastAPI):
 
 app = FastAPI(title="code-shepherd m2-analysis-stub", version="0.1.0", lifespan=lifespan)
 app.add_middleware(TraceIDMiddleware)
-
-
-async def _run_agent(payload: M2AnalyzeRequest, agent: Agent) -> AgentResult:
-    """분석 실행 → 계약 AgentResult 반환. 실패 시 status=fail 빈 결과(파이프라인 비중단)."""
-    try:
-        issues, summary, execution_ms = await asyncio.to_thread(analyze, payload.pr_diff, agent)
-    except Exception as exc:  # noqa: BLE001 — 어떤 실패든 빈 결과로 graceful degrade
-        return make_timeout_result(payload, agent, 0, f"analyze_failed: {exc}")
-    return build_agent_result(payload, agent, issues, summary, execution_ms)
+app.include_router(webhook_router)
 
 
 @app.get("/health")
@@ -43,10 +39,16 @@ async def health():
 @app.post("/analyze/static", response_model=AgentResult)
 async def analyze_static(payload: M2AnalyzeRequest) -> AgentResult:
     """Pylint / Radon / ESLint 정적 분석."""
-    return await _run_agent(payload, "static_analysis")
+    return await run_single_agent(payload, "static_analysis")
 
 
 @app.post("/analyze/security", response_model=AgentResult)
 async def analyze_security(payload: M2AnalyzeRequest) -> AgentResult:
     """Bandit / Semgrep 보안 스캔 (OWASP Top 10)."""
-    return await _run_agent(payload, "security_scan")
+    return await run_single_agent(payload, "security_scan")
+
+
+@app.post("/orchestrate/review", response_model=M2OrchestrateResponse)
+async def orchestrate_review(payload: M2OrchestrateRequest) -> M2OrchestrateResponse:
+    """m2 mini-orchestrator — PR 1건 정적+보안 분석 후 m4 판정까지 조율."""
+    return await run_m2_orchestration(payload)
