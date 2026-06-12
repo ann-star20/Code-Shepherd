@@ -442,7 +442,10 @@ async def _update_document_status(
 
 
 @router.get("/status/{doc_id}", response_model=StatusResponse)
-async def get_document_status(doc_id: str) -> StatusResponse:
+async def get_document_status(
+    doc_id: str,
+    current_user: dict = Depends(get_current_kms_user),
+) -> StatusResponse:
     """문서 처리 상태를 조회한다. agent_traces를 포함해 파이프라인 진행 상황을 실시간 반환."""
     try:
         UUID(doc_id)
@@ -671,7 +674,10 @@ async def list_documents(
 
 
 @router.get("/docs/{doc_id}/markdown", response_model=MarkdownResponse)
-async def get_doc_markdown(doc_id: str) -> MarkdownResponse:
+async def get_doc_markdown(
+    doc_id: str,
+    current_user: dict = Depends(get_current_kms_user),
+) -> MarkdownResponse:
     """문서의 파싱된 Markdown 원문을 Storage에서 반환한다."""
     storage = _get_storage()
 
@@ -716,7 +722,10 @@ async def get_doc_markdown(doc_id: str) -> MarkdownResponse:
 
 
 @router.get("/docs/{doc_id}/metadata", response_model=DocMetadataResponse)
-async def get_doc_metadata(doc_id: str) -> DocMetadataResponse:
+async def get_doc_metadata(
+    doc_id: str,
+    current_user: dict = Depends(get_current_kms_user),
+) -> DocMetadataResponse:
     """Stage 5에서 추출된 문서 메타데이터를 반환한다."""
     try:
         UUID(doc_id)
@@ -1155,6 +1164,7 @@ async def check_duplicate(
 async def check_duplicate_endpoint(
     file_hash: str = Form(...),
     original_filename: str = Form(...),
+    current_user: dict = Depends(get_current_kms_user),
 ) -> CheckDuplicateResponse:
     """업로드 전 SHA256 해시 기반 중복 여부를 확인한다."""
     session_factory = _get_session_factory()
@@ -1175,10 +1185,9 @@ async def replace_document(
     file: UploadFile = File(...),
     file_hash: str | None = Form(default=None),
     source: str = Form(default="upload"),
-    department_id: str | None = Form(default=None),
-    user_id: str | None = Form(default=None),
     permission_level: str = Form(default="public"),
     visibility: str = Form(default="all"),
+    current_user: dict = Depends(get_current_kms_user),
 ) -> ReplaceDocumentResponse:
     """기존 문서를 새 버전으로 교체한다. Graph Sync Agent로 이전 버전을 정리 후 새 파이프라인을 실행한다."""
     from app.pipeline.graph_sync import sync_old_document_version
@@ -1242,8 +1251,8 @@ async def replace_document(
 
     initial_state = _build_initial_state(
         new_doc_id, source, tmp_path, ext, filename,
-        department_id=department_id,
-        user_id=user_id,
+        department_id=current_user["team"],
+        user_id=current_user["user_id"],
         permission_level=permission_level,
         visibility=visibility,
         file_hash=file_hash,
