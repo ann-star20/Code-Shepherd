@@ -24,13 +24,13 @@ from app.domain.models import ConceptExtractionSchema
 
 # ── 경로 ─────────────────────────────────────────────────────────────────────
 
-_SEED_DIR  = Path(__file__).parent.parent.parent / "scripts" / "seed"
-_SEC_JSON  = _SEED_DIR / "security" / "security_concepts.json"
+_SEED_DIR = Path(__file__).parent.parent.parent / "scripts" / "seed"
+_SEC_JSON = _SEED_DIR / "security" / "security_concepts.json"
 _PERF_JSON = _SEED_DIR / "performance" / "performance_concepts.json"
 
 _VALID_SEVERITIES = {"critical", "high", "medium", "low", "info", None}
 _OWASP_RE = re.compile(r"^A\d{2}:20\d{2}$")
-_CWE_RE   = re.compile(r"^CWE-\d+$")
+_CWE_RE = re.compile(r"^CWE-\d+$")
 
 
 def _load(path: Path) -> list[dict]:
@@ -38,13 +38,13 @@ def _load(path: Path) -> list[dict]:
 
 
 def _all_concepts() -> list[tuple[str, dict]]:
-    return (
-        [("security", c)    for c in _load(_SEC_JSON)]
-        + [("performance", c) for c in _load(_PERF_JSON)]
-    )
+    return [("security", c) for c in _load(_SEC_JSON)] + [
+        ("performance", c) for c in _load(_PERF_JSON)
+    ]
 
 
 # ── S01: JSON 파싱 ────────────────────────────────────────────────────────────
+
 
 @pytest.mark.parametrize("domain,raw", _all_concepts())
 def test_S01_parses_without_error(domain: str, raw: dict):
@@ -54,15 +54,17 @@ def test_S01_parses_without_error(domain: str, raw: dict):
 
 # ── S02: 필수 필드 ────────────────────────────────────────────────────────────
 
+
 @pytest.mark.parametrize("domain,raw", _all_concepts())
 def test_S02_required_fields_present(domain: str, raw: dict):
     assert raw.get("concept_name"), "concept_name 누락"
-    assert raw.get("domains"),      "domains 누락"
-    assert raw.get("cwe_id"),       f"{raw.get('concept_name')}: cwe_id 누락"
+    assert raw.get("domains"), "domains 누락"
+    assert raw.get("cwe_id"), f"{raw.get('concept_name')}: cwe_id 누락"
     assert raw.get("description_ko"), f"{raw.get('concept_name')}: description_ko 누락"
 
 
 # ── S03: 도메인 일관성 ────────────────────────────────────────────────────────
+
 
 def test_S03_security_seed_has_security_domain():
     for raw in _load(_SEC_JSON):
@@ -78,13 +80,17 @@ def test_S03_performance_seed_has_performance_domain():
 
 # ── S04: severity 허용 범위 ───────────────────────────────────────────────────
 
+
 @pytest.mark.parametrize("domain,raw", _all_concepts())
 def test_S04_severity_valid(domain: str, raw: dict):
     sev = raw.get("severity")
-    assert sev in _VALID_SEVERITIES, f"{raw.get('concept_name')}: 비허용 severity '{sev}'"
+    assert (
+        sev in _VALID_SEVERITIES
+    ), f"{raw.get('concept_name')}: 비허용 severity '{sev}'"
 
 
 # ── S05: mechanism_name 소문자 스네이크케이스 ─────────────────────────────────
+
 
 @pytest.mark.parametrize("domain,raw", _all_concepts())
 def test_S05_mechanism_names_normalized(domain: str, raw: dict):
@@ -92,11 +98,12 @@ def test_S05_mechanism_names_normalized(domain: str, raw: dict):
     for mech in c.mechanisms:
         n = mech.mechanism_name
         assert n == n.lower(), f"{c.concept_name}/{n}: 소문자 아님"
-        assert " " not in n,   f"{c.concept_name}/{n}: 공백 포함"
-        assert "-" not in n,   f"{c.concept_name}/{n}: 하이픈 포함"
+        assert " " not in n, f"{c.concept_name}/{n}: 공백 포함"
+        assert "-" not in n, f"{c.concept_name}/{n}: 하이픈 포함"
 
 
 # ── S06: 교차 도메인 개념 검증 ────────────────────────────────────────────────
+
 
 def test_S06_conn_pool_exhaustion_cross_domain():
     perf = _load(_PERF_JSON)
@@ -114,34 +121,40 @@ def test_S06_memory_leak_cross_domain():
 
 # ── S07: OWASP / CWE 형식 ─────────────────────────────────────────────────────
 
+
 def test_S07_security_owasp_format():
     for raw in _load(_SEC_JSON):
         owasp = raw.get("owasp_id") or raw.get("owasp_category")
         if owasp:
-            assert _OWASP_RE.match(owasp), \
-                f"{raw.get('concept_name')}: owasp_id '{owasp}' 형식 오류 (A##:20## 기대)"
+            assert _OWASP_RE.match(
+                owasp
+            ), f"{raw.get('concept_name')}: owasp_id '{owasp}' 형식 오류 (A##:20## 기대)"
 
 
 @pytest.mark.parametrize("domain,raw", _all_concepts())
 def test_S07_cwe_format(domain: str, raw: dict):
     cwe = raw.get("cwe_id")
     if cwe:
-        assert _CWE_RE.match(cwe), \
-            f"{raw.get('concept_name')}: cwe_id '{cwe}' 형식 오류 (CWE-### 기대)"
+        assert _CWE_RE.match(
+            cwe
+        ), f"{raw.get('concept_name')}: cwe_id '{cwe}' 형식 오류 (CWE-### 기대)"
 
 
 # ── S08: 코드 예시 완결성 ─────────────────────────────────────────────────────
+
 
 @pytest.mark.parametrize("domain,raw", _all_concepts())
 def test_S08_code_examples_not_empty(domain: str, raw: dict):
     c = ConceptExtractionSchema(**raw)
     for mech in c.mechanisms:
         for ex in mech.code_examples:
-            assert ex.code.strip(), \
-                f"{c.concept_name}/{mech.mechanism_name}: code 필드 비어 있음"
+            assert (
+                ex.code.strip()
+            ), f"{c.concept_name}/{mech.mechanism_name}: code 필드 비어 있음"
 
 
 # ── S09: 개수 검증 ────────────────────────────────────────────────────────────
+
 
 def test_S09_security_seed_count():
     assert len(_load(_SEC_JSON)) == 12, "보안 시드 개념 수 != 12"

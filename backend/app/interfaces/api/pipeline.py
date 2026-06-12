@@ -16,10 +16,12 @@ router = APIRouter(prefix="/api/pipeline", tags=["pipeline"])
 
 def run_pipeline_task(session_id: str, doc_id: str):
     from app.worker.tasks import run_pipeline_task as _task
+
     return _task.delay(session_id=session_id, doc_id=doc_id)
 
 
 # ── SSE 순수 헬퍼 ──────────────────────────────────────────────────────────────
+
 
 def _format_sse(payload: dict) -> str:
     """RFC 8895 단일채널 SSE: data: JSON + 빈 줄."""
@@ -28,11 +30,11 @@ def _format_sse(payload: dict) -> str:
 
 _STATE_STEP_MAP: dict[str, list[dict]] = {
     "CRAWLING": [
-        {"agent": "Input",   "status": "DONE"},
+        {"agent": "Input", "status": "DONE"},
         {"agent": "Crawler", "status": "RUNNING"},
     ],
     "EXTRACTING": [
-        {"agent": "Crawler",   "status": "DONE"},
+        {"agent": "Crawler", "status": "DONE"},
         {"agent": "Extractor", "status": "RUNNING"},
     ],
     "EXTRACTED": [
@@ -52,7 +54,7 @@ def _state_to_step_updates(state: str) -> list[dict]:
 
 # ── GET /stream/{session_id} ───────────────────────────────────────────────────
 
-_POLL_INTERVAL = 1.0   # seconds
+_POLL_INTERVAL = 1.0  # seconds
 _HEARTBEAT_INTERVAL = 15  # poll 횟수 단위
 
 
@@ -84,7 +86,8 @@ async def _event_stream(
                     "FROM pipeline_logs "
                     "WHERE session_id = $1::uuid AND created_at > $2 "
                     "ORDER BY created_at",
-                    session_id, last_ts,
+                    session_id,
+                    last_ts,
                 )
             else:
                 rows = await conn.fetch(
@@ -129,12 +132,21 @@ async def _event_stream(
                             session_id,
                         )
                         if err_row:
-                            yield _format_sse({"type": "step_update", "agent": err_row["agent"], "status": "FAILED"})
+                            yield _format_sse(
+                                {
+                                    "type": "step_update",
+                                    "agent": err_row["agent"],
+                                    "status": "FAILED",
+                                }
+                            )
                     else:
                         for update in _state_to_step_updates(new_state):
                             yield _format_sse({"type": "step_update", **update})
 
-                if not stale_failed_on_reconnect and new_state in ("COMMITTED", "FAILED"):
+                if not stale_failed_on_reconnect and new_state in (
+                    "COMMITTED",
+                    "FAILED",
+                ):
                     break
 
         # ── 주기적 하트비트 ────────────────────────────────────────────────
@@ -158,13 +170,14 @@ async def stream_pipeline(session_id: str, request: Request):
         media_type="text/event-stream",
         headers={
             "Cache-Control": "no-cache",
-            "Connection":    "keep-alive",
+            "Connection": "keep-alive",
             "X-Accel-Buffering": "no",
         },
     )
 
 
 # ── 스키마 ─────────────────────────────────────────────────────────────────────
+
 
 class TriggerRequest(BaseModel):
     doc_id: str
@@ -178,6 +191,7 @@ class TriggerResponse(BaseModel):
 
 # ── POST /trigger ──────────────────────────────────────────────────────────────
 
+
 @router.post("/trigger", status_code=202, response_model=TriggerResponse)
 async def trigger_pipeline(
     body: TriggerRequest,
@@ -189,7 +203,9 @@ async def trigger_pipeline(
         body.doc_id,
     )
     if row is None:
-        raise HTTPException(status_code=404, detail=f"document '{body.doc_id}' not found")
+        raise HTTPException(
+            status_code=404, detail=f"document '{body.doc_id}' not found"
+        )
 
     if row["state"] not in ("PENDING", "FAILED"):
         raise HTTPException(
@@ -202,7 +218,8 @@ async def trigger_pipeline(
     await conn.execute(
         """INSERT INTO pipeline_logs (doc_id, session_id, agent, level, message)
            VALUES ($1, $2, 'Input', 'INFO', '파이프라인 트리거됨')""",
-        body.doc_id, session_id,
+        body.doc_id,
+        session_id,
     )
     await conn.execute(
         "UPDATE knowledge_document SET state='CRAWLING', updated_at=now() WHERE doc_id=$1",
@@ -223,6 +240,7 @@ async def trigger_pipeline(
 
 # ── 스키마 ─────────────────────────────────────────────────────────────────────
 
+
 class ResumeRequest(BaseModel):
     resume_step: int
 
@@ -235,6 +253,7 @@ class ResumeResponse(BaseModel):
 
 
 # ── POST /{session_id}/resume ──────────────────────────────────────────────────
+
 
 @router.post("/{session_id}/resume", response_model=ResumeResponse)
 async def resume_pipeline(
@@ -251,7 +270,9 @@ async def resume_pipeline(
         raise HTTPException(status_code=404, detail=f"session '{session_id}' not found")
     doc_id = doc_row["doc_id"]
 
-    state_row = await conn.fetchrow("SELECT state FROM knowledge_document WHERE doc_id=$1", doc_id)
+    state_row = await conn.fetchrow(
+        "SELECT state FROM knowledge_document WHERE doc_id=$1", doc_id
+    )
     if state_row is None or state_row["state"] != "FAILED":
         current = state_row["state"] if state_row else "unknown"
         raise HTTPException(
@@ -273,16 +294,21 @@ async def resume_pipeline(
             )
         target_agent = "Writer"
     else:
-        raise HTTPException(status_code=400, detail=f"invalid resume_step: {body.resume_step}")
+        raise HTTPException(
+            status_code=400, detail=f"invalid resume_step: {body.resume_step}"
+        )
 
     await conn.execute(
         """INSERT INTO pipeline_logs (doc_id, session_id, agent, level, message)
            VALUES ($1, $2::uuid, 'System', 'INFO', $3)""",
-        doc_id, session_id, f"[RESUME] {body.resume_step}단계 재시도 트리거",
+        doc_id,
+        session_id,
+        f"[RESUME] {body.resume_step}단계 재시도 트리거",
     )
 
     if target_agent == "Crawler":
         from app.worker.tasks import crawl_task
+
         crawl_task.delay(session_id=session_id, doc_id=doc_id)
     else:
         # write_graph_task는 완료/실패 시까지 knowledge_document.state를 변경하지 않으므로,
@@ -292,6 +318,7 @@ async def resume_pipeline(
             doc_id,
         )
         from app.worker.tasks import write_graph_task
+
         write_graph_task.delay(session_id=session_id, doc_id=doc_id)
 
     return ResumeResponse(
@@ -303,6 +330,7 @@ async def resume_pipeline(
 
 
 # ── 스키마 ─────────────────────────────────────────────────────────────────────
+
 
 class LogEntry(BaseModel):
     ts: str
@@ -318,6 +346,7 @@ class LogsResponse(BaseModel):
 
 
 # ── GET /logs/{session_id} ─────────────────────────────────────────────────────
+
 
 @router.get("/logs/{session_id}", response_model=LogsResponse)
 async def get_pipeline_logs(

@@ -9,6 +9,7 @@ mock 환경 조건:
   USE_REAL_LLM=false, USE_REAL_EMBEDDING=false (기본값)
   모든 T_ss_* 테스트는 DB 없이 FakePgPool + FakeNeo4j로 항상 통과한다.
 """
+
 from __future__ import annotations
 
 import math
@@ -68,7 +69,9 @@ class _FakeNeo4jConceptRepo:
     async def merge_concept(self, concept: ConceptExtractionSchema) -> None:
         self.merge_calls.append(concept.concept_name)
 
-    async def merge_concept_into(self, concept: ConceptExtractionSchema, master_name: str) -> None:
+    async def merge_concept_into(
+        self, concept: ConceptExtractionSchema, master_name: str
+    ) -> None:
         self.merge_into_calls.append((concept.concept_name, master_name))
 
 
@@ -91,16 +94,23 @@ class _FakePgPool:
 
     async def fetchrow(self, query: str, *args: Any) -> dict | None:
         target = args[0] if args else None
-        return next(
-            (c for c in self._concepts if c["concept_name"] == target), None
-        )
+        return next((c for c in self._concepts if c["concept_name"] == target), None)
 
     async def execute(self, query: str, *args: Any) -> None:
         self.execute_calls.append((query, args))
         if "UPDATE concepts" in query and len(args) >= 11:
             (
-                new_aliases, new_domains, new_vec_str, severity, description_ko,
-                concept_type, cwe_id, owasp_id, root_cause, desc_vec_str, name,
+                new_aliases,
+                new_domains,
+                new_vec_str,
+                severity,
+                description_ko,
+                concept_type,
+                cwe_id,
+                owasp_id,
+                root_cause,
+                desc_vec_str,
+                name,
             ) = args[:11]
             for c in self._concepts:
                 if c["concept_name"] == name:
@@ -135,13 +145,15 @@ class _FakeStagingPool:
         self.execute_calls: list[tuple[str, tuple]] = []
 
     def add_staging(self, session_id: str, concept_name: str) -> None:
-        self._staging.append({
-            "session_id": str(session_id),
-            "concept_json": {"concept_name": concept_name},
-            "infer_action": None,
-            "infer_score": None,
-            "target_concept_name": None,
-        })
+        self._staging.append(
+            {
+                "session_id": str(session_id),
+                "concept_json": {"concept_name": concept_name},
+                "infer_action": None,
+                "infer_score": None,
+                "target_concept_name": None,
+            }
+        )
 
     async def execute(self, query: str, *args: Any) -> None:
         self.execute_calls.append((query, args))
@@ -155,12 +167,17 @@ class _FakeStagingPool:
 
     def get_staging(self, concept_name: str) -> dict | None:
         return next(
-            (r for r in self._staging if r["concept_json"]["concept_name"] == concept_name),
+            (
+                r
+                for r in self._staging
+                if r["concept_json"]["concept_name"] == concept_name
+            ),
             None,
         )
 
 
 # ── 공용 픽스처 헬퍼 ──────────────────────────────────────────────────────────
+
 
 def _make_concept(
     name: str,
@@ -184,8 +201,12 @@ _CSRF_DESC = (
 
 def _csrf_seed(emb: MockEmbeddingService) -> dict:
     aliases = [
-        "Cross-Site Request Forgery", "XSRF", "Sea Surf",
-        "CrossSiteRequestForgery", "CSRFAttack", "CrossSiteRequestForgeryAttack",
+        "Cross-Site Request Forgery",
+        "XSRF",
+        "Sea Surf",
+        "CrossSiteRequestForgery",
+        "CSRFAttack",
+        "CrossSiteRequestForgeryAttack",
         "크로스 사이트 요청 위조",
     ]
     name_text = ", ".join(["CSRF"] + aliases)
@@ -229,9 +250,9 @@ class TestComputeResolveScore:
 
         result = await compute_resolve_score(incoming, pg, emb)
 
-        assert result.action == MergeAction.MERGE, (
-            f"action={result.action}, score={result.score:.4f}"
-        )
+        assert (
+            result.action == MergeAction.MERGE
+        ), f"action={result.action}, score={result.score:.4f}"
         assert result.score >= MERGE_THRESHOLD
         assert result.target == "CSRF"
         update_calls = [c for c in pg.execute_calls if "UPDATE" in c[0]]
@@ -248,7 +269,14 @@ class TestComputeResolveScore:
         emb = MockEmbeddingService()
 
         ssrf_name_vec = emb.embed(
-            ", ".join(["SSRF", "Server-Side Request Forgery", "ServerSideRequestForgery", "SSRFAttack"])
+            ", ".join(
+                [
+                    "SSRF",
+                    "Server-Side Request Forgery",
+                    "ServerSideRequestForgery",
+                    "SSRFAttack",
+                ]
+            )
         )
         ssrf_desc_text = (
             "서버 사이드 요청 위조(SSRF)는 서버가 공격자가 지정한 내부 또는 외부 리소스로 "
@@ -259,28 +287,35 @@ class TestComputeResolveScore:
         k = next(i for i, x in enumerate(ssrf_desc_vec) if abs(x) < 1e-9)
         orth = math.sqrt(1.0 - 0.36**2)
         csrf_desc_vec = [
-            0.36 * v + (orth if i == k else 0.0)
-            for i, v in enumerate(ssrf_desc_vec)
+            0.36 * v + (orth if i == k else 0.0) for i, v in enumerate(ssrf_desc_vec)
         ]
 
-        pg = _FakePgPool([{
-            "concept_name": "CSRF",
-            "aliases": ["Cross-Site Request Forgery", "XSRF"],
-            "name_vector": ssrf_name_vec,
-            "desc_vector": csrf_desc_vec,
-        }])
+        pg = _FakePgPool(
+            [
+                {
+                    "concept_name": "CSRF",
+                    "aliases": ["Cross-Site Request Forgery", "XSRF"],
+                    "name_vector": ssrf_name_vec,
+                    "desc_vector": csrf_desc_vec,
+                }
+            ]
+        )
 
         incoming = _make_concept(
             "SSRF",
-            aliases=["Server-Side Request Forgery", "ServerSideRequestForgery", "SSRFAttack"],
+            aliases=[
+                "Server-Side Request Forgery",
+                "ServerSideRequestForgery",
+                "SSRFAttack",
+            ],
             description_ko=ssrf_desc_text,
         )
 
         result = await compute_resolve_score(incoming, pg, emb)
 
-        assert result.action == MergeAction.RELATED_TO, (
-            f"action={result.action}, score={result.score:.4f}"
-        )
+        assert (
+            result.action == MergeAction.RELATED_TO
+        ), f"action={result.action}, score={result.score:.4f}"
         assert RELATED_THRESHOLD <= result.score < MERGE_THRESHOLD
 
     @pytest.mark.anyio
@@ -329,7 +364,9 @@ class TestWriteWithPrecomputed:
             "CrossSiteRequestForgery",
             aliases=["CSRF", "Cross-Site Request Forgery"],
         )
-        precomputed = ResolveResult(MergeAction.MERGE, "CSRF", 0.95, "CrossSiteRequestForgery")
+        precomputed = ResolveResult(
+            MergeAction.MERGE, "CSRF", 0.95, "CrossSiteRequestForgery"
+        )
 
         writer = GraphWriterService(pg, neo, repo, emb)
         result = await writer.write_with_precomputed(incoming, precomputed)
@@ -374,24 +411,33 @@ class TestWriteWithPrecomputed:
             root_cause="잘못된 토큰 검증",
             description_ko="",
         )
-        precomputed = ResolveResult(MergeAction.MERGE, "CSRF", 0.95, "CrossSiteRequestForgery")
+        precomputed = ResolveResult(
+            MergeAction.MERGE, "CSRF", 0.95, "CrossSiteRequestForgery"
+        )
 
         writer = GraphWriterService(pg, neo, repo, emb)
         await writer.write_with_precomputed(incoming, precomputed)
 
         updated = next(c for c in pg._concepts if c["concept_name"] == "CSRF")
-        assert set(updated["domains"]) == {"security", "performance"}, (
-            "domains: append+dedupe (apoc.coll.toSet과 동일 정책)"
-        )
-        assert updated["cwe_id"] == "CWE-352", "cwe_id: incoming이 None이면 COALESCE로 기존 유지"
-        assert updated["owasp_id"] == "A99:2099", "owasp_id: incoming이 non-null이면 덮어쓰기"
-        assert updated["root_cause"] == "잘못된 토큰 검증", "root_cause: 기존 None → incoming 값 반영"
-        assert updated["description_ko"] == _CSRF_DESC, (
-            "description_ko: incoming이 빈 문자열이면 NULL 취급되어 기존 값 유지"
-        )
-        assert repo.merge_into_calls == [("CrossSiteRequestForgery", "CSRF")], (
-            "MERGE(pre): repo.merge_concept_into(concept, target)으로 4-레이어 전체 적재"
-        )
+        assert set(updated["domains"]) == {
+            "security",
+            "performance",
+        }, "domains: append+dedupe (apoc.coll.toSet과 동일 정책)"
+        assert (
+            updated["cwe_id"] == "CWE-352"
+        ), "cwe_id: incoming이 None이면 COALESCE로 기존 유지"
+        assert (
+            updated["owasp_id"] == "A99:2099"
+        ), "owasp_id: incoming이 non-null이면 덮어쓰기"
+        assert (
+            updated["root_cause"] == "잘못된 토큰 검증"
+        ), "root_cause: 기존 None → incoming 값 반영"
+        assert (
+            updated["description_ko"] == _CSRF_DESC
+        ), "description_ko: incoming이 빈 문자열이면 NULL 취급되어 기존 값 유지"
+        assert repo.merge_into_calls == [
+            ("CrossSiteRequestForgery", "CSRF")
+        ], "MERGE(pre): repo.merge_concept_into(concept, target)으로 4-레이어 전체 적재"
 
     @pytest.mark.anyio
     async def test_F02_related_to_creates_edge_no_rescore(self) -> None:
@@ -510,7 +556,9 @@ class TestSaveInferScores:
 
             concepts = [_make_concept("TestConcept")]
             results = [
-                ResolveResult(MergeAction.RELATED_TO, "ExistingNode", 0.81, "TestConcept")
+                ResolveResult(
+                    MergeAction.RELATED_TO, "ExistingNode", 0.81, "TestConcept"
+                )
             ]
 
             await _save_infer_scores(session_id, concepts, results, pool)
@@ -518,5 +566,7 @@ class TestSaveInferScores:
             row = pool.get_staging("TestConcept")
             assert row is not None
             assert row["infer_action"] == "RELATED_TO", f"[{mode}] infer_action 오류"
-            assert row["infer_score"] == pytest.approx(0.81), f"[{mode}] infer_score 오류"
+            assert row["infer_score"] == pytest.approx(
+                0.81
+            ), f"[{mode}] infer_score 오류"
             assert row["target_concept_name"] == "ExistingNode", f"[{mode}] target 오류"

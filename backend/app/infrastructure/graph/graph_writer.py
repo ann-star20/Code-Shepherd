@@ -35,7 +35,9 @@ RETURN c.name AS canonical LIMIT 1
 """
 
 
-async def _resolve_canonical_name(session: neo4j.AsyncSession, concept_name: str) -> str:
+async def _resolve_canonical_name(
+    session: neo4j.AsyncSession, concept_name: str
+) -> str:
     """concept_name이 다른 노드의 aliases에 있으면 그 노드의 name 반환, 없으면 원본 반환."""
     result = await session.run(_RESOLVE_ALIAS, concept_name=concept_name)
     record = await result.single()
@@ -79,7 +81,8 @@ async def write_concept_node(
                 "MATCH (c:Concept {name:$cn}) "
                 "MERGE (m:Mechanism {name:$mn}) "
                 "MERGE (c)-[:MITIGATED_BY]->(m)",
-                cn=canonical_name, mn=mech.mechanism_name,
+                cn=canonical_name,
+                mn=mech.mechanism_name,
             )
 
         # 4. CAUSED_BY → RootCause
@@ -88,7 +91,8 @@ async def write_concept_node(
                 "MATCH (c:Concept {name:$cn}) "
                 "MERGE (r:RootCause {name:$rn}) "
                 "MERGE (c)-[:CAUSED_BY]->(r)",
-                cn=canonical_name, rn=concept.root_cause,
+                cn=canonical_name,
+                rn=concept.root_cause,
             )
 
         # 5. AFFECTS → Component
@@ -97,7 +101,8 @@ async def write_concept_node(
                 "MATCH (c:Concept {name:$cn}) "
                 "MERGE (x:Component {name:$xn}) "
                 "MERGE (c)-[:AFFECTS]->(x)",
-                cn=canonical_name, xn=comp,
+                cn=canonical_name,
+                xn=comp,
             )
 
         # 6. CONFIGURED_BY → ConfigProperty  (prop is PropertyIn, not dict)

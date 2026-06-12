@@ -10,6 +10,7 @@
   0.72 <= S < 0.88 → RELATED_TO : [:RELATED_TO] 엣지로 연결
   Score < 0.72   → NEW     : 완전 신규 마스터 노드 (호출자가 MERGE 책임)
 """
+
 from __future__ import annotations
 
 from dataclasses import dataclass
@@ -22,28 +23,29 @@ import neo4j
 from app.domain.models import ConceptExtractionSchema
 
 # ── 임계치 ─────────────────────────────────────────────────────────────────────
-MERGE_THRESHOLD   = 0.88
+MERGE_THRESHOLD = 0.88
 RELATED_THRESHOLD = 0.72
 
 # ── 가중치 ─────────────────────────────────────────────────────────────────────
-WEIGHT_JW   = 0.4
+WEIGHT_JW = 0.4
 WEIGHT_NAME = 0.3
 WEIGHT_DESC = 0.3
 
 
 # ── 결과 타입 ──────────────────────────────────────────────────────────────────
 
+
 class MergeAction(str, Enum):
-    MERGE      = "MERGE"       # score >= 0.88
+    MERGE = "MERGE"  # score >= 0.88
     RELATED_TO = "RELATED_TO"  # 0.72 <= score < 0.88
-    NEW        = "NEW"         # score < 0.72
+    NEW = "NEW"  # score < 0.72
 
 
 @dataclass
 class ResolveResult:
-    action:        MergeAction
-    target:        str | None   # 기존 마스터 노드명 (NEW일 때 None)
-    score:         float
+    action: MergeAction
+    target: str | None  # 기존 마스터 노드명 (NEW일 때 None)
+    score: float
     incoming_name: str
     score_metrics: dict = None  # {"jaro": float, "name_vec": float, "desc_vec": float}
 
@@ -57,6 +59,7 @@ class EmbeddingProtocol(Protocol):
 
 
 # ── 순수 함수: Jaro-Winkler ────────────────────────────────────────────────────
+
 
 def _jaro(s1: str, s2: str) -> float:
     if s1 == s2:
@@ -120,6 +123,7 @@ def max_jaro_winkler(pool_a: list[str], pool_b: list[str]) -> float:
 
 # ── 순수 함수: 점수 계산 ───────────────────────────────────────────────────────
 
+
 def compute_hybrid_score(jw: float, name_cos: float, desc_cos: float) -> float:
     """3-Factor 선형 결합 점수 (build_process.md §1 공식)."""
     return jw * WEIGHT_JW + name_cos * WEIGHT_NAME + desc_cos * WEIGHT_DESC
@@ -131,6 +135,7 @@ def _cosine(a: list[float], b: list[float]) -> float:
 
 
 # ── 벡터 직렬화 (asyncpg ↔ pgvector) ─────────────────────────────────────────
+
 
 def _vec_to_str(vec: list[float]) -> str:
     """asyncpg pgvector $1::vector 캐스팅용 문자열 표현."""
@@ -155,6 +160,7 @@ def _parse_vec(v: Any) -> list[float]:
 
 
 # ── 핵심 엔진 ─────────────────────────────────────────────────────────────────
+
 
 async def hybrid_resolve(
     incoming: ConceptExtractionSchema,
@@ -181,18 +187,20 @@ async def hybrid_resolve(
         incoming.concept_name,
     )
     if alias_hit:
-        target      = alias_hit["concept_name"]
+        target = alias_hit["concept_name"]
         in_name_vec = embedding_svc.embed(
             ", ".join([incoming.concept_name] + incoming.aliases)
         )
-        await _do_merge(incoming, target, in_name_vec, pg_pool, neo4j_driver, embedding_svc)
+        await _do_merge(
+            incoming, target, in_name_vec, pg_pool, neo4j_driver, embedding_svc
+        )
         return ResolveResult(MergeAction.MERGE, target, 1.0, incoming.concept_name)
 
     in_name_text = ", ".join([incoming.concept_name] + incoming.aliases)
     in_desc_text = incoming.description_ko or incoming.concept_name
-    in_name_vec  = embedding_svc.embed(in_name_text)
-    in_desc_vec  = embedding_svc.embed(in_desc_text)
-    in_pool      = [incoming.concept_name] + incoming.aliases
+    in_name_vec = embedding_svc.embed(in_name_text)
+    in_desc_vec = embedding_svc.embed(in_desc_text)
+    in_pool = [incoming.concept_name] + incoming.aliases
 
     rows = await pg_pool.fetch(
         "SELECT concept_name, aliases, name_vector, desc_vector "
@@ -203,28 +211,36 @@ async def hybrid_resolve(
     best_target: str | None = None
 
     for row in rows:
-        ex_pool    = [row["concept_name"]] + list(row["aliases"] or [])
-        jw         = max_jaro_winkler(in_pool, ex_pool)
-        ex_name_v  = _parse_vec(row["name_vector"])
-        ex_desc_v  = _parse_vec(row["desc_vector"])
-        name_cos   = _cosine(in_name_vec, ex_name_v) if ex_name_v else 0.0
-        desc_cos   = _cosine(in_desc_vec, ex_desc_v) if ex_desc_v else 0.0
-        score      = compute_hybrid_score(jw, name_cos, desc_cos)
+        ex_pool = [row["concept_name"]] + list(row["aliases"] or [])
+        jw = max_jaro_winkler(in_pool, ex_pool)
+        ex_name_v = _parse_vec(row["name_vector"])
+        ex_desc_v = _parse_vec(row["desc_vector"])
+        name_cos = _cosine(in_name_vec, ex_name_v) if ex_name_v else 0.0
+        desc_cos = _cosine(in_desc_vec, ex_desc_v) if ex_desc_v else 0.0
+        score = compute_hybrid_score(jw, name_cos, desc_cos)
 
         if score > best_score:
-            best_score  = score
+            best_score = score
             best_target = row["concept_name"]
 
     if best_score >= MERGE_THRESHOLD and best_target:
         await _do_merge(
-            incoming, best_target, in_name_vec,
-            pg_pool, neo4j_driver, embedding_svc,
+            incoming,
+            best_target,
+            in_name_vec,
+            pg_pool,
+            neo4j_driver,
+            embedding_svc,
         )
-        return ResolveResult(MergeAction.MERGE, best_target, best_score, incoming.concept_name)
+        return ResolveResult(
+            MergeAction.MERGE, best_target, best_score, incoming.concept_name
+        )
 
     if best_score >= RELATED_THRESHOLD and best_target:
         await _do_related_to(incoming.concept_name, best_target, neo4j_driver)
-        return ResolveResult(MergeAction.RELATED_TO, best_target, best_score, incoming.concept_name)
+        return ResolveResult(
+            MergeAction.RELATED_TO, best_target, best_score, incoming.concept_name
+        )
 
     return ResolveResult(MergeAction.NEW, None, best_score, incoming.concept_name)
 
@@ -232,7 +248,7 @@ async def hybrid_resolve(
 async def _do_merge(
     incoming: ConceptExtractionSchema,
     target_name: str,
-    _incoming_name_vec: list[float],   # 현재는 재임베딩으로 대체되므로 미사용
+    _incoming_name_vec: list[float],  # 현재는 재임베딩으로 대체되므로 미사용
     pg_pool: asyncpg.Pool,
     neo4j_driver: neo4j.AsyncDriver,
     embedding_svc: EmbeddingProtocol,
@@ -245,14 +261,15 @@ async def _do_merge(
     """
     row = await pg_pool.fetchrow(
         "SELECT aliases, domains, desc_vector, description_ko "
-        "FROM concepts WHERE concept_name = $1", target_name
+        "FROM concepts WHERE concept_name = $1",
+        target_name,
     )
     existing_aliases: list[str] = list(row["aliases"] or []) if row else []
     existing_domains: list[str] = list(row["domains"] or []) if row else []
     existing_desc_ko = row["description_ko"] if row else None
 
     new_entries = [incoming.concept_name] + incoming.aliases
-    merged      = list(dict.fromkeys(existing_aliases + new_entries))  # 순서 보존 dedup
+    merged = list(dict.fromkeys(existing_aliases + new_entries))  # 순서 보존 dedup
     merged_domain = list(dict.fromkeys(existing_domains + incoming.domains))
 
     # Centroid Shifting: 확장된 키워드 풀로 재임베딩
@@ -340,13 +357,15 @@ async def compute_resolve_score(
         incoming.concept_name,
     )
     if alias_hit:
-        return ResolveResult(MergeAction.MERGE, alias_hit["concept_name"], 1.0, incoming.concept_name)
+        return ResolveResult(
+            MergeAction.MERGE, alias_hit["concept_name"], 1.0, incoming.concept_name
+        )
 
     in_name_text = ", ".join([incoming.concept_name] + incoming.aliases)
     in_desc_text = incoming.description_ko or incoming.concept_name
-    in_name_vec  = embedding_svc.embed(in_name_text)
-    in_desc_vec  = embedding_svc.embed(in_desc_text)
-    in_pool      = [incoming.concept_name] + incoming.aliases
+    in_name_vec = embedding_svc.embed(in_name_text)
+    in_desc_vec = embedding_svc.embed(in_desc_text)
+    in_pool = [incoming.concept_name] + incoming.aliases
 
     rows = await pg_pool.fetch(
         "SELECT concept_name, aliases, name_vector, desc_vector "
@@ -357,20 +376,24 @@ async def compute_resolve_score(
     best_target: str | None = None
 
     for row in rows:
-        ex_pool   = [row["concept_name"]] + list(row["aliases"] or [])
-        jw        = max_jaro_winkler(in_pool, ex_pool)
+        ex_pool = [row["concept_name"]] + list(row["aliases"] or [])
+        jw = max_jaro_winkler(in_pool, ex_pool)
         ex_name_v = _parse_vec(row["name_vector"])
         ex_desc_v = _parse_vec(row["desc_vector"])
-        name_cos  = _cosine(in_name_vec, ex_name_v) if ex_name_v else 0.0
-        desc_cos  = _cosine(in_desc_vec, ex_desc_v) if ex_desc_v else 0.0
-        score     = compute_hybrid_score(jw, name_cos, desc_cos)
+        name_cos = _cosine(in_name_vec, ex_name_v) if ex_name_v else 0.0
+        desc_cos = _cosine(in_desc_vec, ex_desc_v) if ex_desc_v else 0.0
+        score = compute_hybrid_score(jw, name_cos, desc_cos)
 
         if score > best_score:
-            best_score  = score
+            best_score = score
             best_target = row["concept_name"]
 
     if best_score >= MERGE_THRESHOLD and best_target:
-        return ResolveResult(MergeAction.MERGE, best_target, best_score, incoming.concept_name)
+        return ResolveResult(
+            MergeAction.MERGE, best_target, best_score, incoming.concept_name
+        )
     if best_score >= RELATED_THRESHOLD and best_target:
-        return ResolveResult(MergeAction.RELATED_TO, best_target, best_score, incoming.concept_name)
+        return ResolveResult(
+            MergeAction.RELATED_TO, best_target, best_score, incoming.concept_name
+        )
     return ResolveResult(MergeAction.NEW, None, best_score, incoming.concept_name)

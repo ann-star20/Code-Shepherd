@@ -1,4 +1,5 @@
 """파이프라인 품질 모니터링 지표 계산. PRD §24."""
+
 from __future__ import annotations
 
 from dataclasses import dataclass

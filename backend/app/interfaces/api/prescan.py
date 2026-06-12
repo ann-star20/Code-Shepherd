@@ -36,6 +36,7 @@ _NESTJS_DEFAULT_VERSION = "10.0"
 
 # ── 스키마 ─────────────────────────────────────────────────────────────────
 
+
 class PrescanResult(BaseModel):
     """프리스캔 추론 결과 + HITL 드롭다운 제안 페이로드."""
 
@@ -43,12 +44,12 @@ class PrescanResult(BaseModel):
     original_url: str
     framework: Optional[str] = None
     version: Optional[str] = None
-    lang: Optional[str] = None          # 프로그래밍/인프라 설정 언어
-    doc_lang: Optional[str] = None      # 문서 원문 언어 (EN, KR ...)
+    lang: Optional[str] = None  # 프로그래밍/인프라 설정 언어
+    doc_lang: Optional[str] = None  # 문서 원문 언어 (EN, KR ...)
     infer_confidence: float
     infer_status: str  # "auto" | "manual_required"
-    suggested_frameworks: list[str] = []   # HITL 드롭다운용 등록 프레임워크 목록
-    suggested_versions: list[str] = []     # HITL 드롭다운용 해당 프레임워크 버전 목록
+    suggested_frameworks: list[str] = []  # HITL 드롭다운용 등록 프레임워크 목록
+    suggested_versions: list[str] = []  # HITL 드롭다운용 해당 프레임워크 버전 목록
 
 
 class LearnMetadataRequest(BaseModel):
@@ -61,6 +62,7 @@ class LearnMetadataRequest(BaseModel):
 
 
 # ── 추출 헬퍼 ──────────────────────────────────────────────────────────────
+
 
 def _extract_version(url: str) -> Optional[str]:
     """URL 경로에서 `/major.minor[.patch]/` 형태의 버전을 추출."""
@@ -92,7 +94,10 @@ def _extract_title(html: str) -> Optional[str]:
 
 # ── DB 주도형 추론 로직 ────────────────────────────────────────────────────
 
-async def _infer_via_db_patterns(conn: asyncpg.Connection, url: str) -> tuple[Optional[str], float]:
+
+async def _infer_via_db_patterns(
+    conn: asyncpg.Connection, url: str
+) -> tuple[Optional[str], float]:
     """`framework_metadata.url_patterns`를 런타임에 컴파일하여 URL 매칭.
 
     정규식 컴파일 실패는 전체 추론을 중단시키지 않고 다음 패턴으로 넘어간다.
@@ -106,7 +111,10 @@ async def _infer_via_db_patterns(conn: asyncpg.Connection, url: str) -> tuple[Op
                     return fw_name, 0.5
             except re.error as exc:
                 logger.error(
-                    "[Regex Error] '%s'의 패턴 '%s' 컴파일 실패: %s", fw_name, pattern_str, exc
+                    "[Regex Error] '%s'의 패턴 '%s' 컴파일 실패: %s",
+                    fw_name,
+                    pattern_str,
+                    exc,
                 )
                 continue
     return None, 0.0
@@ -126,7 +134,9 @@ async def _infer_via_title(conn: asyncpg.Connection, html: str) -> Optional[str]
     return None
 
 
-async def _resolve_default_lang(conn: asyncpg.Connection, framework: Optional[str]) -> Optional[str]:
+async def _resolve_default_lang(
+    conn: asyncpg.Connection, framework: Optional[str]
+) -> Optional[str]:
     """추론된 framework의 기본 프로그래밍/설정 언어를 `framework_metadata`에서 조회."""
     if not framework:
         return None
@@ -137,6 +147,7 @@ async def _resolve_default_lang(conn: asyncpg.Connection, framework: Optional[st
 
 
 # ── 엔드포인트 ─────────────────────────────────────────────────────────────
+
 
 @router.post("/{doc_id}/prescan", response_model=PrescanResult)
 async def prescan_document(
@@ -200,12 +211,16 @@ async def prescan_document(
 
     lang = await _resolve_default_lang(conn, framework)
 
-    infer_status = "auto" if confidence >= CONFIDENCE_AUTO_THRESHOLD else "manual_required"
+    infer_status = (
+        "auto" if confidence >= CONFIDENCE_AUTO_THRESHOLD else "manual_required"
+    )
 
     # manual_required 시 드롭다운 제안 목록 반환
     suggested_frameworks: list[str] = []
     if infer_status == "manual_required":
-        fw_rows = await conn.fetch("SELECT framework FROM framework_metadata ORDER BY framework")
+        fw_rows = await conn.fetch(
+            "SELECT framework FROM framework_metadata ORDER BY framework"
+        )
         suggested_frameworks = [r["framework"] for r in fw_rows]
 
     suggested_versions: list[str] = []
@@ -222,7 +237,13 @@ async def prescan_document(
            SET framework = $1, version = $2, lang = $3, doc_lang = $4,
                etag = $5, infer_confidence = $6, updated_at = now()
            WHERE doc_id = $7""",
-        framework, version, lang, doc_lang, etag, confidence, doc_id,
+        framework,
+        version,
+        lang,
+        doc_lang,
+        etag,
+        confidence,
+        doc_id,
     )
 
     return PrescanResult(
@@ -252,7 +273,9 @@ async def learn_framework_metadata(
     try:
         re.compile(req.pattern)
     except re.error as exc:
-        raise HTTPException(status_code=422, detail=f"invalid regex pattern: {exc}") from exc
+        raise HTTPException(
+            status_code=422, detail=f"invalid regex pattern: {exc}"
+        ) from exc
 
     default_lang = req.default_lang or req.supported_langs[0]
 
@@ -267,7 +290,10 @@ async def learn_framework_metadata(
                END,
                supported_langs = $3,
                default_lang = $4""",
-        req.framework, req.pattern, req.supported_langs, default_lang,
+        req.framework,
+        req.pattern,
+        req.supported_langs,
+        default_lang,
     )
 
     return {

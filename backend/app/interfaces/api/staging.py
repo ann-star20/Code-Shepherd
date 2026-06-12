@@ -19,7 +19,9 @@ from app.usecases.exceptions import StagingConflictError
 
 def _write_graph(session_id: str, doc_id: str):
     from app.worker.tasks import write_graph_task as _task
+
     return _task.delay(session_id=session_id, doc_id=doc_id)
+
 
 router = APIRouter(prefix="/api/staging", tags=["staging"])
 
@@ -30,6 +32,7 @@ async def _get_conn() -> asyncpg.Connection:
 
 
 # ── POST /{session_id}/approve ────────────────────────────────────────────────
+
 
 @router.post(
     "/{session_id}/approve",
@@ -51,6 +54,7 @@ async def approve_session(
 
 
 # ── GET /{session_id} ─────────────────────────────────────────────────────────
+
 
 @router.get(
     "/{session_id}",
@@ -82,11 +86,19 @@ async def list_draft(
     for r in rows:
         raw = r["concept_json"]
         data = json.loads(raw) if isinstance(raw, str) else dict(raw)
-        items.append({"id": str(r["id"]), "state": r["state"], "created_at": str(r["created_at"]), **data})
+        items.append(
+            {
+                "id": str(r["id"]),
+                "state": r["state"],
+                "created_at": str(r["created_at"]),
+                **data,
+            }
+        )
     return {"items": items}
 
 
 # ── POST /{session_id}/reject ─────────────────────────────────────────────────
+
 
 @router.post(
     "/{session_id}/reject",
@@ -107,6 +119,7 @@ async def reject_session(
 
 # ── GET /{session_id}/diff ────────────────────────────────────────────────────
 
+
 @router.get(
     "/{session_id}/diff",
     summary="세션 내 상태별 카운트",
@@ -125,13 +138,14 @@ async def diff_session(
     )
     counts = {r["state"].lower(): r["cnt"] for r in rows}
     return {
-        "draft":     counts.get("draft", 0),
-        "approved":  counts.get("approved", 0),
+        "draft": counts.get("draft", 0),
+        "approved": counts.get("approved", 0),
         "committed": counts.get("committed", 0),
     }
 
 
 # ── POST /{session_id}/commit ─────────────────────────────────────────────────
+
 
 @router.post(
     "/{session_id}/commit",
@@ -148,7 +162,9 @@ async def commit_session(
         session_id,
     )
     if row is None:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="session not found")
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail="session not found"
+        )
     doc_id = row["doc_id"]
     try:
         _write_graph(session_id=session_id, doc_id=doc_id)
@@ -158,6 +174,7 @@ async def commit_session(
 
 
 # ── PATCH /{session_id}/nodes/{node_id} ───────────────────────────────────────
+
 
 @router.patch(
     "/{session_id}/nodes/{node_id}",
@@ -179,5 +196,7 @@ async def patch_node(
         session_id,
     )
     if result == "UPDATE 0":
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Node not found")
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail="Node not found"
+        )
     return {"id": node_id, "state": target_state}

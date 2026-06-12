@@ -9,14 +9,18 @@ async def get_registered_domains(conn) -> set[str]:
     return {row["name"] for row in rows}
 
 
-def classify_domains(concept_domains: list[str], registered: set[str]) -> tuple[list[str], list[str]]:
+def classify_domains(
+    concept_domains: list[str], registered: set[str]
+) -> tuple[list[str], list[str]]:
     """등록/미등록 도메인 분류. 반환: (known, unknown)."""
-    known   = [d for d in concept_domains if d in registered]
+    known = [d for d in concept_domains if d in registered]
     unknown = [d for d in concept_domains if d not in registered]
     return known, unknown
 
 
-def suggest_similar_domains(unknown: str, registered: set[str], top_k: int = 3) -> list[dict]:
+def suggest_similar_domains(
+    unknown: str, registered: set[str], top_k: int = 3
+) -> list[dict]:
     """문자열 유사도 기반 도메인 추천."""
     scores = [
         {"domain": r, "similarity": round(SequenceMatcher(None, unknown, r).ratio(), 2)}

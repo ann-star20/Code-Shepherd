@@ -16,9 +16,13 @@ import psycopg2
 def _apply_schema(cursor):
     """테스트 DB에 v2 DDL 적용 (idempotent)."""
     from pathlib import Path
+
     sql = (
         Path(__file__).parent.parent.parent
-        / "scripts" / "seed" / "security" / "schema.sql"
+        / "scripts"
+        / "seed"
+        / "security"
+        / "schema.sql"
     ).read_text(encoding="utf-8")
     cursor.execute(sql)
 
@@ -48,7 +52,9 @@ def test_T01_knowledge_document_upsert_idempotent(pg_cursor):
     pg_cursor.execute(upsert, (doc_id,))
     t2 = pg_cursor.fetchone()[0]
 
-    pg_cursor.execute("SELECT COUNT(*) FROM knowledge_document WHERE doc_id=%s", (doc_id,))
+    pg_cursor.execute(
+        "SELECT COUNT(*) FROM knowledge_document WHERE doc_id=%s", (doc_id,)
+    )
     assert pg_cursor.fetchone()[0] == 1, "UPSERT 후 행이 1개여야 함"
     assert t2 >= t1, "2회차 updated_at이 1회차보다 이전일 수 없음"
 
@@ -82,7 +88,9 @@ def test_T01_knowledge_document_infer_confidence_default(pg_cursor):
         "INSERT INTO knowledge_document (doc_id, source_prefix, original_url, content_hash) VALUES (%s,'EXT','https://x.com','ab12ef34')",
         (doc_id,),
     )
-    pg_cursor.execute("SELECT infer_confidence FROM knowledge_document WHERE doc_id=%s", (doc_id,))
+    pg_cursor.execute(
+        "SELECT infer_confidence FROM knowledge_document WHERE doc_id=%s", (doc_id,)
+    )
     assert pg_cursor.fetchone()[0] == 0.0
 
 
@@ -120,7 +128,9 @@ def test_T02_staging_concept_json_stored(pg_cursor):
     )
     row_id = pg_cursor.fetchone()[0]
 
-    pg_cursor.execute("SELECT concept_json FROM staging_concepts WHERE id=%s", (str(row_id),))
+    pg_cursor.execute(
+        "SELECT concept_json FROM staging_concepts WHERE id=%s", (str(row_id),)
+    )
     stored = pg_cursor.fetchone()[0]
     assert stored["concept_name"] == "XSS"
     assert stored["concept_domain"] == "security"
@@ -152,7 +162,10 @@ def test_T02_staging_state_check(pg_cursor):
         "INSERT INTO staging_concepts (session_id, doc_id, concept_json, state) VALUES (%s,%s,%s,'WRONG')",
         (str(uuid.uuid4()), doc_id, json.dumps({"concept_name": "SQLi"})),
     )
-    pg_cursor.execute("SELECT state FROM staging_concepts WHERE doc_id=%s AND state='WRONG'", (doc_id,))
+    pg_cursor.execute(
+        "SELECT state FROM staging_concepts WHERE doc_id=%s AND state='WRONG'",
+        (doc_id,),
+    )
     assert pg_cursor.fetchone()[0] == "WRONG"
 
 
@@ -245,7 +258,9 @@ def test_T05_concept_snapshots_jsonb(pg_cursor):
     )
     row_id = pg_cursor.fetchone()[0]
 
-    pg_cursor.execute("SELECT raw_output_json FROM concept_snapshots WHERE id=%s", (str(row_id),))
+    pg_cursor.execute(
+        "SELECT raw_output_json FROM concept_snapshots WHERE id=%s", (str(row_id),)
+    )
     stored = pg_cursor.fetchone()[0]
     assert stored["concept_name"] == "MemoryLeak"
     assert stored["concept_domain"] == "both"

@@ -18,14 +18,16 @@ def _make_mock_pool(fetchrow_return=None, execute_return=None, fetchval_return=N
     """asyncpg 풀 Mock — acquire() 컨텍스트 매니저 반환."""
     mock_conn = AsyncMock()
     mock_conn.fetchrow = AsyncMock(return_value=fetchrow_return)
-    mock_conn.execute  = AsyncMock(return_value=execute_return)
+    mock_conn.execute = AsyncMock(return_value=execute_return)
     mock_conn.fetchval = AsyncMock(return_value=fetchval_return)
 
     mock_pool = MagicMock()
-    mock_pool.acquire = MagicMock(return_value=AsyncMock(
-        __aenter__=AsyncMock(return_value=mock_conn),
-        __aexit__=AsyncMock(return_value=False),
-    ))
+    mock_pool.acquire = MagicMock(
+        return_value=AsyncMock(
+            __aenter__=AsyncMock(return_value=mock_conn),
+            __aexit__=AsyncMock(return_value=False),
+        )
+    )
     return mock_pool, mock_conn
 
 
@@ -49,7 +51,9 @@ async def test_T09_post_documents_single_url():
     )
     app.state.pool = mock_pool
 
-    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as ac:
+    async with AsyncClient(
+        transport=ASGITransport(app=app), base_url="http://test"
+    ) as ac:
         resp = await ac.post(
             "/api/documents",
             json={"urls": ["https://docs.djangoproject.com/en/6.0/topics/security/"]},
@@ -80,7 +84,9 @@ async def test_T09_post_documents_max_5_urls():
     app.state.pool = mock_pool
 
     urls = [f"https://example.com/page{i}" for i in range(5)]
-    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as ac:
+    async with AsyncClient(
+        transport=ASGITransport(app=app), base_url="http://test"
+    ) as ac:
         resp = await ac.post("/api/documents", json={"urls": urls})
 
     assert resp.status_code == 201
@@ -98,7 +104,9 @@ async def test_T09_post_documents_exceeds_5_urls():
     app.state.pool = MagicMock()
 
     urls = [f"https://example.com/page{i}" for i in range(6)]
-    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as ac:
+    async with AsyncClient(
+        transport=ASGITransport(app=app), base_url="http://test"
+    ) as ac:
         resp = await ac.post("/api/documents", json={"urls": urls})
 
     assert resp.status_code == 422
@@ -114,7 +122,9 @@ async def test_T09_post_documents_invalid_url():
 
     app.state.pool = MagicMock()
 
-    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as ac:
+    async with AsyncClient(
+        transport=ASGITransport(app=app), base_url="http://test"
+    ) as ac:
         resp = await ac.post("/api/documents", json={"urls": ["not-a-url"]})
 
     assert resp.status_code == 422
@@ -151,11 +161,15 @@ async def test_T10_prescan_returns_infer_confidence():
         mock_resp.status_code = 200
         mock_resp.text = mock_html
         mock_resp.headers = {"ETag": '"abc123"'}
-        mock_httpx.AsyncClient.return_value.__aenter__ = AsyncMock(return_value=mock_httpx.AsyncClient.return_value)
+        mock_httpx.AsyncClient.return_value.__aenter__ = AsyncMock(
+            return_value=mock_httpx.AsyncClient.return_value
+        )
         mock_httpx.AsyncClient.return_value.__aexit__ = AsyncMock(return_value=False)
         mock_httpx.AsyncClient.return_value.get = AsyncMock(return_value=mock_resp)
 
-        async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as ac:
+        async with AsyncClient(
+            transport=ASGITransport(app=app), base_url="http://test"
+        ) as ac:
             resp = await ac.post(f"/api/documents/{doc_id}/prescan")
 
     assert resp.status_code == 200
@@ -175,7 +189,9 @@ async def test_T10_prescan_doc_not_found():
     mock_pool, mock_conn = _make_mock_pool(fetchrow_return=None)
     app.state.pool = mock_pool
 
-    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as ac:
+    async with AsyncClient(
+        transport=ASGITransport(app=app), base_url="http://test"
+    ) as ac:
         resp = await ac.post("/api/documents/NOTEXIST/prescan")
 
     assert resp.status_code == 404
@@ -194,7 +210,11 @@ async def test_T11_pipeline_trigger_ok():
 
     doc_id = "EXT_trigger_test_00000000"
     mock_pool, mock_conn = _make_mock_pool(
-        fetchrow_return={"doc_id": doc_id, "state": "PENDING", "original_url": "https://x.com"}
+        fetchrow_return={
+            "doc_id": doc_id,
+            "state": "PENDING",
+            "original_url": "https://x.com",
+        }
     )
     app.state.pool = mock_pool
 
@@ -202,7 +222,9 @@ async def test_T11_pipeline_trigger_ok():
         mock_task.return_value = None
         mock_task.delay = MagicMock(return_value=MagicMock(id="celery-task-id"))
 
-        async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as ac:
+        async with AsyncClient(
+            transport=ASGITransport(app=app), base_url="http://test"
+        ) as ac:
             resp = await ac.post(
                 "/api/pipeline/trigger",
                 json={"doc_id": doc_id},
@@ -225,7 +247,9 @@ async def test_T11_pipeline_trigger_doc_not_found():
     mock_pool, mock_conn = _make_mock_pool(fetchrow_return=None)
     app.state.pool = mock_pool
 
-    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as ac:
+    async with AsyncClient(
+        transport=ASGITransport(app=app), base_url="http://test"
+    ) as ac:
         resp = await ac.post(
             "/api/pipeline/trigger",
             json={"doc_id": "NOTEXIST"},
@@ -251,12 +275,16 @@ async def test_flowui4_check_duplicate_etag_matches_committed():
     with patch("app.interfaces.api.documents.httpx") as mock_httpx:
         mock_resp = MagicMock()
         mock_resp.headers = {"ETag": '"abc123"'}
-        mock_httpx.AsyncClient.return_value.__aenter__ = AsyncMock(return_value=mock_httpx.AsyncClient.return_value)
+        mock_httpx.AsyncClient.return_value.__aenter__ = AsyncMock(
+            return_value=mock_httpx.AsyncClient.return_value
+        )
         mock_httpx.AsyncClient.return_value.__aexit__ = AsyncMock(return_value=False)
         mock_httpx.AsyncClient.return_value.get = AsyncMock(return_value=mock_resp)
         mock_httpx.HTTPError = Exception
 
-        async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as ac:
+        async with AsyncClient(
+            transport=ASGITransport(app=app), base_url="http://test"
+        ) as ac:
             resp = await ac.post(
                 "/api/documents/check-duplicate",
                 json={"url": "https://docs.djangoproject.com/en/6.0/topics/security/"},
@@ -282,12 +310,16 @@ async def test_flowui4_check_duplicate_no_matching_committed_doc():
     with patch("app.interfaces.api.documents.httpx") as mock_httpx:
         mock_resp = MagicMock()
         mock_resp.headers = {"ETag": '"abc123"'}
-        mock_httpx.AsyncClient.return_value.__aenter__ = AsyncMock(return_value=mock_httpx.AsyncClient.return_value)
+        mock_httpx.AsyncClient.return_value.__aenter__ = AsyncMock(
+            return_value=mock_httpx.AsyncClient.return_value
+        )
         mock_httpx.AsyncClient.return_value.__aexit__ = AsyncMock(return_value=False)
         mock_httpx.AsyncClient.return_value.get = AsyncMock(return_value=mock_resp)
         mock_httpx.HTTPError = Exception
 
-        async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as ac:
+        async with AsyncClient(
+            transport=ASGITransport(app=app), base_url="http://test"
+        ) as ac:
             resp = await ac.post(
                 "/api/documents/check-duplicate",
                 json={"url": "https://docs.djangoproject.com/en/6.0/topics/security/"},
@@ -311,11 +343,17 @@ async def test_flowui4_check_duplicate_etag_fetch_fails():
 
     with patch("app.interfaces.api.documents.httpx") as mock_httpx:
         mock_httpx.HTTPError = Exception
-        mock_httpx.AsyncClient.return_value.__aenter__ = AsyncMock(return_value=mock_httpx.AsyncClient.return_value)
+        mock_httpx.AsyncClient.return_value.__aenter__ = AsyncMock(
+            return_value=mock_httpx.AsyncClient.return_value
+        )
         mock_httpx.AsyncClient.return_value.__aexit__ = AsyncMock(return_value=False)
-        mock_httpx.AsyncClient.return_value.get = AsyncMock(side_effect=mock_httpx.HTTPError("boom"))
+        mock_httpx.AsyncClient.return_value.get = AsyncMock(
+            side_effect=mock_httpx.HTTPError("boom")
+        )
 
-        async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as ac:
+        async with AsyncClient(
+            transport=ASGITransport(app=app), base_url="http://test"
+        ) as ac:
             resp = await ac.post(
                 "/api/documents/check-duplicate",
                 json={"url": "https://docs.djangoproject.com/en/6.0/topics/security/"},

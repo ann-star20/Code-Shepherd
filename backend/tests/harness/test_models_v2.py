@@ -29,17 +29,21 @@ from app.domain.models import (
 
 # ─── U01: _to_snake ───────────────────────────────────────────────────────────
 
+
 class TestToSnake:
-    @pytest.mark.parametrize("inp, expected", [
-        ("OutputEncoding",         "output_encoding"),
-        ("outputEncoding",         "output_encoding"),
-        ("CSRFTokenValidation",    "csrf_token_validation"),
-        ("already_snake",          "already_snake"),
-        ("With Spaces",            "with_spaces"),
-        ("With-Hyphens",           "with_hyphens"),
-        ("ParameterizedQuery",     "parameterized_query"),
-        ("secure_browser_xss_filter", "secure_browser_xss_filter"),
-    ])
+    @pytest.mark.parametrize(
+        "inp, expected",
+        [
+            ("OutputEncoding", "output_encoding"),
+            ("outputEncoding", "output_encoding"),
+            ("CSRFTokenValidation", "csrf_token_validation"),
+            ("already_snake", "already_snake"),
+            ("With Spaces", "with_spaces"),
+            ("With-Hyphens", "with_hyphens"),
+            ("ParameterizedQuery", "parameterized_query"),
+            ("secure_browser_xss_filter", "secure_browser_xss_filter"),
+        ],
+    )
     def test_conversion(self, inp: str, expected: str):
         assert _to_snake(inp) == expected
 
@@ -51,12 +55,19 @@ class TestToSnake:
 
 # ─── U02: MechanismIn ─────────────────────────────────────────────────────────
 
+
 class TestMechanismIn:
     def test_camel_normalized(self):
-        assert MechanismIn(mechanism_name="OutputEncoding").mechanism_name == "output_encoding"
+        assert (
+            MechanismIn(mechanism_name="OutputEncoding").mechanism_name
+            == "output_encoding"
+        )
 
     def test_already_snake_unchanged(self):
-        assert MechanismIn(mechanism_name="parameterized_query").mechanism_name == "parameterized_query"
+        assert (
+            MechanismIn(mechanism_name="parameterized_query").mechanism_name
+            == "parameterized_query"
+        )
 
     def test_space_normalized(self):
         result = MechanismIn(mechanism_name="CSRF Token Validation").mechanism_name
@@ -68,6 +79,7 @@ class TestMechanismIn:
 
 
 # ─── U03: PropertyIn ──────────────────────────────────────────────────────────
+
 
 class TestPropertyIn:
     def test_camel_key_normalized(self):
@@ -91,6 +103,7 @@ class TestPropertyIn:
 
 # ─── U04: 구형 list[str] mechanism → MechanismIn 수렴 ────────────────────────
 
+
 class TestLegacyMechanismStrList:
     def test_string_list_converted(self):
         c = ConceptExtractionSchema(
@@ -105,7 +118,9 @@ class TestLegacyMechanismStrList:
     def test_dict_mechanism_converted(self):
         c = ConceptExtractionSchema(
             concept_name="SQLi",
-            security_mechanism=[{"mechanism_name": "ParameterizedQuery", "code_examples": []}],
+            security_mechanism=[
+                {"mechanism_name": "ParameterizedQuery", "code_examples": []}
+            ],
         )
         assert c.mechanisms[0].mechanism_name == "parameterized_query"
 
@@ -126,6 +141,7 @@ class TestLegacyMechanismStrList:
 
 
 # ─── U05: 구형 flat code_examples 귀속 ────────────────────────────────────────
+
 
 class TestFlatCodeExamplesCoercion:
     def test_attaches_to_first_empty_mechanism(self):
@@ -152,8 +168,12 @@ class TestFlatCodeExamplesCoercion:
         c = ConceptExtractionSchema(
             concept_name="XSS",
             security_mechanism=[
-                {"mechanism_name": "output_encoding",
-                 "code_examples": [{"lang": "python", "framework": "django", "code": "a"}]},
+                {
+                    "mechanism_name": "output_encoding",
+                    "code_examples": [
+                        {"lang": "python", "framework": "django", "code": "a"}
+                    ],
+                },
             ],
             code_examples=[{"lang": "javascript", "framework": "react", "code": "b"}],
         )
@@ -161,6 +181,7 @@ class TestFlatCodeExamplesCoercion:
 
 
 # ─── U06: owasp_category → owasp_id 수렴 ─────────────────────────────────────
+
 
 class TestOwaspCategoryMerge:
     def test_category_becomes_owasp_id(self):
@@ -182,9 +203,12 @@ class TestOwaspCategoryMerge:
 
 # ─── U07: domains 소문자 + neo4j_extra_labels ─────────────────────────────────
 
+
 class TestDomainsAndLabels:
     def test_domains_lowercased(self):
-        c = ConceptExtractionSchema(concept_name="X", domains=["Security", "PERFORMANCE"])
+        c = ConceptExtractionSchema(
+            concept_name="X", domains=["Security", "PERFORMANCE"]
+        )
         assert c.domains == ["security", "performance"]
 
     def test_security_label(self):
@@ -201,6 +225,7 @@ class TestDomainsAndLabels:
 
 
 # ─── U08: 교차 도메인 ─────────────────────────────────────────────────────────
+
 
 class TestCrossDomainLabels:
     def test_both_domains_produce_two_labels(self):
@@ -220,21 +245,26 @@ class TestCrossDomainLabels:
 
 # ─── U09: build_doc_id ────────────────────────────────────────────────────────
 
+
 class TestBuildDocId:
     URL = "https://docs.djangoproject.com/en/5.0/topics/security/"
 
     def test_deterministic(self):
-        assert build_doc_id("EXT", self.URL, content="v1") == build_doc_id("EXT", self.URL, content="v1")
+        assert build_doc_id("EXT", self.URL, content="v1") == build_doc_id(
+            "EXT", self.URL, content="v1"
+        )
 
     def test_prefix_in_result(self):
         assert build_doc_id("EXT", self.URL).startswith("EXT_")
         assert build_doc_id("INT", self.URL).startswith("INT_")
 
     def test_different_content_different_id(self):
-        assert build_doc_id("EXT", self.URL, content="v1") != build_doc_id("EXT", self.URL, content="v2")
+        assert build_doc_id("EXT", self.URL, content="v1") != build_doc_id(
+            "EXT", self.URL, content="v2"
+        )
 
     def test_etag_takes_priority_over_content(self):
-        id_etag    = build_doc_id("EXT", self.URL, content="ignored", etag="etag123")
+        id_etag = build_doc_id("EXT", self.URL, content="ignored", etag="etag123")
         id_content = build_doc_id("EXT", self.URL, content="etag123")
         assert id_etag == id_content
 
@@ -245,6 +275,7 @@ class TestBuildDocId:
 
 
 # ─── U10: ConceptUpdate.to_neo4j_dict ────────────────────────────────────────
+
 
 class TestConceptUpdate:
     def test_none_fields_excluded(self):
@@ -261,4 +292,6 @@ class TestConceptUpdate:
         assert ConceptUpdate().to_neo4j_dict() == {}
 
     def test_is_deprecated_flag(self):
-        assert ConceptUpdate(is_deprecated=True).to_neo4j_dict()["is_deprecated"] is True
+        assert (
+            ConceptUpdate(is_deprecated=True).to_neo4j_dict()["is_deprecated"] is True
+        )

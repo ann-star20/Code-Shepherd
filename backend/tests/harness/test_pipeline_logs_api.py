@@ -11,6 +11,7 @@ from app.interfaces.api._deps import get_conn
 
 # ── 테스트 앱 팩토리 ──────────────────────────────────────────────────────────
 
+
 def _make_test_app(conn) -> FastAPI:
     app = FastAPI()
     app.include_router(router)
@@ -20,11 +21,13 @@ def _make_test_app(conn) -> FastAPI:
 
 # ── DB 헬퍼 ───────────────────────────────────────────────────────────────────
 
+
 async def _insert_doc(conn, doc_id: str, state: str = "CRAWLING") -> None:
     await conn.execute(
         "INSERT INTO knowledge_document (doc_id, source_prefix, original_url, content_hash, state) "
         "VALUES ($1,'EXT','https://example.com/log-test','aa000000', $2) ON CONFLICT DO NOTHING",
-        doc_id, state,
+        doc_id,
+        state,
     )
 
 
@@ -34,7 +37,11 @@ async def _insert_log(
     await conn.execute(
         "INSERT INTO pipeline_logs (doc_id, session_id, agent, level, message) "
         "VALUES ($1, $2::uuid, $3, $4, $5)",
-        doc_id, session_id, agent, level, message,
+        doc_id,
+        session_id,
+        agent,
+        level,
+        message,
     )
 
 
@@ -46,6 +53,7 @@ async def _cleanup(conn, session_id: str, doc_id: str) -> None:
 
 
 # ── T1: 로그 행 반환 ──────────────────────────────────────────────────────────
+
 
 @pytest.mark.anyio
 async def test_logs_returns_rows(asyncpg_pool):
@@ -74,6 +82,7 @@ async def test_logs_returns_rows(asyncpg_pool):
 
 # ── T2: doc_state 반영 ────────────────────────────────────────────────────────
 
+
 @pytest.mark.anyio
 async def test_logs_includes_doc_state(asyncpg_pool):
     """knowledge_document.state = EXTRACTED → response.doc_state == EXTRACTED."""
@@ -98,6 +107,7 @@ async def test_logs_includes_doc_state(asyncpg_pool):
 
 # ── T3: 알 수 없는 세션 → 빈 배열 ─────────────────────────────────────────────
 
+
 @pytest.mark.anyio
 async def test_logs_empty_for_unknown_session(asyncpg_pool):
     """존재하지 않는 session_id → 200, logs=[], doc_state=None."""
@@ -117,6 +127,7 @@ async def test_logs_empty_for_unknown_session(asyncpg_pool):
 
 
 # ── T4: 로그 필드 구조 검증 ───────────────────────────────────────────────────
+
 
 @pytest.mark.anyio
 async def test_log_entry_fields(asyncpg_pool):

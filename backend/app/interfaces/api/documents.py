@@ -18,6 +18,7 @@ _ACTIVE_STATES = frozenset({"PENDING", "CRAWLING", "EXTRACTING", "EXTRACTED"})
 
 # ── 스키마 ─────────────────────────────────────────────────────────────────
 
+
 class DocumentsRequest(BaseModel):
     urls: list[HttpUrl]
 
@@ -53,6 +54,7 @@ class CheckDuplicateResponse(BaseModel):
 
 
 # ── doc_id / content_hash 생성 ─────────────────────────────────────────────
+
 
 def _build_doc_id(prefix: str, url: str) -> str:
     """PREFIX_urlpart_sha8 형식 마스터 키 생성."""
@@ -101,7 +103,8 @@ async def check_duplicate_document(
     if etag:
         row = await conn.fetchrow(
             "SELECT 1 FROM knowledge_document WHERE doc_id = $1 AND etag = $2 AND state = 'COMMITTED'",
-            doc_id, etag,
+            doc_id,
+            etag,
         )
         is_duplicate = row is not None
 
@@ -111,6 +114,7 @@ async def check_duplicate_document(
         original_url=url,
         etag=etag,
     )
+
 
 @router.post("", status_code=201, response_model=DocumentsResponse)
 async def submit_documents(
@@ -153,7 +157,8 @@ async def submit_documents(
                         """UPDATE knowledge_document
                               SET state = 'PENDING', content_hash = $2, updated_at = now()
                             WHERE doc_id = $1""",
-                        doc_id, content_hash,
+                        doc_id,
+                        content_hash,
                     )
             elif state in _ACTIVE_STATES or state == "COMMITTED":
                 # 처리 중이거나 완료된 문서: 기존 상태 유지 (중복 트리거 방지)
@@ -164,24 +169,29 @@ async def submit_documents(
                     """UPDATE knowledge_document
                           SET state = 'PENDING', content_hash = $2, updated_at = now()
                         WHERE doc_id = $1""",
-                    doc_id, content_hash,
+                    doc_id,
+                    content_hash,
                 )
         else:
             await conn.execute(
                 """INSERT INTO knowledge_document (doc_id, source_prefix, original_url, content_hash, state)
                    VALUES ($1, 'EXT', $2, $3, 'PENDING')
                    ON CONFLICT (doc_id) DO NOTHING""",
-                doc_id, url, content_hash,
+                doc_id,
+                url,
+                content_hash,
             )
 
         row = await conn.fetchrow(
             "SELECT doc_id, state, original_url FROM knowledge_document WHERE doc_id = $1",
             doc_id,
         )
-        results.append(DocumentItem(
-            doc_id=row["doc_id"],
-            state=row["state"],
-            original_url=row["original_url"],
-        ))
+        results.append(
+            DocumentItem(
+                doc_id=row["doc_id"],
+                state=row["state"],
+                original_url=row["original_url"],
+            )
+        )
 
     return DocumentsResponse(documents=results)

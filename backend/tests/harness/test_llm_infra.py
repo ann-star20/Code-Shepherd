@@ -7,7 +7,11 @@ from app.domain.models import ConceptExtractionSchema
 from app.infrastructure.llm.interface import ILLMClient
 from app.infrastructure.llm.mock_client import MockClient
 from app.infrastructure.llm.factory import create_llm_client
-from app.infrastructure.llm.gemini_client import GeminiClient, LLMParseError, _parse_json_safely
+from app.infrastructure.llm.gemini_client import (
+    GeminiClient,
+    LLMParseError,
+    _parse_json_safely,
+)
 
 
 def test_mock_client_implements_interface():
@@ -118,7 +122,9 @@ async def test_gemini_extract_concepts_uses_generate_content_config():
         '[{"concept_name": "XSS", "domains": ["security"], "description_ko": "x"}]'
     )
 
-    await client.extract_concepts("chunk", "doc1", {"framework": "Django", "lang": "KO"})
+    await client.extract_concepts(
+        "chunk", "doc1", {"framework": "Django", "lang": "KO"}
+    )
 
     config = generate_content.call_args.kwargs["config"]
     assert config.temperature == pytest.approx(0.2)
@@ -132,7 +138,9 @@ async def test_gemini_extract_concepts_logs_empty_response(caplog):
 
     with caplog.at_level("WARNING"):
         result = await client.extract_concepts(
-            "chunk", "doc1", {"framework": "Django", "lang": "KO", "allowed_domains": ["security"]}
+            "chunk",
+            "doc1",
+            {"framework": "Django", "lang": "KO", "allowed_domains": ["security"]},
         )
 
     assert result == []

@@ -55,20 +55,25 @@ _CLEANUP_CONCEPT = "MATCH (c:Concept {name: $name}) DETACH DELETE c"
 
 # ── 도우미 함수 ────────────────────────────────────────────────────────────
 
-def _merge_concept_with_labels(session, name, cwe_id, severity, description_ko,
-                                aliases, concept_domain):
+
+def _merge_concept_with_labels(
+    session, name, cwe_id, severity, description_ko, aliases, concept_domain
+):
     """Concept MERGE 후 concept_domain에 따라 APOC addLabels 적용."""
     domain_label_map = {
-        "security":     ["security"],
-        "performance":  ["performance"],
-        "both":         ["security", "performance"],
+        "security": ["security"],
+        "performance": ["performance"],
+        "both": ["security", "performance"],
     }
     labels = domain_label_map[concept_domain]
 
     session.run(
         _MERGE_CONCEPT,
-        name=name, cwe_id=cwe_id, severity=severity,
-        description_ko=description_ko, aliases=aliases,
+        name=name,
+        cwe_id=cwe_id,
+        severity=severity,
+        description_ko=description_ko,
+        aliases=aliases,
         concept_domain=concept_domain,
     )
     session.run(_ADD_LABELS, name=name, labels=labels)
@@ -103,8 +108,10 @@ def test_T07_owasp_category_merge(neo4j_driver):
             for _ in range(2):
                 session.run(
                     _MERGE_OWASP,
-                    owasp_id=owasp_id, name="Injection-test",
-                    severity="critical", description_ko="인젝션 테스트",
+                    owasp_id=owasp_id,
+                    name="Injection-test",
+                    severity="critical",
+                    description_ko="인젝션 테스트",
                 )
             count = session.run(
                 "MATCH (o:OWASPCategory {owasp_id:$id}) RETURN count(o) AS n",
@@ -112,7 +119,9 @@ def test_T07_owasp_category_merge(neo4j_driver):
             ).single()["n"]
             assert count == 1
         finally:
-            session.run("MATCH (o:OWASPCategory {owasp_id:$id}) DETACH DELETE o", id=owasp_id)
+            session.run(
+                "MATCH (o:OWASPCategory {owasp_id:$id}) DETACH DELETE o", id=owasp_id
+            )
 
 
 def test_T07_cwe_node_merge(neo4j_driver):
@@ -124,7 +133,9 @@ def test_T07_cwe_node_merge(neo4j_driver):
     with neo4j_driver.session() as session:
         try:
             for _ in range(2):
-                session.run(_MERGE_CWE, cwe_id=cwe_id, name="XSS-test", description_ko="테스트")
+                session.run(
+                    _MERGE_CWE, cwe_id=cwe_id, name="XSS-test", description_ko="테스트"
+                )
             count = session.run(
                 "MATCH (c:CWE {cwe_id:$id}) RETURN count(c) AS n", id=cwe_id
             ).single()["n"]
@@ -145,21 +156,29 @@ def test_T08_security_concept_apoc_label(neo4j_driver):
     with neo4j_driver.session() as session:
         try:
             _merge_concept_with_labels(
-                session, name, "CWE-79", "high",
+                session,
+                name,
+                "CWE-79",
+                "high",
                 "APOC 라벨 테스트 보안 컨셉",
-                ["Cross-Site Scripting"], "security",
+                ["Cross-Site Scripting"],
+                "security",
             )
 
             count = session.run(
-                "MATCH (c:Concept:security {name:$name}) RETURN count(c) AS n", name=name
+                "MATCH (c:Concept:security {name:$name}) RETURN count(c) AS n",
+                name=name,
             ).single()["n"]
             assert count == 1, ":Concept:security 물리 라벨 부여 실패"
 
             # :Concept:performance 라벨은 없어야 함
             perf_count = session.run(
-                "MATCH (c:Concept:performance {name:$name}) RETURN count(c) AS n", name=name
+                "MATCH (c:Concept:performance {name:$name}) RETURN count(c) AS n",
+                name=name,
             ).single()["n"]
-            assert perf_count == 0, "security 전용 Concept에 :performance 라벨이 붙으면 안 됨"
+            assert (
+                perf_count == 0
+            ), "security 전용 Concept에 :performance 라벨이 붙으면 안 됨"
         finally:
             session.run(_CLEANUP_CONCEPT, name=name)
 
@@ -176,20 +195,28 @@ def test_T09_performance_concept_apoc_label(neo4j_driver):
     with neo4j_driver.session() as session:
         try:
             _merge_concept_with_labels(
-                session, name, "CWE-1072", "high",
+                session,
+                name,
+                "CWE-1072",
+                "high",
                 "APOC 라벨 테스트 성능 컨셉",
-                ["N+1 Problem"], "performance",
+                ["N+1 Problem"],
+                "performance",
             )
 
             count = session.run(
-                "MATCH (c:Concept:performance {name:$name}) RETURN count(c) AS n", name=name
+                "MATCH (c:Concept:performance {name:$name}) RETURN count(c) AS n",
+                name=name,
             ).single()["n"]
             assert count == 1, ":Concept:performance 물리 라벨 부여 실패"
 
             sec_count = session.run(
-                "MATCH (c:Concept:security {name:$name}) RETURN count(c) AS n", name=name
+                "MATCH (c:Concept:security {name:$name}) RETURN count(c) AS n",
+                name=name,
             ).single()["n"]
-            assert sec_count == 0, "performance 전용 Concept에 :security 라벨이 붙으면 안 됨"
+            assert (
+                sec_count == 0
+            ), "performance 전용 Concept에 :security 라벨이 붙으면 안 됨"
         finally:
             session.run(_CLEANUP_CONCEPT, name=name)
 
@@ -206,9 +233,13 @@ def test_T10_both_domain_concept_dual_labels(neo4j_driver):
     with neo4j_driver.session() as session:
         try:
             _merge_concept_with_labels(
-                session, name, "CWE-401", "high",
+                session,
+                name,
+                "CWE-401",
+                "high",
                 "교차 도메인 APOC 라벨 테스트",
-                ["Memory Leak", "메모리 누수"], "both",
+                ["Memory Leak", "메모리 누수"],
+                "both",
             )
 
             # 두 라벨 동시 보유 확인
@@ -220,13 +251,15 @@ def test_T10_both_domain_concept_dual_labels(neo4j_driver):
 
             # 보안 단독 조회도 가능해야 함
             sec = session.run(
-                "MATCH (c:Concept:security {name:$name}) RETURN count(c) AS n", name=name
+                "MATCH (c:Concept:security {name:$name}) RETURN count(c) AS n",
+                name=name,
             ).single()["n"]
             assert sec == 1, "both Concept이 :Concept:security 조회에도 노출돼야 함"
 
             # 성능 단독 조회도 가능해야 함
             perf = session.run(
-                "MATCH (c:Concept:performance {name:$name}) RETURN count(c) AS n", name=name
+                "MATCH (c:Concept:performance {name:$name}) RETURN count(c) AS n",
+                name=name,
             ).single()["n"]
             assert perf == 1, "both Concept이 :Concept:performance 조회에도 노출돼야 함"
         finally:
@@ -246,9 +279,13 @@ def test_T11_concept_merge_idempotent_with_apoc(neo4j_driver):
         try:
             for _ in range(3):
                 _merge_concept_with_labels(
-                    session, name, "CWE-352", "high",
+                    session,
+                    name,
+                    "CWE-352",
+                    "high",
                     "CSRF 멱등성 테스트",
-                    ["CSRF", "Cross-Site Request Forgery"], "security",
+                    ["CSRF", "Cross-Site Request Forgery"],
+                    "security",
                 )
 
             count = session.run(

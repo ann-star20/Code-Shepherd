@@ -27,6 +27,7 @@ AAA 패턴:
   T_gws_F* : _upsert_pg SQL 파라미터 검증 (NEW/RELATED_TO 분기 실제 실행)
   T_gws_R* : run_link_resolve 단위 테스트 (FakeStagingPgPool + FakeGraphWriterService)
 """
+
 from __future__ import annotations
 
 import json
@@ -46,6 +47,7 @@ from app.usecases.run_pipeline import run_link_resolve
 # ─────────────────────────────────────────────────────────────────────────────
 # 테스트 인프라 더미
 # ─────────────────────────────────────────────────────────────────────────────
+
 
 class _FakeMinimalPgPool:
     """GraphWriterService._upsert_pg 전용 더미 — execute 호출만 추적."""
@@ -74,7 +76,9 @@ class _FakeNeo4jRepo:
         self.merge_calls.append(concept.concept_name)
         return concept.concept_name
 
-    async def merge_concept_into(self, concept: ConceptExtractionSchema, master_name: str) -> None:
+    async def merge_concept_into(
+        self, concept: ConceptExtractionSchema, master_name: str
+    ) -> None:
         self.merge_into_calls.append((concept.concept_name, master_name))
 
     async def find_master_by_alias(self, alias: str) -> str | None:
@@ -171,7 +175,9 @@ def _staging_row(concept: ConceptExtractionSchema) -> dict:
     }
 
 
-def _write_result(action: MergeAction, target: str | None = None, score: float = 0.9) -> WriteResult:
+def _write_result(
+    action: MergeAction, target: str | None = None, score: float = 0.9
+) -> WriteResult:
     return WriteResult(
         resolve=ResolveResult(action, target, score, "IncomingConcept"),
         pg_written=(action != MergeAction.MERGE),
@@ -181,6 +187,7 @@ def _write_result(action: MergeAction, target: str | None = None, score: float =
 # ─────────────────────────────────────────────────────────────────────────────
 # T_gws_U* : GraphWriterService.write() 단위 테스트 (hybrid_resolve AsyncMock)
 # ─────────────────────────────────────────────────────────────────────────────
+
 
 class TestGraphWriterServiceWrite:
     """T_gws_U01~U03: write() 액션별 분기 — PG/Neo4j 쓰기 제어 검증."""
@@ -196,9 +203,13 @@ class TestGraphWriterServiceWrite:
         """
         pg = _FakeMinimalPgPool()
         repo = _FakeNeo4jRepo()
-        writer = GraphWriterService(pg, _FakeNeo4jDriver(), repo, MockEmbeddingService())
+        writer = GraphWriterService(
+            pg, _FakeNeo4jDriver(), repo, MockEmbeddingService()
+        )
         concept = _make_concept("CrossSiteRequestForgery", aliases=["CSRF"])
-        mock_resolve = ResolveResult(MergeAction.MERGE, "CSRF", 0.95, "CrossSiteRequestForgery")
+        mock_resolve = ResolveResult(
+            MergeAction.MERGE, "CSRF", 0.95, "CrossSiteRequestForgery"
+        )
 
         with patch(
             "app.infrastructure.graph.neo4j_service.hybrid_resolve",
@@ -209,11 +220,13 @@ class TestGraphWriterServiceWrite:
         assert result.pg_written is False, "MERGE: pg_written=False (추가 쓰기 없음)"
         assert result.resolve.action == MergeAction.MERGE
         assert result.resolve.target == "CSRF"
-        assert pg.execute_calls == [], "MERGE: _upsert_pg 미호출 → execute_calls 비어 있음"
+        assert (
+            pg.execute_calls == []
+        ), "MERGE: _upsert_pg 미호출 → execute_calls 비어 있음"
         assert repo.merge_calls == [], "MERGE: repo.merge_concept 미호출"
-        assert repo.merge_into_calls == [("CrossSiteRequestForgery", "CSRF")], (
-            "MERGE: repo.merge_concept_into(concept, target)으로 4-레이어 전체 적재"
-        )
+        assert repo.merge_into_calls == [
+            ("CrossSiteRequestForgery", "CSRF")
+        ], "MERGE: repo.merge_concept_into(concept, target)으로 4-레이어 전체 적재"
 
     @pytest.mark.anyio
     async def test_U02_related_to_writes_pg_and_neo4j(self) -> None:
@@ -226,7 +239,9 @@ class TestGraphWriterServiceWrite:
         """
         pg = _FakeMinimalPgPool()
         repo = _FakeNeo4jRepo()
-        writer = GraphWriterService(pg, _FakeNeo4jDriver(), repo, MockEmbeddingService())
+        writer = GraphWriterService(
+            pg, _FakeNeo4jDriver(), repo, MockEmbeddingService()
+        )
         concept = _make_concept("SSRF", aliases=["Server-Side Request Forgery"])
         mock_resolve = ResolveResult(MergeAction.RELATED_TO, "CSRF", 0.80, "SSRF")
 
@@ -239,7 +254,9 @@ class TestGraphWriterServiceWrite:
         assert result.pg_written is True, "RELATED_TO: pg_written=True"
         assert result.resolve.action == MergeAction.RELATED_TO
         assert len(pg.execute_calls) == 1, "RELATED_TO: _upsert_pg execute 1회 호출"
-        assert repo.merge_calls == ["SSRF"], "RELATED_TO: repo.merge_concept('SSRF') 호출"
+        assert repo.merge_calls == [
+            "SSRF"
+        ], "RELATED_TO: repo.merge_concept('SSRF') 호출"
 
     @pytest.mark.anyio
     async def test_U03_new_writes_pg_and_neo4j(self) -> None:
@@ -252,7 +269,9 @@ class TestGraphWriterServiceWrite:
         """
         pg = _FakeMinimalPgPool()
         repo = _FakeNeo4jRepo()
-        writer = GraphWriterService(pg, _FakeNeo4jDriver(), repo, MockEmbeddingService())
+        writer = GraphWriterService(
+            pg, _FakeNeo4jDriver(), repo, MockEmbeddingService()
+        )
         concept = _make_concept("Clickjacking", aliases=["UI Redressing"])
         mock_resolve = ResolveResult(MergeAction.NEW, None, 0.40, "Clickjacking")
 
@@ -266,7 +285,9 @@ class TestGraphWriterServiceWrite:
         assert result.resolve.action == MergeAction.NEW
         assert result.resolve.target is None
         assert len(pg.execute_calls) == 1, "NEW: _upsert_pg execute 1회 호출"
-        assert repo.merge_calls == ["Clickjacking"], "NEW: repo.merge_concept('Clickjacking') 호출"
+        assert repo.merge_calls == [
+            "Clickjacking"
+        ], "NEW: repo.merge_concept('Clickjacking') 호출"
 
     @pytest.mark.anyio
     async def test_U04_write_result_carries_resolve_result(self) -> None:
@@ -275,9 +296,13 @@ class TestGraphWriterServiceWrite:
         Assert: result.resolve 필드가 hybrid_resolve 반환값과 동일
         """
         pg = _FakeMinimalPgPool()
-        writer = GraphWriterService(pg, _FakeNeo4jDriver(), _FakeNeo4jRepo(), MockEmbeddingService())
+        writer = GraphWriterService(
+            pg, _FakeNeo4jDriver(), _FakeNeo4jRepo(), MockEmbeddingService()
+        )
         concept = _make_concept("TestConcept")
-        mock_resolve = ResolveResult(MergeAction.MERGE, "ExistingMaster", 0.92, "TestConcept")
+        mock_resolve = ResolveResult(
+            MergeAction.MERGE, "ExistingMaster", 0.92, "TestConcept"
+        )
 
         with patch(
             "app.infrastructure.graph.neo4j_service.hybrid_resolve",
@@ -285,7 +310,9 @@ class TestGraphWriterServiceWrite:
         ):
             result = await writer.write(concept)
 
-        assert result.resolve is mock_resolve, "WriteResult.resolve == hybrid_resolve 반환값"
+        assert (
+            result.resolve is mock_resolve
+        ), "WriteResult.resolve == hybrid_resolve 반환값"
         assert result.resolve.score == pytest.approx(0.92)
         assert result.resolve.target == "ExistingMaster"
 
@@ -293,6 +320,7 @@ class TestGraphWriterServiceWrite:
 # ─────────────────────────────────────────────────────────────────────────────
 # T_gws_F* : _upsert_pg SQL 파라미터 검증 (NEW 분기 실행)
 # ─────────────────────────────────────────────────────────────────────────────
+
 
 class TestGraphWriterServiceUpsertPg:
     """T_gws_F01~F04: _upsert_pg 파라미터 규칙 검증."""
@@ -304,12 +332,16 @@ class TestGraphWriterServiceUpsertPg:
         Assert: execute args[0] == 'SSRF'
         """
         pg = _FakeMinimalPgPool()
-        writer = GraphWriterService(pg, _FakeNeo4jDriver(), _FakeNeo4jRepo(), MockEmbeddingService())
+        writer = GraphWriterService(
+            pg, _FakeNeo4jDriver(), _FakeNeo4jRepo(), MockEmbeddingService()
+        )
         concept = _make_concept("SSRF", aliases=["Server-Side Request Forgery"])
 
         with patch(
             "app.infrastructure.graph.neo4j_service.hybrid_resolve",
-            new=AsyncMock(return_value=ResolveResult(MergeAction.NEW, None, 0.40, "SSRF")),
+            new=AsyncMock(
+                return_value=ResolveResult(MergeAction.NEW, None, 0.40, "SSRF")
+            ),
         ):
             await writer.write(concept)
 
@@ -323,7 +355,9 @@ class TestGraphWriterServiceUpsertPg:
         Assert: execute args[3] == 'low' (info → low 정규화)
         """
         pg = _FakeMinimalPgPool()
-        writer = GraphWriterService(pg, _FakeNeo4jDriver(), _FakeNeo4jRepo(), MockEmbeddingService())
+        writer = GraphWriterService(
+            pg, _FakeNeo4jDriver(), _FakeNeo4jRepo(), MockEmbeddingService()
+        )
         concept = ConceptExtractionSchema(
             concept_name="InfoLevelConcept",
             domains=["security"],
@@ -332,7 +366,11 @@ class TestGraphWriterServiceUpsertPg:
 
         with patch(
             "app.infrastructure.graph.neo4j_service.hybrid_resolve",
-            new=AsyncMock(return_value=ResolveResult(MergeAction.NEW, None, 0.30, "InfoLevelConcept")),
+            new=AsyncMock(
+                return_value=ResolveResult(
+                    MergeAction.NEW, None, 0.30, "InfoLevelConcept"
+                )
+            ),
         ):
             await writer.write(concept)
 
@@ -346,7 +384,9 @@ class TestGraphWriterServiceUpsertPg:
         Assert: execute args[3] == 'medium' (None → medium 기본값)
         """
         pg = _FakeMinimalPgPool()
-        writer = GraphWriterService(pg, _FakeNeo4jDriver(), _FakeNeo4jRepo(), MockEmbeddingService())
+        writer = GraphWriterService(
+            pg, _FakeNeo4jDriver(), _FakeNeo4jRepo(), MockEmbeddingService()
+        )
         concept = ConceptExtractionSchema(
             concept_name="NoSeverityConcept",
             domains=["performance"],
@@ -355,7 +395,11 @@ class TestGraphWriterServiceUpsertPg:
 
         with patch(
             "app.infrastructure.graph.neo4j_service.hybrid_resolve",
-            new=AsyncMock(return_value=ResolveResult(MergeAction.NEW, None, 0.20, "NoSeverityConcept")),
+            new=AsyncMock(
+                return_value=ResolveResult(
+                    MergeAction.NEW, None, 0.20, "NoSeverityConcept"
+                )
+            ),
         ):
             await writer.write(concept)
 
@@ -369,7 +413,9 @@ class TestGraphWriterServiceUpsertPg:
         Assert: execute args[2] == domains, args[8] == aliases
         """
         pg = _FakeMinimalPgPool()
-        writer = GraphWriterService(pg, _FakeNeo4jDriver(), _FakeNeo4jRepo(), MockEmbeddingService())
+        writer = GraphWriterService(
+            pg, _FakeNeo4jDriver(), _FakeNeo4jRepo(), MockEmbeddingService()
+        )
         concept = _make_concept(
             "SSRF",
             aliases=["SsrfVulnerability", "SSRFAttack"],
@@ -378,13 +424,18 @@ class TestGraphWriterServiceUpsertPg:
 
         with patch(
             "app.infrastructure.graph.neo4j_service.hybrid_resolve",
-            new=AsyncMock(return_value=ResolveResult(MergeAction.NEW, None, 0.40, "SSRF")),
+            new=AsyncMock(
+                return_value=ResolveResult(MergeAction.NEW, None, 0.40, "SSRF")
+            ),
         ):
             await writer.write(concept)
 
         _, args = pg.execute_calls[0]
         assert set(args[2]) == {"security", "performance"}, f"domains 불일치: {args[2]}"
-        assert set(args[8]) == {"SsrfVulnerability", "SSRFAttack"}, f"aliases 불일치: {args[8]}"
+        assert set(args[8]) == {
+            "SsrfVulnerability",
+            "SSRFAttack",
+        }, f"aliases 불일치: {args[8]}"
 
     @pytest.mark.anyio
     async def test_F05_upsert_contains_on_conflict_clause(self) -> None:
@@ -393,12 +444,18 @@ class TestGraphWriterServiceUpsertPg:
         Assert: SQL에 ON CONFLICT (concept_name) DO UPDATE 포함 (멱등성 보장)
         """
         pg = _FakeMinimalPgPool()
-        writer = GraphWriterService(pg, _FakeNeo4jDriver(), _FakeNeo4jRepo(), MockEmbeddingService())
+        writer = GraphWriterService(
+            pg, _FakeNeo4jDriver(), _FakeNeo4jRepo(), MockEmbeddingService()
+        )
         concept = _make_concept("IdempotentConcept")
 
         with patch(
             "app.infrastructure.graph.neo4j_service.hybrid_resolve",
-            new=AsyncMock(return_value=ResolveResult(MergeAction.NEW, None, 0.20, "IdempotentConcept")),
+            new=AsyncMock(
+                return_value=ResolveResult(
+                    MergeAction.NEW, None, 0.20, "IdempotentConcept"
+                )
+            ),
         ):
             await writer.write(concept)
 
@@ -410,6 +467,7 @@ class TestGraphWriterServiceUpsertPg:
 # ─────────────────────────────────────────────────────────────────────────────
 # T_gws_R* : run_link_resolve 단위 테스트
 # ─────────────────────────────────────────────────────────────────────────────
+
 
 class TestRunLinkResolve:
     """T_gws_R01~R06: staging state 전이 + 집계 + 예외 처리 검증."""
@@ -440,12 +498,16 @@ class TestRunLinkResolve:
         concept = _make_concept("CrossSiteRequestForgery", aliases=["CSRF"])
         row = _staging_row(concept)
         pg = _FakeStagingPgPool([row])
-        writer = _FakeGraphWriterService({
-            "CrossSiteRequestForgery": WriteResult(
-                resolve=ResolveResult(MergeAction.MERGE, "CSRF", 0.95, "CrossSiteRequestForgery"),
-                pg_written=False,
-            )
-        })
+        writer = _FakeGraphWriterService(
+            {
+                "CrossSiteRequestForgery": WriteResult(
+                    resolve=ResolveResult(
+                        MergeAction.MERGE, "CSRF", 0.95, "CrossSiteRequestForgery"
+                    ),
+                    pg_written=False,
+                )
+            }
+        )
 
         summary = await run_link_resolve("sess-merge", pg, writer)
 
@@ -467,17 +529,21 @@ class TestRunLinkResolve:
         concept = _make_concept("SSRF", aliases=["Server-Side Request Forgery"])
         row = _staging_row(concept)
         pg = _FakeStagingPgPool([row])
-        writer = _FakeGraphWriterService({
-            "SSRF": WriteResult(
-                resolve=ResolveResult(MergeAction.RELATED_TO, "CSRF", 0.80, "SSRF"),
-                pg_written=True,
-            )
-        })
+        writer = _FakeGraphWriterService(
+            {
+                "SSRF": WriteResult(
+                    resolve=ResolveResult(MergeAction.RELATED_TO, "CSRF", 0.80, "SSRF"),
+                    pg_written=True,
+                )
+            }
+        )
 
         summary = await run_link_resolve("sess-related", pg, writer)
 
         assert summary["RELATED_TO"] == 1
-        assert pg.state_of(row["id"]) == "APPROVED", "RELATED_TO → staging state APPROVED"
+        assert (
+            pg.state_of(row["id"]) == "APPROVED"
+        ), "RELATED_TO → staging state APPROVED"
         approved_calls = [c for c in pg.execute_calls if "APPROVED" in c[0]]
         assert len(approved_calls) == 1
 
@@ -493,12 +559,14 @@ class TestRunLinkResolve:
         concept = _make_concept("Clickjacking", aliases=["UI Redressing"])
         row = _staging_row(concept)
         pg = _FakeStagingPgPool([row])
-        writer = _FakeGraphWriterService({
-            "Clickjacking": WriteResult(
-                resolve=ResolveResult(MergeAction.NEW, None, 0.40, "Clickjacking"),
-                pg_written=True,
-            )
-        })
+        writer = _FakeGraphWriterService(
+            {
+                "Clickjacking": WriteResult(
+                    resolve=ResolveResult(MergeAction.NEW, None, 0.40, "Clickjacking"),
+                    pg_written=True,
+                )
+            }
+        )
 
         summary = await run_link_resolve("sess-new", pg, writer)
 
@@ -552,10 +620,10 @@ class TestRunLinkResolve:
         Assert: summary == {"MERGE":1, "RELATED_TO":1, "NEW":2}
         """
         specs = [
-            ("CsrfVariant",  MergeAction.MERGE,      "CSRF", 0.92),
-            ("SsrfVariant",  MergeAction.RELATED_TO, "CSRF", 0.80),
-            ("NewConcept1",  MergeAction.NEW,         None,   0.40),
-            ("NewConcept2",  MergeAction.NEW,         None,   0.35),
+            ("CsrfVariant", MergeAction.MERGE, "CSRF", 0.92),
+            ("SsrfVariant", MergeAction.RELATED_TO, "CSRF", 0.80),
+            ("NewConcept1", MergeAction.NEW, None, 0.40),
+            ("NewConcept2", MergeAction.NEW, None, 0.35),
         ]
         rows = [_staging_row(_make_concept(name)) for name, *_ in specs]
         pg = _FakeStagingPgPool(rows)
@@ -571,7 +639,11 @@ class TestRunLinkResolve:
 
         summary = await run_link_resolve("sess-mixed", pg, writer)
 
-        assert summary == {"MERGE": 1, "RELATED_TO": 1, "NEW": 2}, f"집계 불일치: {summary}"
+        assert summary == {
+            "MERGE": 1,
+            "RELATED_TO": 1,
+            "NEW": 2,
+        }, f"집계 불일치: {summary}"
 
     @pytest.mark.anyio
     async def test_R07_summary_keys_are_string_values_of_merge_action(self) -> None:
@@ -584,16 +656,24 @@ class TestRunLinkResolve:
         concept = _make_concept("SomeNewConcept")
         row = _staging_row(concept)
         pg = _FakeStagingPgPool([row])
-        writer = _FakeGraphWriterService({
-            "SomeNewConcept": WriteResult(
-                resolve=ResolveResult(MergeAction.NEW, None, 0.20, "SomeNewConcept"),
-                pg_written=True,
-            )
-        })
+        writer = _FakeGraphWriterService(
+            {
+                "SomeNewConcept": WriteResult(
+                    resolve=ResolveResult(
+                        MergeAction.NEW, None, 0.20, "SomeNewConcept"
+                    ),
+                    pg_written=True,
+                )
+            }
+        )
 
         summary = await run_link_resolve("sess-keys", pg, writer)
 
-        assert set(summary.keys()) == {"MERGE", "RELATED_TO", "NEW"}, (
-            f"summary keys 불일치: {set(summary.keys())}"
-        )
-        assert all(isinstance(v, int) for v in summary.values()), "summary values는 int여야 함"
+        assert set(summary.keys()) == {
+            "MERGE",
+            "RELATED_TO",
+            "NEW",
+        }, f"summary keys 불일치: {set(summary.keys())}"
+        assert all(
+            isinstance(v, int) for v in summary.values()
+        ), "summary values는 int여야 함"

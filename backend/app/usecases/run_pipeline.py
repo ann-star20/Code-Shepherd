@@ -14,6 +14,7 @@
   NEW        (score < 0.72): 완전 독립 신규 개념.
              staging state → DRAFT 유지 (HITL 검토 대상)
 """
+
 from __future__ import annotations
 
 import asyncio
@@ -35,6 +36,7 @@ log = logging.getLogger(__name__)
 
 
 # ── §A: 크롤링·추출·스테이징 ───────────────────────────────────────────────────
+
 
 async def run_pipeline_batch(
     session_id: str,
@@ -68,6 +70,7 @@ async def run_pipeline_batch(
 
 
 # ── §B: 링크 리졸버 패스 ────────────────────────────────────────────────────────
+
 
 async def run_link_resolve(
     session_id: str,
@@ -108,9 +111,7 @@ async def run_link_resolve(
         try:
             write_result = await writer.write(concept)
         except Exception as exc:
-            log.warning(
-                "[resolve] '%s' 처리 실패: %s", concept.concept_name, exc
-            )
+            log.warning("[resolve] '%s' 처리 실패: %s", concept.concept_name, exc)
             continue
 
         action = write_result.resolve.action

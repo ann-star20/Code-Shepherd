@@ -32,14 +32,14 @@ from app.domain.models import ConceptExtractionSchema
 
 SCRIPTS_DIR = Path(__file__).parent
 CYPHER_PATH = SCRIPTS_DIR / "init_db.cypher"
-SEC_JSON    = SCRIPTS_DIR / "seed" / "security" / "security_concepts.json"
-PERF_JSON   = SCRIPTS_DIR / "seed" / "performance" / "performance_concepts.json"
+SEC_JSON = SCRIPTS_DIR / "seed" / "security" / "security_concepts.json"
+PERF_JSON = SCRIPTS_DIR / "seed" / "performance" / "performance_concepts.json"
 
 
 def _driver() -> neo4j.AsyncDriver:
-    uri  = os.getenv("NEO4J_URI",      "bolt://localhost:7688")
-    user = os.getenv("NEO4J_USER",     "neo4j")
-    pw   = os.getenv("NEO4J_PASSWORD", "password")
+    uri = os.getenv("NEO4J_URI", "bolt://localhost:7688")
+    user = os.getenv("NEO4J_USER", "neo4j")
+    pw = os.getenv("NEO4J_PASSWORD", "password")
     return neo4j.AsyncGraphDatabase.driver(uri, auth=(user, pw))
 
 
@@ -52,7 +52,7 @@ async def _seed_batch(
     for raw in data:
         try:
             concept = ConceptExtractionSchema(**raw)
-            master  = await repo.merge_concept(concept)
+            master = await repo.merge_concept(concept)
             print(f"  [OK] {domain_label} → '{master}'")
             merged += 1
         except Exception as exc:

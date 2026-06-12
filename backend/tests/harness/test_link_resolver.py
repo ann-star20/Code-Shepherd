@@ -26,7 +26,8 @@ async def _create_concept(session, name: str, aliases: list[str]) -> None:
         "MERGE (c:Concept {name: $name}) "
         "ON CREATE SET c.aliases=$aliases, c.created_at=timestamp() "
         "ON MATCH SET c.aliases=$aliases",
-        name=name, aliases=aliases,
+        name=name,
+        aliases=aliases,
     )
 
 
@@ -42,13 +43,15 @@ async def _count_same_as(driver, a: str, b: str) -> int:
     async with driver.session() as s:
         result = await s.run(
             "MATCH (a:Concept {name:$a})-[:SAME_AS]-(b:Concept {name:$b}) RETURN count(*) AS n",
-            a=a, b=b,
+            a=a,
+            b=b,
         )
         record = await result.single()
         return record["n"]
 
 
 # ── T_lr_01 ───────────────────────────────────────────────────────────────────
+
 
 @pytest.mark.anyio
 async def test_lr_01_alias_overlap_creates_same_as(async_neo4j_driver):
@@ -74,6 +77,7 @@ async def test_lr_01_alias_overlap_creates_same_as(async_neo4j_driver):
 
 # ── T_lr_02 ───────────────────────────────────────────────────────────────────
 
+
 @pytest.mark.anyio
 async def test_lr_02_no_alias_overlap_no_same_as(async_neo4j_driver):
     """Arrange: XSS와 SQLi — aliases 공유 없음.
@@ -96,6 +100,7 @@ async def test_lr_02_no_alias_overlap_no_same_as(async_neo4j_driver):
 
 
 # ── T_lr_03 ───────────────────────────────────────────────────────────────────
+
 
 @pytest.mark.anyio
 async def test_lr_03_idempotent_same_as(async_neo4j_driver):
@@ -120,6 +125,7 @@ async def test_lr_03_idempotent_same_as(async_neo4j_driver):
 
 
 # ── T_lr_04 ───────────────────────────────────────────────────────────────────
+
 
 @pytest.mark.anyio
 async def test_lr_04_empty_aliases_returns_zero(async_neo4j_driver):

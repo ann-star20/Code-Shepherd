@@ -21,6 +21,7 @@ _CYPHER_PATH = Path(__file__).parents[2] / "scripts" / "init_db.cypher"
 
 # ── 픽스처 ────────────────────────────────────────────────────────────────────
 
+
 @pytest.fixture
 async def neo4j_repo(async_neo4j_driver):
     """스키마 초기화 완료된 Neo4jConceptRepo."""
@@ -30,6 +31,7 @@ async def neo4j_repo(async_neo4j_driver):
 
 
 # ── 헬퍼 ─────────────────────────────────────────────────────────────────────
+
 
 def _uid(base: str) -> str:
     return f"{base}_{uuid.uuid4().hex[:6]}"
@@ -44,25 +46,32 @@ async def _insert_doc(conn, doc_id: str) -> None:
 
 
 async def _insert_approved(conn, session_id: str, doc_id: str, name: str) -> None:
-    cj = json.dumps({
-        "concept_name": name,
-        "domains": ["security"],
-        "severity": "high",
-        "description_ko": "테스트",
-        "aliases": [],
-        "security_mechanism": [],
-        "affected_components": [],
-        "config_properties": [],
-    })
+    cj = json.dumps(
+        {
+            "concept_name": name,
+            "domains": ["security"],
+            "severity": "high",
+            "description_ko": "테스트",
+            "aliases": [],
+            "security_mechanism": [],
+            "affected_components": [],
+            "config_properties": [],
+        }
+    )
     await conn.execute(
         """INSERT INTO staging_concepts
            (session_id, doc_id, concept_json, state, known_domains, unknown_domains)
            VALUES ($1::uuid, $2, $3::jsonb, 'APPROVED', $4, '{}')""",
-        session_id, doc_id, cj, ["security"],
+        session_id,
+        doc_id,
+        cj,
+        ["security"],
     )
 
 
-async def _cleanup_pg(conn, session_id: str, doc_id: str, concept_names: list[str]) -> None:
+async def _cleanup_pg(
+    conn, session_id: str, doc_id: str, concept_names: list[str]
+) -> None:
     await conn.execute(
         "DELETE FROM staging_concepts WHERE session_id = $1::uuid", session_id
     )
@@ -82,6 +91,7 @@ async def _cleanup_neo4j(driver, names: list[str]) -> None:
 
 
 # ── C01: concepts 테이블 INSERT ───────────────────────────────────────────────
+
 
 @pytest.mark.asyncio
 async def test_C01_commit_writes_concepts(asyncpg_pool, async_neo4j_driver, neo4j_repo):
@@ -113,6 +123,7 @@ async def test_C01_commit_writes_concepts(asyncpg_pool, async_neo4j_driver, neo4
 
 # ── C02: staging_concepts → COMMITTED ────────────────────────────────────────
 
+
 @pytest.mark.asyncio
 async def test_C02_commit_state_committed(asyncpg_pool, async_neo4j_driver, neo4j_repo):
     """
@@ -143,8 +154,11 @@ async def test_C02_commit_state_committed(asyncpg_pool, async_neo4j_driver, neo4
 
 # ── C03: Neo4j Concept 노드 생성 확인 ────────────────────────────────────────
 
+
 @pytest.mark.asyncio
-async def test_C03_commit_neo4j_concept_created(asyncpg_pool, async_neo4j_driver, neo4j_repo):
+async def test_C03_commit_neo4j_concept_created(
+    asyncpg_pool, async_neo4j_driver, neo4j_repo
+):
     """
     Arrange: XSS APPROVED staging 1행
     Act:     commit_staging(repo) 호출
@@ -175,8 +189,11 @@ async def test_C03_commit_neo4j_concept_created(asyncpg_pool, async_neo4j_driver
 
 # ── C04: 0행 APPROVED → 반환 0 ───────────────────────────────────────────────
 
+
 @pytest.mark.asyncio
-async def test_C04_commit_zero_returns_zero(asyncpg_pool, async_neo4j_driver, neo4j_repo):
+async def test_C04_commit_zero_returns_zero(
+    asyncpg_pool, async_neo4j_driver, neo4j_repo
+):
     """
     Arrange: staging 0행 APPROVED
     Act:     commit_staging(repo) 호출

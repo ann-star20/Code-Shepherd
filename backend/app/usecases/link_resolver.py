@@ -19,9 +19,7 @@ async def find_same_as_candidates(
     RETURN c.name AS name
     """
     async with driver.session() as session:
-        result = await session.run(
-            cypher, concept_name=concept_name, aliases=aliases
-        )
+        result = await session.run(cypher, concept_name=concept_name, aliases=aliases)
         return [r["name"] async for r in result]
 
 

@@ -20,11 +20,12 @@ import httpx
 
 DEFAULT_URL = "https://docs.djangoproject.com/en/6.0/topics/security/"
 BASE = "http://localhost:8000"
-POLL_INTERVAL = 2   # seconds
+POLL_INTERVAL = 2  # seconds
 
 
 class _Tee:
     """stdout을 터미널과 파일에 동시에 쓴다."""
+
     def __init__(self, file):
         self._terminal = sys.__stdout__
         self._file = file
@@ -36,7 +37,9 @@ class _Tee:
     def flush(self) -> None:
         self._terminal.flush()
         self._file.flush()
-POLL_TIMEOUT  = 6  # seconds
+
+
+POLL_TIMEOUT = 6  # seconds
 
 
 def ok(label: str, data: dict) -> None:
@@ -67,7 +70,9 @@ def step_register(client: httpx.Client, target_url: str) -> str:
     if state == "FAILED":
         print("   ℹ  이전 실행이 실패한 문서입니다. 트리거 API가 재실행합니다.")
     elif state == "COMMITTED":
-        print("   ℹ  이미 COMMITTED된 문서입니다. 트리거하려면 DB에서 state를 PENDING으로 리셋하세요.")
+        print(
+            "   ℹ  이미 COMMITTED된 문서입니다. 트리거하려면 DB에서 state를 PENDING으로 리셋하세요."
+        )
     return doc["doc_id"]
 
 
@@ -77,13 +82,16 @@ def step_prescan(client: httpx.Client, doc_id: str) -> None:
     if resp.status_code != 200:
         fail(f"POST /api/documents/{doc_id}/prescan", resp)
     s = resp.json()
-    ok("Pre-scan 결과", {
-        "framework":  s.get("framework") or "(미확인)",
-        "version":    s.get("version") or "(미확인)",
-        "lang":       s.get("lang") or "(미확인)",
-        "confidence": s.get("infer_confidence"),
-        "status":     s.get("infer_status"),
-    })
+    ok(
+        "Pre-scan 결과",
+        {
+            "framework": s.get("framework") or "(미확인)",
+            "version": s.get("version") or "(미확인)",
+            "lang": s.get("lang") or "(미확인)",
+            "confidence": s.get("infer_confidence"),
+            "status": s.get("infer_status"),
+        },
+    )
     if s.get("infer_status") == "manual_required":
         suggestions = s.get("suggested_frameworks", [])
         print(f"   ⚠  신뢰도 낮음 — 제안 프레임워크: {suggestions[:5]}")
@@ -112,8 +120,8 @@ def step_poll_logs(client: httpx.Client, session_id: str) -> str:
         if resp.status_code != 200:
             fail("GET /api/pipeline/logs", resp)
 
-        data  = resp.json()
-        logs  = data.get("logs", [])
+        data = resp.json()
+        logs = data.get("logs", [])
         state = data.get("doc_state") or "…"
 
         for entry in logs[last_count:]:
@@ -163,7 +171,7 @@ def step_diff(client: httpx.Client, session_id: str) -> None:
     if resp.status_code != 200:
         fail(f"GET /api/staging/{session_id}/diff", resp)
     diff = resp.json()
-    added   = diff.get("added",   [])
+    added = diff.get("added", [])
     changed = diff.get("changed", [])
     removed = diff.get("removed", [])
     print(f"   추가: {len(added)}  변경: {len(changed)}  제거: {len(removed)}")
@@ -175,8 +183,8 @@ def step_diff(client: httpx.Client, session_id: str) -> None:
 
 def main() -> None:
     parser = argparse.ArgumentParser(description="파이프라인 E2E 테스트")
-    parser.add_argument("--url",      default=DEFAULT_URL, help="수집할 문서 URL")
-    parser.add_argument("--base-url", default=BASE,        help="백엔드 주소")
+    parser.add_argument("--url", default=DEFAULT_URL, help="수집할 문서 URL")
+    parser.add_argument("--base-url", default=BASE, help="백엔드 주소")
     args = parser.parse_args()
 
     log_dir = Path(__file__).parent.parent / "logs"
@@ -192,9 +200,9 @@ def main() -> None:
     print(f"    log    : {log_path}")
 
     with httpx.Client(base_url=args.base_url, timeout=15.0) as client:
-        doc_id      = step_register(client, args.url)
+        doc_id = step_register(client, args.url)
         step_prescan(client, doc_id)
-        session_id  = step_trigger(client, doc_id)
+        session_id = step_trigger(client, doc_id)
         final_state = step_poll_logs(client, session_id)
 
         if final_state == "COMMITTED":

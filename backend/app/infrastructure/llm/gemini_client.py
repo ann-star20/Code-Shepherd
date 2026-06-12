@@ -12,7 +12,6 @@ from app.infrastructure.llm.interface import ILLMClient
 logger = logging.getLogger(__name__)
 
 
-
 def _parse_json_safely(raw: str) -> list[dict]:
     """Gemini 응답을 안전하게 파싱한다. PRD D9 스펙.
 
@@ -56,7 +55,9 @@ class LLMParseError(Exception):
 class GeminiClient(ILLMClient):
     """PROD 모드: 실제 Gemini 2.5 Flash + LangSmith @traceable."""
 
-    def __init__(self, api_key: str, model: str = "gemini-2.5-flash", langsmith_project: str = "") -> None:
+    def __init__(
+        self, api_key: str, model: str = "gemini-2.5-flash", langsmith_project: str = ""
+    ) -> None:
         try:
             from google import genai
             from google.genai import types
@@ -129,6 +130,7 @@ class GeminiClient(ILLMClient):
 
 DEFAULT_DOMAINS = ["security", "performance"]
 
+
 def _build_prompt(
     text_chunk: str,
     metadata: dict,
@@ -145,42 +147,36 @@ def _build_prompt(
     domains = allowed_domains if allowed_domains else ["security", "performance"]
     domain_values = ", ".join(f'"{d}"' for d in domains)
 
-    # 주의: JSON 스키마 부분의 중괄호({}) 충돌을 막기 위해, 
+    # 주의: JSON 스키마 부분의 중괄호({}) 충돌을 막기 위해,
     # 변수 바인딩이 필요한 라인에만 f-string(f"...")을 적용하여 안전하게 결합합니다.
     return (
         "당신은 공식 문서 분석가이자 Neo4j 지식 그래프 아키텍트입니다.\n"
         f"아래 문서 청크(대상 환경: {framework}, {lang})를 분석하여 핵심 기술 및 보안 개념을 완벽한 온톨로지 위계에 맞춰 "
         "적재할 수 있는 JSON 배열로만 응답하라. 스키마에 명시되지 않은 필드는 임의로 창작하거나 변형할 수 없다.\n\n"
-
         "## Neo4j 그래프 매핑 — 온톨로지 계층 및 다중 라벨 생성 헌법\n\n"
         "1. [Concept 노드 축]: 'concept_name'이 병합 기준 마스터 키이다. 기술적 이론, 메커니즘의 상위 추상 개념, 취약점 유형 등 '순수 개념' 명칭이어야 한다.\n"
         "   ★ 절대 'NestJS', 'Django', 'Spring' 같은 프레임워크/언어 명칭을 concept_name으로 잡지 말 것. (그것들은 하위 속성이자 격리 기준임)\n"
         "   ★ 올바른 예시: CSRF, XSS, SQLi, RateLimiting, ConnectionPooling, MemoryLeak\n"
         "   → MERGE (c:Concept {name: concept_name})\n"
         f"   → [🎯 물리 다중 라벨 처리]: 제공된 domains 배열({domain_values})의 각 값들을 Capitalize하여 물리 다중 라벨로 동적 누적 처리함.\n"
-        "     예) domains=[\"security\", \"performance\"] ➔ (:Concept:Security:Performance) 형태로 다중 라벨 바인딩.\n\n"
-
+        '     예) domains=["security", "performance"] ➔ (:Concept:Security:Performance) 형태로 다중 라벨 바인딩.\n\n'
         "2. [aliases — 입력단 중복 제거용 영문/국문 동의어 풀]:\n"
         "   → 해당 개념의 영문 Full Name, 영문 파스칼케이스(PascalCase), 한글 번역명, 축약어, 이명(Synonym)을 모두 포함하는 플랫 배열.\n"
-        "     예시: [\"Cross-Site Request Forgery\", \"CrossSiteRequestForgery\", \"사이트간요청위조\", \"CSRF\"]\n\n"
-
+        '     예시: ["Cross-Site Request Forgery", "CrossSiteRequestForgery", "사이트간요청위조", "CSRF"]\n\n'
         "3. [Mechanism 노드 축 — 🎯 다중 언어/프레임워크 격리 가드레일]:\n"
         "   → MERGE (m:Mechanism {name: mechanism_name, lang: lang, framework: framework})\n"
         "   → 릴레이션 가교선: (c)-[:HAS_MECHANISM]->(m)\n"
         "   ★ 중요: 언어와 프레임워크 조합이 다르면 물리적으로 완벽히 '별개의 Mechanism 노드'가 생성되도록 복합 키 문맥을 형성함.\n"
         '   → 명칭은 완전 소문자 스네이크케이스 강제 (예: "requires_csrf_token_decorator", "csurf_middleware")\n\n'
-
         "4. [CodeExample 노드 축 — 메커니즘 하위 위계 종속]:\n"
         "   → MERGE (e:CodeExample {mechanism_id: id(m), lang: lang, framework: framework})\n"
         "   → 릴레이션 가교선: (m)-[:HAS_EXAMPLE]->(e)\n"
         "   ★ 절대 Concept에서 직접 [:HAS_EXAMPLE]로 조인하지 말 것. 반드시 Mechanism 노드를 허브 삼아 가교선을 전개하라.\n"
         "   → 실제 동작 가능한 현실적인 코드(`\\n` 개행 직렬화 포함)와 문맥(description)을 정밀 추출할 것.\n\n"
-
         "5. [기타 서브 레이어 규격]:\n"
         "   → Affected Components: MERGE (x:Component {name: each}) ➔ (c)-[:AFFECTS]->(x) (소문자 스네이크케이스)\n"
         "   → Root Cause: MERGE (r:RootCause {name: root_cause}) ➔ (c)-[:CAUSED_BY]->(r) (소문자 스네이크케이스 단일 문자열)\n"
         "   → Config Properties: MERGE (p:Property {unq_key: key}) SET p.value, p.type ➔ (c)-[:TUNED_BY]->(p)\n\n"
-
         "## 필수 출력 JSON 스키마 명세 (정밀 싱크 강제)\n"
         "※ 문서 내용에 해당하는 정보가 없거나 유추할 수 없는 메타 필드(cwe_id, severity 등)는 누락시키지 말고 반드시 'null' 또는 빈 배열('[]')로 명시하여 구조의 뼈대를 고수하라.\n\n"
         "[\n"
@@ -196,23 +192,23 @@ def _build_prompt(
         '    "root_cause": "원인_스네이크_케이스 (없으면 null)",\n'
         '    "affected_components": ["컴포넌트_스네이크_케이스_배열", 없으면 빈 배열 []],\n'
         '    "mechanism": [\n'
-        '      {\n'
+        "      {\n"
         '        "mechanism_name": "메커니즘_스네이크_케이스",\n'
         '        "code_examples": [\n'
-        '          {\n'
+        "          {\n"
         '            "lang": "소문자 언어명",\n'
         '            "lang_version": "버전 명세 (없으면 null)",\n'
         '            "framework": "프레임워크명",\n'
         '            "framework_version": "버전 명세 (없으면 null)",\n'
         '            "code": "실제 소스코드 본문",\n'
         '            "description": "코드 문맥 및 의미론적 보호 기전 설명"\n'
-        '          }\n'
-        '        ]\n'
-        '      }\n'
-        '    ],\n'
+        "          }\n"
+        "        ]\n"
+        "      }\n"
+        "    ],\n"
         '    "config_properties": [\n'
         '      {"key": "설정키_스네이크_케이스", "value": "값", "type": "security"|"tuning"}\n'
-        '    ] (없으면 빈 배열 [])\n'
+        "    ] (없으면 빈 배열 [])\n"
         "  }\n"
         "]\n\n"
         "출력 가드레일: 마크다운 래핑 기호 ```json ``` 외에 어떤 서두 문구나 부연 설명 텍스트도 노출하지 말 것. 규정되지 않은 'security_mechanism' 등 임의의 키 생성을 엄격히 금지함. 순수한 JSON 데이터 구조만 반환하라.\n\n"

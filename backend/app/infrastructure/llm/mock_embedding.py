@@ -7,6 +7,7 @@ build_process.md §3 사양:
     (예: CrossSiteRequestForgery ↔ CSRF ↔ Cross-Site Request Forgery → 코사인 > 0.85)
   - L2 정규화(Normalization) 수행 → 코사인 유사도 = 내적 연산
 """
+
 from __future__ import annotations
 
 import hashlib

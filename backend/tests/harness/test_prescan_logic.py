@@ -49,7 +49,9 @@ def test_extract_version_none_when_absent():
 
 def test_resolve_version_uses_url_segment_when_present():
     """URL에 버전 세그먼트가 있으면 그대로 사용한다."""
-    v = _resolve_version("https://docs.djangoproject.com/en/6.0/topics/security/", "Django")
+    v = _resolve_version(
+        "https://docs.djangoproject.com/en/6.0/topics/security/", "Django"
+    )
     assert v == "6.0"
 
 

@@ -19,10 +19,13 @@ def _parse_jsonb(val) -> dict:
     """asyncpg는 JSONB를 str로 반환 — dict로 변환."""
     return json.loads(val) if isinstance(val, str) else val
 
+
 def _concept(name: str, domains: list[str]) -> ConceptExtractionSchema:
     return ConceptExtractionSchema(
-        concept_name=name, domains=domains,
-        severity="high", description_ko="설명",
+        concept_name=name,
+        domains=domains,
+        severity="high",
+        description_ko="설명",
     )
 
 
@@ -35,7 +38,9 @@ async def _doc(conn, doc_id: str) -> None:
 
 
 async def _cleanup(conn, session_id: str, doc_id: str) -> None:
-    await conn.execute("DELETE FROM staging_concepts WHERE session_id=$1::uuid", session_id)
+    await conn.execute(
+        "DELETE FROM staging_concepts WHERE session_id=$1::uuid", session_id
+    )
     await conn.execute("DELETE FROM knowledge_document WHERE doc_id=$1", doc_id)
 
 
@@ -74,8 +79,11 @@ async def test_ws_domain_pending(asyncpg_pool):
         await _doc(conn, did)
         try:
             await write_staging_draft(
-                sid, did, [_concept("GDPR", ["compliance"])],
-                conn, {"security", "performance"},
+                sid,
+                did,
+                [_concept("GDPR", ["compliance"])],
+                conn,
+                {"security", "performance"},
             )
             row = await conn.fetchrow(
                 "SELECT state, unknown_domains FROM staging_concepts WHERE session_id=$1::uuid",

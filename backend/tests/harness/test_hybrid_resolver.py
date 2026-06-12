@@ -22,6 +22,7 @@ Mock 데이터 시나리오 매핑 (mock_client.py 창(槍) 3종):
   B — SSRF              → CSRF 시드와 RELATED_TO (0.72 <= score < 0.88 — FakePgPool로 강제)
   C — Clickjacking      → 완전 신규 NEW 노드 (score < 0.72)
 """
+
 from __future__ import annotations
 
 import math
@@ -45,6 +46,7 @@ from app.infrastructure.llm.mock_embedding import MockEmbeddingService, cosine_s
 # ─────────────────────────────────────────────────────────────────────────────
 # 테스트용 인프라 더미 (외부 의존성 없음)
 # ─────────────────────────────────────────────────────────────────────────────
+
 
 class _FakeSession:
     """Neo4j 세션 더미 — 쿼리를 내부 log에 기록만 하고 실제 DB 접근 없음."""
@@ -88,17 +90,24 @@ class _FakePgPool:
 
     async def fetchrow(self, query: str, *args: Any) -> dict | None:
         target = args[0] if args else None
-        return next(
-            (c for c in self._concepts if c["concept_name"] == target), None
-        )
+        return next((c for c in self._concepts if c["concept_name"] == target), None)
 
     async def execute(self, query: str, *args: Any) -> None:
         self.execute_calls.append((query, args))
         # aliases/domains/name_vector 등 인라인 업데이트 시뮬레이션
         if "UPDATE concepts" in query and len(args) >= 11:
             (
-                new_aliases, new_domains, new_vec_str, severity, description_ko,
-                concept_type, cwe_id, owasp_id, root_cause, desc_vec_str, name,
+                new_aliases,
+                new_domains,
+                new_vec_str,
+                severity,
+                description_ko,
+                concept_type,
+                cwe_id,
+                owasp_id,
+                root_cause,
+                desc_vec_str,
+                name,
             ) = args[:11]
             for c in self._concepts:
                 if c["concept_name"] == name:
@@ -159,6 +168,7 @@ def _seed_record(
 # T_hr_U* : 단위 테스트 — 순수 함수 (DB 불필요)
 # ─────────────────────────────────────────────────────────────────────────────
 
+
 class TestHybridScoreFormula:
     """T_hr_U01~U03 : compute_hybrid_score 산술 검증."""
 
@@ -189,7 +199,12 @@ class TestHybridScoreFormula:
 
     def test_U04_weights_sum_to_one(self) -> None:
         """가중치 합 = 1.0 (0.4 + 0.3 + 0.3)."""
-        from app.infrastructure.graph.hybrid_resolver import WEIGHT_DESC, WEIGHT_JW, WEIGHT_NAME
+        from app.infrastructure.graph.hybrid_resolver import (
+            WEIGHT_DESC,
+            WEIGHT_JW,
+            WEIGHT_NAME,
+        )
+
         assert WEIGHT_JW + WEIGHT_NAME + WEIGHT_DESC == pytest.approx(1.0)
 
 
@@ -258,6 +273,7 @@ class TestMockEmbeddingService:
         Assert: 노름 ≈ 1.0 (L2 정규화 확인)
         """
         import math
+
         emb = MockEmbeddingService()
         vec = emb.embed("CSRF Cross-Site Request Forgery")
         norm = math.sqrt(sum(x * x for x in vec))
@@ -273,13 +289,13 @@ class TestMockEmbeddingService:
             "CSRF, Cross-Site Request Forgery, XSRF, Sea Surf, "
             "CrossSiteRequestForgery, CSRFAttack, 크로스 사이트 요청 위조, CSRF Attack"
         )
-        variant_pool = (
-            "CrossSiteRequestForgery, CSRF, Cross-Site Request Forgery, XSRF, CSRF Attack"
-        )
+        variant_pool = "CrossSiteRequestForgery, CSRF, Cross-Site Request Forgery, XSRF, CSRF Attack"
         v1 = emb.embed(csrf_pool)
         v2 = emb.embed(variant_pool)
         sim = cosine_sim(v1, v2)
-        assert sim > 0.80, f"CosineName(CSRF시드, CrossSiteRequestForgery) = {sim:.3f} — 0.80 이상이어야 함"
+        assert (
+            sim > 0.80
+        ), f"CosineName(CSRF시드, CrossSiteRequestForgery) = {sim:.3f} — 0.80 이상이어야 함"
 
     def test_U14_clickjacking_low_cosine_with_csrf(self) -> None:
         """Arrange: CSRF 풀 vs Clickjacking 풀
@@ -287,10 +303,14 @@ class TestMockEmbeddingService:
         Assert: < 0.30 — 공유 토큰 없어 낮은 유사도 (시나리오 C NEW 조건)
         """
         emb = MockEmbeddingService()
-        csrf_v = emb.embed("CSRF, Cross-Site Request Forgery, XSRF, 크로스 사이트 요청 위조")
+        csrf_v = emb.embed(
+            "CSRF, Cross-Site Request Forgery, XSRF, 크로스 사이트 요청 위조"
+        )
         click_v = emb.embed("Clickjacking, UI Redressing, UIRedressing, 클릭재킹")
         sim = cosine_sim(csrf_v, click_v)
-        assert sim < 0.30, f"CosineName(CSRF, Clickjacking) = {sim:.3f} — 0.30 미만이어야 함"
+        assert (
+            sim < 0.30
+        ), f"CosineName(CSRF, Clickjacking) = {sim:.3f} — 0.30 미만이어야 함"
 
 
 class TestParseVec:
@@ -313,6 +333,7 @@ class TestParseVec:
 # T_hr_F* : 가짜 풀 통합 테스트 — 인메모리 DB로 엔진 전 흐름 검증
 # ─────────────────────────────────────────────────────────────────────────────
 
+
 class TestHybridResolveFakePool:
     """시나리오 A/B/C 전체 흐름을 FakePgPool + FakeNeo4jDriver로 검증."""
 
@@ -331,8 +352,12 @@ class TestHybridResolveFakePool:
         aliases에 'CSRF Attack'를 포함하지 않음 → F03 precondition 보장.
         """
         aliases = [
-            "Cross-Site Request Forgery", "XSRF", "Sea Surf",
-            "CrossSiteRequestForgery", "CSRFAttack", "CrossSiteRequestForgeryAttack",
+            "Cross-Site Request Forgery",
+            "XSRF",
+            "Sea Surf",
+            "CrossSiteRequestForgery",
+            "CSRFAttack",
+            "CrossSiteRequestForgeryAttack",
             "크로스 사이트 요청 위조",
         ]
         desc = (
@@ -370,9 +395,9 @@ class TestHybridResolveFakePool:
 
         result = await hybrid_resolve(incoming, pg, neo, emb)
 
-        assert result.action == MergeAction.MERGE, (
-            f"action={result.action}, score={result.score:.4f} — MERGE(>=0.88) 기대"
-        )
+        assert (
+            result.action == MergeAction.MERGE
+        ), f"action={result.action}, score={result.score:.4f} — MERGE(>=0.88) 기대"
         assert result.target == "CSRF"
         assert result.score >= 0.88, f"score={result.score:.4f} — 0.88 이상이어야 함"
 
@@ -410,9 +435,9 @@ class TestHybridResolveFakePool:
 
         # 업데이트된 벡터가 원본과 달라야 함
         updated_vec = _parse_vec(update_calls[0][1][2])  # args[2] = new_name_vec_str
-        assert updated_vec != original_vec, (
-            "name_vector가 원본과 동일 — Centroid Shifting 미발생"
-        )
+        assert (
+            updated_vec != original_vec
+        ), "name_vector가 원본과 동일 — Centroid Shifting 미발생"
 
     # ── T_hr_F03: aliases에 신규 동의어 추가 검증 ────────────────────────────
 
@@ -429,7 +454,9 @@ class TestHybridResolveFakePool:
         """
         emb = MockEmbeddingService()
         seed = self._csrf_seed(emb)
-        assert "CSRF Attack" not in seed["aliases"], "사전 조건: CSRF 시드에 'CSRF Attack' 없어야 함"
+        assert (
+            "CSRF Attack" not in seed["aliases"]
+        ), "사전 조건: CSRF 시드에 'CSRF Attack' 없어야 함"
         pg = _FakePgPool([seed])
         neo = _FakeNeo4jDriver()
 
@@ -441,9 +468,9 @@ class TestHybridResolveFakePool:
         await hybrid_resolve(incoming, pg, neo, emb)
 
         updated_aliases: list[str] = pg._concepts[0]["aliases"]
-        assert "CSRF Attack" in updated_aliases, (
-            f"aliases={updated_aliases} — 'CSRF Attack'가 포함되어야 함"
-        )
+        assert (
+            "CSRF Attack" in updated_aliases
+        ), f"aliases={updated_aliases} — 'CSRF Attack'가 포함되어야 함"
 
     # ── T_hr_F04: MERGE 멱등성 — aliases 중복 없음 ───────────────────────────
 
@@ -471,9 +498,7 @@ class TestHybridResolveFakePool:
 
         aliases: list[str] = pg._concepts[0]["aliases"]
         count = aliases.count("CSRF Attack")
-        assert count == 1, (
-            f"'CSRF Attack' 출현 횟수={count} — 중복 없이 1회여야 함"
-        )
+        assert count == 1, f"'CSRF Attack' 출현 횟수={count} — 중복 없이 1회여야 함"
 
     # ── T_hr_F05: 시나리오 B — RELATED_TO ───────────────────────────────────
 
@@ -514,38 +539,52 @@ class TestHybridResolveFakePool:
         # CSRF seed: name_vector = ssrf_name_vec  → cosine_name = 1.0
         #            desc_vector = 0.36·ssrf_desc + sqrt(1-0.36²)·e_k → cosine_desc = 0.36
         # 최종 score = JW·0.4 + 1.0·0.3 + 0.36·0.3 ≤ 0.808 → 항상 RELATED_TO
-        ssrf_name_text = ", ".join(["SSRF", "Server-Side Request Forgery", "ServerSideRequestForgery", "SSRFAttack"])
+        ssrf_name_text = ", ".join(
+            [
+                "SSRF",
+                "Server-Side Request Forgery",
+                "ServerSideRequestForgery",
+                "SSRFAttack",
+            ]
+        )
         ssrf_desc_text = "서버 사이드 요청 위조(SSRF)는 서버가 공격자가 지정한 내부 또는 외부 리소스로 HTTP 요청을 보내도록 유도하는 취약점."
         ssrf_name_vec = emb.embed(ssrf_name_text)
         ssrf_desc_vec = emb.embed(ssrf_desc_text)
 
         # e_k: ssrf_desc_vec의 영원소 인덱스 방향 단위벡터 (ssrf_desc와 직교)
         k = next(i for i, x in enumerate(ssrf_desc_vec) if abs(x) < 1e-9)
-        orth = math.sqrt(1.0 - 0.36 ** 2)
+        orth = math.sqrt(1.0 - 0.36**2)
         csrf_desc_vec = [
-            0.36 * v + (orth if i == k else 0.0)
-            for i, v in enumerate(ssrf_desc_vec)
+            0.36 * v + (orth if i == k else 0.0) for i, v in enumerate(ssrf_desc_vec)
         ]
 
-        pg = _FakePgPool([{
-            "concept_name": "CSRF",
-            "aliases": ["Cross-Site Request Forgery", "XSRF"],
-            "name_vector": ssrf_name_vec,
-            "desc_vector": csrf_desc_vec,
-        }])
+        pg = _FakePgPool(
+            [
+                {
+                    "concept_name": "CSRF",
+                    "aliases": ["Cross-Site Request Forgery", "XSRF"],
+                    "name_vector": ssrf_name_vec,
+                    "desc_vector": csrf_desc_vec,
+                }
+            ]
+        )
         neo = _FakeNeo4jDriver()
 
         incoming = _make_concept(
             "SSRF",
-            aliases=["Server-Side Request Forgery", "ServerSideRequestForgery", "SSRFAttack"],
+            aliases=[
+                "Server-Side Request Forgery",
+                "ServerSideRequestForgery",
+                "SSRFAttack",
+            ],
             description_ko=ssrf_desc_text,
         )
 
         result = await hybrid_resolve(incoming, pg, neo, emb)
 
-        assert result.action == MergeAction.RELATED_TO, (
-            f"action={result.action}, score={result.score:.4f} — RELATED_TO [0.72, 0.88) 기대"
-        )
+        assert (
+            result.action == MergeAction.RELATED_TO
+        ), f"action={result.action}, score={result.score:.4f} — RELATED_TO [0.72, 0.88) 기대"
         assert result.target == "CSRF"
         related_queries = [q for q, _ in neo.logged_queries if "RELATED_TO" in q]
         assert related_queries, "[:RELATED_TO] MERGE 쿼리가 Neo4j에 전송되어야 함"
@@ -582,13 +621,13 @@ class TestHybridResolveFakePool:
 
         result = await hybrid_resolve(incoming, pg, neo, emb)
 
-        assert result.action == MergeAction.NEW, (
-            f"action={result.action}, score={result.score:.4f} — NEW(<0.72) 기대"
-        )
+        assert (
+            result.action == MergeAction.NEW
+        ), f"action={result.action}, score={result.score:.4f} — NEW(<0.72) 기대"
         assert result.target is None
-        assert result.score < RELATED_THRESHOLD, (
-            f"score={result.score:.4f} — {RELATED_THRESHOLD} 미만이어야 함"
-        )
+        assert (
+            result.score < RELATED_THRESHOLD
+        ), f"score={result.score:.4f} — {RELATED_THRESHOLD} 미만이어야 함"
 
     # ── T_hr_F07: 빈 DB → NEW ────────────────────────────────────────────────
 
@@ -602,9 +641,7 @@ class TestHybridResolveFakePool:
         pg = _FakePgPool([])
         neo = _FakeNeo4jDriver()
 
-        result = await hybrid_resolve(
-            _make_concept("AnyConcept"), pg, neo, emb
-        )
+        result = await hybrid_resolve(_make_concept("AnyConcept"), pg, neo, emb)
 
         assert result.action == MergeAction.NEW
         assert result.score == pytest.approx(0.0)
@@ -613,6 +650,7 @@ class TestHybridResolveFakePool:
 # ─────────────────────────────────────────────────────────────────────────────
 # T_hr_I* : 실제 DB 통합 테스트 — PostgreSQL + Neo4j 필요 (없으면 자동 skip)
 # ─────────────────────────────────────────────────────────────────────────────
+
 
 def _vec_str(vec: list[float]) -> str:
     return "[" + ",".join(f"{x:.8f}" for x in vec) + "]"
@@ -623,15 +661,20 @@ async def _csrf_in_pg(asyncpg_pool):
     """PostgreSQL에 CSRF 시드 레코드를 삽입 후 테스트 종료 시 삭제."""
     emb = MockEmbeddingService()
     aliases = [
-        "Cross-Site Request Forgery", "XSRF", "Sea Surf",
-        "CrossSiteRequestForgery", "CSRFAttack", "크로스 사이트 요청 위조", "CSRF Attack",
+        "Cross-Site Request Forgery",
+        "XSRF",
+        "Sea Surf",
+        "CrossSiteRequestForgery",
+        "CSRFAttack",
+        "크로스 사이트 요청 위조",
+        "CSRF Attack",
     ]
     desc = (
         "크로스 사이트 요청 위조(CSRF)는 인증된 사용자의 브라우저를 통해 "
         "공격자가 원하는 요청을 서버에 강제로 전송하는 공격."
     )
     name_vec = emb.embed(", ".join(["CSRF"] + aliases))
-    desc_vec  = emb.embed(desc)
+    desc_vec = emb.embed(desc)
 
     await asyncpg_pool.execute(
         """
@@ -641,17 +684,21 @@ async def _csrf_in_pg(asyncpg_pool):
         ON CONFLICT (concept_name) DO UPDATE
         SET aliases=$4, name_vector=$5::vector, desc_vector=$6::vector
         """,
-        "CSRF", ["security"], desc, aliases,
-        _vec_str(name_vec), _vec_str(desc_vec),
+        "CSRF",
+        ["security"],
+        desc,
+        aliases,
+        _vec_str(name_vec),
+        _vec_str(desc_vec),
     )
     yield {"concept_name": "CSRF", "aliases": aliases}
-    await asyncpg_pool.execute(
-        "DELETE FROM concepts WHERE concept_name = 'CSRF'"
-    )
+    await asyncpg_pool.execute("DELETE FROM concepts WHERE concept_name = 'CSRF'")
 
 
 @pytest.mark.anyio
-async def test_I01_scenario_A_merge_real_pg(asyncpg_pool, async_neo4j_driver, _csrf_in_pg):
+async def test_I01_scenario_A_merge_real_pg(
+    asyncpg_pool, async_neo4j_driver, _csrf_in_pg
+):
     """T_hr_I01: 실제 PostgreSQL + Neo4j — CrossSiteRequestForgery → CSRF MERGE
 
     Arrange: _csrf_in_pg 픽스처가 CSRF를 PostgreSQL에 삽입
@@ -672,9 +719,9 @@ async def test_I01_scenario_A_merge_real_pg(asyncpg_pool, async_neo4j_driver, _c
 
     result = await hybrid_resolve(incoming, asyncpg_pool, async_neo4j_driver, emb)
 
-    assert result.action == MergeAction.MERGE, (
-        f"action={result.action}, score={result.score:.4f}"
-    )
+    assert (
+        result.action == MergeAction.MERGE
+    ), f"action={result.action}, score={result.score:.4f}"
     assert result.target == "CSRF"
 
     # PostgreSQL aliases 업데이트 검증
@@ -682,13 +729,15 @@ async def test_I01_scenario_A_merge_real_pg(asyncpg_pool, async_neo4j_driver, _c
         "SELECT aliases FROM concepts WHERE concept_name = 'CSRF'"
     )
     assert row is not None, "CSRF 레코드가 PostgreSQL에 존재해야 함"
-    assert "CSRF Attack" in list(row["aliases"]), (
-        f"aliases={row['aliases']} — 'CSRF Attack' 추가되어야 함"
-    )
+    assert "CSRF Attack" in list(
+        row["aliases"]
+    ), f"aliases={row['aliases']} — 'CSRF Attack' 추가되어야 함"
 
 
 @pytest.mark.anyio
-async def test_I02_scenario_C_new_real_pg(asyncpg_pool, async_neo4j_driver, _csrf_in_pg):
+async def test_I02_scenario_C_new_real_pg(
+    asyncpg_pool, async_neo4j_driver, _csrf_in_pg
+):
     """T_hr_I02: 실제 DB — Clickjacking → NEW (CSRF와 무관)
 
     Arrange: _csrf_in_pg 픽스처 (CSRF만 존재)
@@ -704,9 +753,9 @@ async def test_I02_scenario_C_new_real_pg(asyncpg_pool, async_neo4j_driver, _csr
 
     result = await hybrid_resolve(incoming, asyncpg_pool, async_neo4j_driver, emb)
 
-    assert result.action == MergeAction.NEW, (
-        f"action={result.action}, score={result.score:.4f}"
-    )
+    assert (
+        result.action == MergeAction.NEW
+    ), f"action={result.action}, score={result.score:.4f}"
 
 
 @pytest.mark.anyio
@@ -739,6 +788,6 @@ async def test_I03_centroid_shifting_persisted_real_pg(
     )
     after_vec_str = after_row["name_vector"] if after_row else None
 
-    assert after_vec_str != before_vec_str, (
-        "name_vector가 변경되지 않음 — Centroid Shifting이 PostgreSQL에 영속되어야 함"
-    )
+    assert (
+        after_vec_str != before_vec_str
+    ), "name_vector가 변경되지 않음 — Centroid Shifting이 PostgreSQL에 영속되어야 함"

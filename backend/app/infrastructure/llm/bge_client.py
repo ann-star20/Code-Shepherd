@@ -3,6 +3,7 @@
 mock / production 공통 사용. API 호출 없이 로컬 CPU/GPU 추론.
 싱글톤은 factory.py의 _embedding_instance가 관리한다.
 """
+
 from __future__ import annotations
 
 import logging
@@ -45,7 +46,9 @@ class BgeEmbeddingClient:
         """여러 텍스트를 배치로 인코딩. 개별 embed() 반복 대비 빠름."""
         if not texts:
             return []
-        vecs: np.ndarray = self._model.encode(texts, convert_to_numpy=True, batch_size=32)
+        vecs: np.ndarray = self._model.encode(
+            texts, convert_to_numpy=True, batch_size=32
+        )
         norms = np.linalg.norm(vecs, axis=1, keepdims=True)
         norms = np.where(norms > 0, norms, 1.0)
         return (vecs / norms).tolist()

@@ -13,6 +13,7 @@ from app.interfaces.api._deps import get_conn
 
 # ── 테스트 앱 팩토리 ──────────────────────────────────────────────────────────
 
+
 def _make_test_app(conn) -> FastAPI:
     app = FastAPI()
     app.include_router(router)
@@ -22,11 +23,13 @@ def _make_test_app(conn) -> FastAPI:
 
 # ── DB 헬퍼 ───────────────────────────────────────────────────────────────────
 
+
 async def _insert_doc(conn, doc_id: str, state: str) -> None:
     await conn.execute(
         "INSERT INTO knowledge_document (doc_id, source_prefix, original_url, content_hash, state) "
         "VALUES ($1,'EXT','https://example.com/resume-test','bb000000', $2) ON CONFLICT DO NOTHING",
-        doc_id, state,
+        doc_id,
+        state,
     )
 
 
@@ -36,7 +39,11 @@ async def _insert_log(
     await conn.execute(
         "INSERT INTO pipeline_logs (doc_id, session_id, agent, level, message) "
         "VALUES ($1, $2::uuid, $3, $4, $5)",
-        doc_id, session_id, agent, level, message,
+        doc_id,
+        session_id,
+        agent,
+        level,
+        message,
     )
 
 
@@ -44,7 +51,10 @@ async def _insert_staging(conn, doc_id: str, session_id: str, state: str) -> Non
     await conn.execute(
         "INSERT INTO staging_concepts (session_id, doc_id, concept_json, state) "
         "VALUES ($1::uuid, $2, $3::jsonb, $4)",
-        session_id, doc_id, '{"name": "TestConcept"}', state,
+        session_id,
+        doc_id,
+        '{"name": "TestConcept"}',
+        state,
     )
 
 
@@ -59,6 +69,7 @@ async def _cleanup(conn, session_id: str, doc_id: str) -> None:
 
 
 # ── T1: resume_step 2 (Crawler) → crawl_task 재호출 ────────────────────────────
+
 
 @pytest.mark.anyio
 async def test_resume_step2_triggers_crawl_task(asyncpg_pool):
@@ -98,6 +109,7 @@ async def test_resume_step2_triggers_crawl_task(asyncpg_pool):
 
 # ── T2: 비-FAILED 문서 → 409 ────────────────────────────────────────────────────
 
+
 @pytest.mark.anyio
 async def test_resume_requires_failed_state(asyncpg_pool):
     """knowledge_document.state != FAILED → 409."""
@@ -123,6 +135,7 @@ async def test_resume_requires_failed_state(asyncpg_pool):
 
 # ── T3: resume_step 5 + APPROVED 스테이징 없음 → 409 ───────────────────────────
 
+
 @pytest.mark.anyio
 async def test_resume_step5_without_approved_staging(asyncpg_pool):
     """FAILED 문서 + resume_step=5 + APPROVED 스테이징 없음 → 409."""
@@ -131,7 +144,9 @@ async def test_resume_step5_without_approved_staging(asyncpg_pool):
 
     async with asyncpg_pool.acquire() as conn:
         await _insert_doc(conn, doc_id, "FAILED")
-        await _insert_log(conn, doc_id, session_id, "Writer", "ERROR", "그래프 적재 실패")
+        await _insert_log(
+            conn, doc_id, session_id, "Writer", "ERROR", "그래프 적재 실패"
+        )
         try:
             app = _make_test_app(conn)
             async with httpx.AsyncClient(
@@ -148,6 +163,7 @@ async def test_resume_step5_without_approved_staging(asyncpg_pool):
 
 # ── T4: resume_step 5 + APPROVED 스테이징 존재 → write_graph_task 재호출 ───────
 
+
 @pytest.mark.anyio
 async def test_resume_step5_with_approved_staging(asyncpg_pool):
     """FAILED 문서 + resume_step=5 + APPROVED 스테이징 → 200, write_graph_task.delay 호출."""
@@ -156,7 +172,9 @@ async def test_resume_step5_with_approved_staging(asyncpg_pool):
 
     async with asyncpg_pool.acquire() as conn:
         await _insert_doc(conn, doc_id, "FAILED")
-        await _insert_log(conn, doc_id, session_id, "Writer", "ERROR", "그래프 적재 실패")
+        await _insert_log(
+            conn, doc_id, session_id, "Writer", "ERROR", "그래프 적재 실패"
+        )
         await _insert_staging(conn, doc_id, session_id, "APPROVED")
         try:
             app = _make_test_app(conn)
@@ -177,6 +195,7 @@ async def test_resume_step5_with_approved_staging(asyncpg_pool):
 
 # ── T5: 알 수 없는 session_id → 404 ────────────────────────────────────────────
 
+
 @pytest.mark.anyio
 async def test_resume_unknown_session(asyncpg_pool):
     """존재하지 않는 session_id → 404."""
@@ -195,6 +214,7 @@ async def test_resume_unknown_session(asyncpg_pool):
 
 
 # ── T6: 잘못된 resume_step → 400 ───────────────────────────────────────────────
+
 
 @pytest.mark.anyio
 async def test_resume_invalid_step(asyncpg_pool):

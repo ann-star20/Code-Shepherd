@@ -42,7 +42,9 @@ async def test_gw_merge_idempotent(async_neo4j_driver):
         await write_concept_node(_concept(name, ["security"]), async_neo4j_driver)
         await write_concept_node(_concept(name, ["security"]), async_neo4j_driver)
         async with async_neo4j_driver.session() as s:
-            r = await s.run("MATCH (c:Concept {name:$n}) RETURN count(c) AS cnt", n=name)
+            r = await s.run(
+                "MATCH (c:Concept {name:$n}) RETURN count(c) AS cnt", n=name
+            )
             assert (await r.single())["cnt"] == 1
     finally:
         await _cleanup(async_neo4j_driver, name)
@@ -68,15 +70,20 @@ async def test_gw_security_physical_label(async_neo4j_driver):
 async def test_gw_cross_domain_labels(async_neo4j_driver):
     name = _uid("MemoryLeak")
     try:
-        await write_concept_node(_concept(name, ["security", "performance"]), async_neo4j_driver)
+        await write_concept_node(
+            _concept(name, ["security", "performance"]), async_neo4j_driver
+        )
         async with async_neo4j_driver.session() as s:
-            r = await s.run("MATCH (c:Concept {name:$n}) RETURN labels(c) AS lbs", n=name)
+            r = await s.run(
+                "MATCH (c:Concept {name:$n}) RETURN labels(c) AS lbs", n=name
+            )
             labels = set((await r.single())["lbs"])
         assert {"Concept", "security", "performance"}.issubset(labels)
         # 구버전 Tag/TAGGED_WITH 방식 사용 안 함
         async with async_neo4j_driver.session() as s:
             r = await s.run(
-                "MATCH (c:Concept {name:$n})-[:TAGGED_WITH]->() RETURN count(*) AS cnt", n=name
+                "MATCH (c:Concept {name:$n})-[:TAGGED_WITH]->() RETURN count(*) AS cnt",
+                n=name,
             )
             assert (await r.single())["cnt"] == 0
     finally:
@@ -106,7 +113,8 @@ async def test_gw_mitigated_by(async_neo4j_driver):
 async def test_gw_caused_by_affects(async_neo4j_driver):
     name = _uid("SQLi")
     concept = _concept(
-        name, ["security"],
+        name,
+        ["security"],
         root_cause="입력값 미검증",
         affected_components=["DB 레이어", "ORM"],
     )
@@ -136,7 +144,8 @@ async def test_gw_alias_redirect(async_neo4j_driver):
 
     # canonical 노드를 aliases 포함하여 먼저 적재
     canonical_concept = _concept(
-        canonical, ["security"],
+        canonical,
+        ["security"],
         aliases=[alias_name, "XSRF"],
         mechanism=[mech_name],
     )
@@ -145,7 +154,8 @@ async def test_gw_alias_redirect(async_neo4j_driver):
 
         # alias 이름으로 다시 적재 시도 → canonical 노드로 라우팅되어야 함
         alias_concept = _concept(
-            alias_name, ["security"],
+            alias_name,
+            ["security"],
             mechanism=[mech_name],
         )
         await write_concept_node(alias_concept, async_neo4j_driver)
@@ -161,7 +171,8 @@ async def test_gw_alias_redirect(async_neo4j_driver):
             r_mech = await s.run(
                 "MATCH (c:Concept {name:$cn})-[:MITIGATED_BY]->(m:Mechanism {name:$mn}) "
                 "RETURN count(m) AS cnt",
-                cn=canonical, mn=mech_name,
+                cn=canonical,
+                mn=mech_name,
             )
             assert (await r_mech.single())["cnt"] == 1
     finally:
@@ -177,9 +188,27 @@ async def test_gw_code_example_version_dedup(async_neo4j_driver):
     mech = MechanismIn(
         mechanism_name="output_encoding",
         code_examples=[
-            CodeExampleIn(lang="python", framework="Django", lang_version="3.11", framework_version="4.2", code="# v1"),
-            CodeExampleIn(lang="python", framework="Django", lang_version="3.11", framework_version="4.2", code="# duplicate"),
-            CodeExampleIn(lang="python", framework="Django", lang_version="3.11", framework_version="3.2", code="# v2"),
+            CodeExampleIn(
+                lang="python",
+                framework="Django",
+                lang_version="3.11",
+                framework_version="4.2",
+                code="# v1",
+            ),
+            CodeExampleIn(
+                lang="python",
+                framework="Django",
+                lang_version="3.11",
+                framework_version="4.2",
+                code="# duplicate",
+            ),
+            CodeExampleIn(
+                lang="python",
+                framework="Django",
+                lang_version="3.11",
+                framework_version="3.2",
+                code="# v2",
+            ),
         ],
     )
     concept = _concept(name, ["security"], mechanism=[mech])

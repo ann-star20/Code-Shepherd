@@ -5,7 +5,8 @@ from pydantic import ValidationError
 
 from app.domain.models import ConceptExtractionSchema, StagingState
 from app.infrastructure.database.domain_repo import (
-    classify_domains, suggest_similar_domains,
+    classify_domains,
+    suggest_similar_domains,
 )
 
 
@@ -43,10 +44,7 @@ def test_T04_empty_domains_raises():
     # 포괄적인 Exception 대신 정확한 Pydantic ValidationError를 명시
     with pytest.raises(ValidationError):
         ConceptExtractionSchema(
-            concept_name="X", 
-            domains=[], 
-            severity="high", 
-            description_ko="x"
+            concept_name="X", domains=[], severity="high", description_ko="x"
         )
 
 
@@ -66,7 +64,7 @@ def test_T05_domains_normalized_lowercase():
 def test_T06_suggest_similar_domains_sorted():
     registered = {"security", "performance"}
     suggestions = suggest_similar_domains("sec", registered, top_k=2)
-    
+
     assert len(suggestions) == 2
     # 첫 번째 결과가 두 번째 결과보다 유사도가 높거나 같아야 함
     assert suggestions[0]["similarity"] >= suggestions[1]["similarity"]
@@ -82,8 +80,10 @@ def test_T07_domain_pending_state_in_enum():
 # T08: classify_domains — 혼합 (일부 알려진, 일부 미등록)
 def test_T08_mixed_domains_split():
     registered = {"security", "performance"}
-    known, unknown = classify_domains(["security", "compliance", "reliability"], registered)
-    
+    known, unknown = classify_domains(
+        ["security", "compliance", "reliability"], registered
+    )
+
     assert known == ["security"]
     # 순서 보장이 필요 없는 경우 set을 사용하여 검증하는 것이 더 견고함
     assert set(unknown) == {"compliance", "reliability"}

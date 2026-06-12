@@ -13,16 +13,16 @@ from dataclasses import dataclass
 import aiohttp
 from bs4 import BeautifulSoup, Tag
 
-SINGLE_CHUNK_LIMIT = 80_000   # 이하면 전체를 LLM 1회에 처리
-SECTION_MAX_CHARS  = 12_000   # 섹션 하나가 이 크기 초과 시 단락 재분할
-HEADING_TAGS       = {"h1", "h2", "h3"}
+SINGLE_CHUNK_LIMIT = 80_000  # 이하면 전체를 LLM 1회에 처리
+SECTION_MAX_CHARS = 12_000  # 섹션 하나가 이 크기 초과 시 단락 재분할
+HEADING_TAGS = {"h1", "h2", "h3"}
 
 
 @dataclass
 class CrawlResult:
     url: str
-    content: str        # 전체 텍스트 (fallback용)
-    html: str           # 원본 HTML (섹션 분할용)
+    content: str  # 전체 텍스트 (fallback용)
+    html: str  # 원본 HTML (섹션 분할용)
     etag: str | None
     status_code: int
 
@@ -89,7 +89,7 @@ def chunk_by_sections(html: str) -> list[str]:
 def _flush_section(heading: str, parts: list[str], out: list[str]) -> None:
     """섹션 텍스트를 조합하고 크기 초과 시 단락 단위로 재분할한다."""
     prefix = f"## {heading}\n\n" if heading else ""
-    full   = (prefix + "\n".join(parts)).strip()
+    full = (prefix + "\n".join(parts)).strip()
 
     if len(full) <= SECTION_MAX_CHARS:
         out.append(full)
@@ -107,6 +107,7 @@ def _flush_section(heading: str, parts: list[str], out: list[str]) -> None:
 
 
 # ── 하위 호환 (tasks.py의 chunk() 호출 유지) ────────────────────────────────
+
 
 def chunk(content: str, max_chars: int = 3000) -> list[str]:
     """단락 기반 고정 크기 분할 — 하위 호환용. smart_chunk 권장."""

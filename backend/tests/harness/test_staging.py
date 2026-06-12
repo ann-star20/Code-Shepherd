@@ -26,13 +26,15 @@ async def _setup_session(conn, session_id: str, n_concepts: int = 3) -> str:
     )
     for i in range(n_concepts):
         name = f"TestConcept_{i}_{uuid.uuid4().hex[:4]}"
-        cj = json.dumps({
-            "concept_name": name,
-            "domains": ["security"],
-            "severity": "high",
-            "description_ko": "테스트 개념",
-            "aliases": [],
-        })
+        cj = json.dumps(
+            {
+                "concept_name": name,
+                "domains": ["security"],
+                "severity": "high",
+                "description_ko": "테스트 개념",
+                "aliases": [],
+            }
+        )
         await conn.execute(
             """INSERT INTO staging_concepts
                (session_id, doc_id, concept_json, state, known_domains, unknown_domains)

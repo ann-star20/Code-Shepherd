@@ -81,7 +81,9 @@ class Neo4jConceptRepo:
                 except Exception as exc:
                     log.warning("Schema stmt skipped (%.50s…): %s", stmt, exc)
 
-        log.info("[schema] %d statements applied from %s", len(statements), cypher_path.name)
+        log.info(
+            "[schema] %d statements applied from %s", len(statements), cypher_path.name
+        )
 
     # ─── Alias 기반 중복 방지 선처리 ─────────────────────────────────────────
 
@@ -106,7 +108,9 @@ class Neo4jConceptRepo:
     # ─── 핵심 MERGE 오케스트레이션 ───────────────────────────────────────────
 
     async def merge_concept_into(
-        self, concept: ConceptExtractionSchema, master_name: str,
+        self,
+        concept: ConceptExtractionSchema,
+        master_name: str,
     ) -> None:
         """
         이미 결정된 master_name에 ConceptExtractionSchema 전체를 4-레이어 MERGE.
@@ -374,6 +378,7 @@ class Neo4jConceptRepo:
 
 
 # ─── 트랜잭션 함수 ────────────────────────────────────────────────────────────
+
 
 async def _write_concept_tx(
     tx: AsyncManagedTransaction,

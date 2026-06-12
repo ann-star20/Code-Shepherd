@@ -131,4 +131,6 @@ def test_T_chunk_merges_short_tail():
 
     chunks = chunk(content, max_chars=3000)
 
-    assert len(chunks[-1]) >= 500, f"마지막 청크 {len(chunks[-1])}자 < 500자 (병합 실패)"
+    assert (
+        len(chunks[-1]) >= 500
+    ), f"마지막 청크 {len(chunks[-1])}자 < 500자 (병합 실패)"

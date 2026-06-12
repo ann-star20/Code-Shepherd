@@ -53,7 +53,7 @@ def _pg_dsn() -> str:
     port = os.getenv("DB_PORT", "5433")
     name = os.getenv("DB_NAME", "postgres")
     user = os.getenv("DB_USER", "postgres")
-    pw   = os.getenv("DB_PASSWORD", "postgres")
+    pw = os.getenv("DB_PASSWORD", "postgres")
     return f"postgresql://{user}:{pw}@{host}:{port}/{name}"
 
 
@@ -65,8 +65,11 @@ async def main(session_id: str) -> int:
     print(f"\n파이프라인 검증 — session_id: {session_id}\n")
 
     dsn = _pg_dsn()
-    neo4j_uri  = os.getenv("NEO4J_URI", "bolt://127.0.0.1:7688")
-    neo4j_auth = (os.getenv("NEO4J_USER", "neo4j"), os.getenv("NEO4J_PASSWORD", "pass1234!"))
+    neo4j_uri = os.getenv("NEO4J_URI", "bolt://127.0.0.1:7688")
+    neo4j_auth = (
+        os.getenv("NEO4J_USER", "neo4j"),
+        os.getenv("NEO4J_PASSWORD", "pass1234!"),
+    )
 
     pg = await asyncpg.connect(dsn, ssl=False)
     driver = AsyncGraphDatabase.driver(neo4j_uri, auth=neo4j_auth)
@@ -100,7 +103,9 @@ async def main(session_id: str) -> int:
             note = f"committed={committed} (목표 {len(MOCK_NAMES)})"
             if not dist:
                 failures += 1
-            print(f"{_label('PG  state distribution')} {_PASS if dist else _FAIL} ({dist_str or '없음'}) — {note}")
+            print(
+                f"{_label('PG  state distribution')} {_PASS if dist else _FAIL} ({dist_str or '없음'}) — {note}"
+            )
 
         # ── CHECK 3: 6개 컨셉명 PostgreSQL 일치 ──────────────────────────────
         pg_names_rows = await pg.fetch(
@@ -112,7 +117,9 @@ async def main(session_id: str) -> int:
         expected = set(MOCK_NAMES)
         missing = expected - found_names
         if not missing:
-            print(f"{_label('PG  mock concept names')} {_PASS} ({len(found_names)}/{len(MOCK_NAMES)})")
+            print(
+                f"{_label('PG  mock concept names')} {_PASS} ({len(found_names)}/{len(MOCK_NAMES)})"
+            )
         else:
             print(f"{_label('PG  mock concept names')} {_FAIL} 누락: {sorted(missing)}")
             failures += 1
@@ -127,9 +134,13 @@ async def main(session_id: str) -> int:
 
         missing_neo = expected - neo_names
         if not missing_neo:
-            print(f"{_label('Neo4j Concept nodes')} {_PASS} ({len(neo_names)}/{len(MOCK_NAMES)})")
+            print(
+                f"{_label('Neo4j Concept nodes')} {_PASS} ({len(neo_names)}/{len(MOCK_NAMES)})"
+            )
         else:
-            print(f"{_label('Neo4j Concept nodes')} {_FAIL} 누락: {sorted(missing_neo)}")
+            print(
+                f"{_label('Neo4j Concept nodes')} {_FAIL} 누락: {sorted(missing_neo)}"
+            )
             failures += 1
 
         # ── CHECK 5: :Security 물리 라벨 ──────────────────────────────────────
@@ -142,9 +153,13 @@ async def main(session_id: str) -> int:
 
         missing_label = expected - labeled
         if not missing_label:
-            print(f"{_label('Neo4j :Security label')} {_PASS} ({len(labeled)}/{len(MOCK_NAMES)})")
+            print(
+                f"{_label('Neo4j :Security label')} {_PASS} ({len(labeled)}/{len(MOCK_NAMES)})"
+            )
         else:
-            print(f"{_label('Neo4j :Security label')} {_FAIL} 누락: {sorted(missing_label)}")
+            print(
+                f"{_label('Neo4j :Security label')} {_FAIL} 누락: {sorted(missing_label)}"
+            )
             failures += 1
 
     finally:

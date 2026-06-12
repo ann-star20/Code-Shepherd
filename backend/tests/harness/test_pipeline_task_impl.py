@@ -47,8 +47,10 @@ class _ErrorSession:
         class _Err:
             async def __aenter__(self_):
                 raise aiohttp.ClientError("network error")
+
             async def __aexit__(self_, *args):
                 pass
+
         return _Err()
 
     async def __aenter__(self):
@@ -84,7 +86,9 @@ async def _insert_doc(conn, doc_id: str) -> None:
 
 
 async def _cleanup(conn, session_id: str, doc_id: str) -> None:
-    await conn.execute("DELETE FROM staging_concepts WHERE session_id=$1::uuid", session_id)
+    await conn.execute(
+        "DELETE FROM staging_concepts WHERE session_id=$1::uuid", session_id
+    )
     await conn.execute("DELETE FROM knowledge_document WHERE doc_id=$1", doc_id)
 
 

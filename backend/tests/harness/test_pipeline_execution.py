@@ -25,6 +25,7 @@ from app.interfaces.api.prescan import router as prescan_router
 
 # ── 앱 팩토리 ────────────────────────────────────────────────────────────────
 
+
 def _make_app(conn) -> FastAPI:
     app = FastAPI()
     app.include_router(prescan_router)
@@ -35,6 +36,7 @@ def _make_app(conn) -> FastAPI:
 
 # ── DB 헬퍼 ──────────────────────────────────────────────────────────────────
 
+
 async def _insert_doc(conn, doc_id: str, state: str = "PENDING") -> None:
     await conn.execute(
         """INSERT INTO knowledge_document
@@ -43,23 +45,19 @@ async def _insert_doc(conn, doc_id: str, state: str = "PENDING") -> None:
                    'https://docs.djangoproject.com/en/6.0/topics/security/',
                    'aa000000', $2)
            ON CONFLICT DO NOTHING""",
-        doc_id, state,
+        doc_id,
+        state,
     )
 
 
 async def _cleanup(conn, doc_id: str) -> None:
-    await conn.execute(
-        "DELETE FROM pipeline_logs WHERE doc_id = $1", doc_id
-    )
-    await conn.execute(
-        "DELETE FROM staging_concepts WHERE doc_id = $1", doc_id
-    )
-    await conn.execute(
-        "DELETE FROM knowledge_document WHERE doc_id = $1", doc_id
-    )
+    await conn.execute("DELETE FROM pipeline_logs WHERE doc_id = $1", doc_id)
+    await conn.execute("DELETE FROM staging_concepts WHERE doc_id = $1", doc_id)
+    await conn.execute("DELETE FROM knowledge_document WHERE doc_id = $1", doc_id)
 
 
 # ── T_exec_01: prescan이 infer_confidence를 DB에 저장 ────────────────────────
+
 
 @pytest.mark.anyio
 async def test_exec_01_prescan_updates_infer_confidence(asyncpg_pool):
@@ -88,8 +86,12 @@ async def test_exec_01_prescan_updates_infer_confidence(asyncpg_pool):
                 mock_httpx.AsyncClient.return_value.__aenter__ = AsyncMock(
                     return_value=mock_httpx.AsyncClient.return_value
                 )
-                mock_httpx.AsyncClient.return_value.__aexit__ = AsyncMock(return_value=False)
-                mock_httpx.AsyncClient.return_value.get = AsyncMock(return_value=mock_resp)
+                mock_httpx.AsyncClient.return_value.__aexit__ = AsyncMock(
+                    return_value=False
+                )
+                mock_httpx.AsyncClient.return_value.get = AsyncMock(
+                    return_value=mock_resp
+                )
                 mock_httpx.HTTPError = httpx.HTTPError
 
                 async with AsyncClient(
@@ -104,7 +106,8 @@ async def test_exec_01_prescan_updates_infer_confidence(asyncpg_pool):
 
             # DB에 실제로 저장됐는지 확인
             row = await conn.fetchrow(
-                "SELECT infer_confidence FROM knowledge_document WHERE doc_id=$1", doc_id
+                "SELECT infer_confidence FROM knowledge_document WHERE doc_id=$1",
+                doc_id,
             )
             assert row is not None
             assert row["infer_confidence"] is not None
@@ -115,6 +118,7 @@ async def test_exec_01_prescan_updates_infer_confidence(asyncpg_pool):
 
 
 # ── T_exec_02: trigger가 pipeline_logs 행을 올바른 컬럼으로 삽입 ──────────────
+
 
 @pytest.mark.anyio
 async def test_exec_02_trigger_inserts_pipeline_log(asyncpg_pool):
@@ -158,6 +162,7 @@ async def test_exec_02_trigger_inserts_pipeline_log(asyncpg_pool):
 
 # ── T_exec_03: trigger가 knowledge_document.state를 CRAWLING으로 전이 ────────
 
+
 @pytest.mark.anyio
 async def test_exec_03_trigger_transitions_state_to_crawling(asyncpg_pool):
     """trigger 후 knowledge_document.state가 PENDING → CRAWLING으로 전이된다."""
@@ -191,6 +196,7 @@ async def test_exec_03_trigger_transitions_state_to_crawling(asyncpg_pool):
 
 # ── T_exec_04: 로그 폴링이 doc_state를 반환 ──────────────────────────────────
 
+
 @pytest.mark.anyio
 async def test_exec_04_logs_poll_returns_doc_state(asyncpg_pool):
     """GET /api/pipeline/logs/{session_id}가 현재 doc_state를 반환한다."""
@@ -202,7 +208,8 @@ async def test_exec_04_logs_poll_returns_doc_state(asyncpg_pool):
         await conn.execute(
             "INSERT INTO pipeline_logs (doc_id, session_id, agent, level, message) "
             "VALUES ($1, $2::uuid, 'Extractor', 'INFO', '추출 완료')",
-            doc_id, session_id,
+            doc_id,
+            session_id,
         )
 
         try:
@@ -228,6 +235,7 @@ async def test_exec_04_logs_poll_returns_doc_state(asyncpg_pool):
 
 # ── T_exec_05: 전체 시퀀스 — prescan → trigger → poll ────────────────────────
 
+
 @pytest.mark.anyio
 async def test_exec_05_full_pipeline_sequence(asyncpg_pool):
     """prescan → trigger → logs 폴링 전체 시퀀스가 순서대로 동작한다."""
@@ -251,8 +259,12 @@ async def test_exec_05_full_pipeline_sequence(asyncpg_pool):
                 mock_httpx.AsyncClient.return_value.__aenter__ = AsyncMock(
                     return_value=mock_httpx.AsyncClient.return_value
                 )
-                mock_httpx.AsyncClient.return_value.__aexit__ = AsyncMock(return_value=False)
-                mock_httpx.AsyncClient.return_value.get = AsyncMock(return_value=mock_resp)
+                mock_httpx.AsyncClient.return_value.__aexit__ = AsyncMock(
+                    return_value=False
+                )
+                mock_httpx.AsyncClient.return_value.get = AsyncMock(
+                    return_value=mock_resp
+                )
                 mock_httpx.HTTPError = httpx.HTTPError
 
                 async with AsyncClient(
@@ -295,6 +307,7 @@ async def test_exec_05_full_pipeline_sequence(asyncpg_pool):
 
 
 # ── T_exec_06: 이미 CRAWLING인 문서 trigger → 409 ────────────────────────────
+
 
 @pytest.mark.anyio
 async def test_exec_06_trigger_non_pending_returns_409(asyncpg_pool):

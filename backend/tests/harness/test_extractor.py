@@ -40,12 +40,14 @@ class _InvalidMock(ILLMClient):
     """severity='UNKNOWN' → ValidationError 유발."""
 
     async def extract_concepts(self, text_chunk, doc_id, metadata):
-        return [ConceptExtractionSchema(
-            concept_name="Bad",
-            domains=["security"],
-            severity="UNKNOWN",
-            description_ko="invalid",
-        )]
+        return [
+            ConceptExtractionSchema(
+                concept_name="Bad",
+                domains=["security"],
+                severity="UNKNOWN",
+                description_ko="invalid",
+            )
+        ]
 
     def is_tracing_enabled(self):
         return False

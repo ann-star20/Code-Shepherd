@@ -16,12 +16,14 @@ def create_llm_client(app_mode: str = "development", **kwargs) -> ILLMClient:
     """APP_MODE에 따라 MockClient 또는 GeminiClient를 반환한다."""
     if app_mode == "production":
         from app.infrastructure.llm.gemini_client import GeminiClient
+
         return GeminiClient(
             api_key=kwargs["api_key"],
             model=kwargs.get("model", "gemini-2.5-flash"),
             langsmith_project=kwargs.get("langsmith_project", ""),
         )
     from app.infrastructure.llm.mock_client import MockClient
+
     return MockClient()
 
 
@@ -40,5 +42,6 @@ def create_embedding_client(mode: str = "development", **kwargs):
 
     model_name = os.getenv("EMBEDDING_MODEL", "BAAI/bge-m3")
     from app.infrastructure.llm.bge_client import BgeEmbeddingClient
+
     _embedding_instance = BgeEmbeddingClient(model_name)
     return _embedding_instance

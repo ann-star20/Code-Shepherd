@@ -11,6 +11,7 @@ from app.interfaces.api.staging import router, _get_conn
 
 # ── 테스트 앱 팩토리 ──────────────────────────────────────────────────────────
 
+
 def _make_test_app(conn) -> FastAPI:
     app = FastAPI()
     app.include_router(router)
@@ -19,6 +20,7 @@ def _make_test_app(conn) -> FastAPI:
 
 
 # ── DB 헬퍼 ───────────────────────────────────────────────────────────────────
+
 
 async def _insert_doc(conn, doc_id: str) -> None:
     await conn.execute(
@@ -29,13 +31,15 @@ async def _insert_doc(conn, doc_id: str) -> None:
 
 
 def _make_concept_json(name: str) -> str:
-    return json.dumps({
-        "concept_name": name,
-        "domains": ["security"],
-        "severity": "high",
-        "description_ko": "테스트",
-        "aliases": [],
-    })
+    return json.dumps(
+        {
+            "concept_name": name,
+            "domains": ["security"],
+            "severity": "high",
+            "description_ko": "테스트",
+            "aliases": [],
+        }
+    )
 
 
 async def _insert_draft(conn, session_id: str, doc_id: str, name: str) -> None:
@@ -44,7 +48,10 @@ async def _insert_draft(conn, session_id: str, doc_id: str, name: str) -> None:
         """INSERT INTO staging_concepts
            (session_id, doc_id, concept_json, state, known_domains, unknown_domains)
            VALUES ($1::uuid, $2, $3::jsonb, 'DRAFT', $4, '{}')""",
-        session_id, doc_id, cj, ["security"],
+        session_id,
+        doc_id,
+        cj,
+        ["security"],
     )
 
 
@@ -56,6 +63,7 @@ async def _cleanup(conn, session_id: str, doc_id: str) -> None:
 
 
 # ── T_get_staging_list ────────────────────────────────────────────────────────
+
 
 @pytest.mark.anyio
 async def test_get_staging_list(asyncpg_pool):
@@ -81,6 +89,7 @@ async def test_get_staging_list(asyncpg_pool):
 
 
 # ── T_reject_clears_draft ─────────────────────────────────────────────────────
+
 
 @pytest.mark.anyio
 async def test_reject_clears_draft(asyncpg_pool):
@@ -113,6 +122,7 @@ async def test_reject_clears_draft(asyncpg_pool):
 
 # ── T_diff_counts ─────────────────────────────────────────────────────────────
 
+
 @pytest.mark.anyio
 async def test_diff_counts(asyncpg_pool):
     """2 DRAFT + 1 APPROVED → GET /{session_id}/diff → 올바른 카운트."""
@@ -128,7 +138,10 @@ async def test_diff_counts(asyncpg_pool):
             """INSERT INTO staging_concepts
                (session_id, doc_id, concept_json, state, known_domains, unknown_domains)
                VALUES ($1::uuid, $2, $3::jsonb, 'APPROVED', $4, '{}')""",
-            session_id, doc_id, cj, ["security"],
+            session_id,
+            doc_id,
+            cj,
+            ["security"],
         )
         try:
             app = _make_test_app(conn)

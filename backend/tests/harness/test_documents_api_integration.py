@@ -24,7 +24,9 @@ async def db_with_schema():
     """실제 DB에 schema.sql 적용 후 커넥션 풀 반환."""
     from pathlib import Path
 
-    schema_path = Path(__file__).parent.parent.parent / "scripts" / "seed" / "schema.sql"
+    schema_path = (
+        Path(__file__).parent.parent.parent / "scripts" / "seed" / "schema.sql"
+    )
     dsn = _pg_dsn()
 
     conn = await asyncpg.connect(dsn)
@@ -51,7 +53,9 @@ async def test_post_documents_real_db_single_url(db_with_schema):
 
     app.state.pool = db_with_schema
 
-    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as ac:
+    async with AsyncClient(
+        transport=ASGITransport(app=app), base_url="http://test"
+    ) as ac:
         resp = await ac.post(
             "/api/documents",
             json={"urls": ["https://docs.djangoproject.com/en/5.0/topics/security/"]},
@@ -75,7 +79,9 @@ async def test_post_documents_real_db_idempotent(db_with_schema):
     app.state.pool = db_with_schema
     url = "https://owasp.org/www-project-top-ten/"
 
-    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as ac:
+    async with AsyncClient(
+        transport=ASGITransport(app=app), base_url="http://test"
+    ) as ac:
         r1 = await ac.post("/api/documents", json={"urls": [url]})
         r2 = await ac.post("/api/documents", json={"urls": [url]})
 
@@ -96,7 +102,9 @@ async def test_post_documents_real_db_multiple_urls(db_with_schema):
         "https://cheatsheetseries.owasp.org/cheatsheets/CSRF_Prevention_Cheat_Sheet.html",
     ]
 
-    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as ac:
+    async with AsyncClient(
+        transport=ASGITransport(app=app), base_url="http://test"
+    ) as ac:
         resp = await ac.post("/api/documents", json={"urls": urls})
 
     assert resp.status_code == 201

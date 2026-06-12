@@ -10,6 +10,7 @@ PRD §11 Graph Writer Agent:
                [:RELATED_TO] 엣지는 hybrid_resolve._do_related_to 에서 이미 생성
   NEW        → 완전 신규 PG INSERT + Neo4j 4-레이어 MERGE
 """
+
 from __future__ import annotations
 
 import logging
@@ -66,9 +67,7 @@ class GraphWriterService:
         NEW:
           완전 신규 PG INSERT + Neo4j 4-레이어 MERGE.
         """
-        result = await hybrid_resolve(
-            concept, self._pg, self._driver, self._emb
-        )
+        result = await hybrid_resolve(concept, self._pg, self._driver, self._emb)
         pg_written = False
 
         if result.action == MergeAction.MERGE:
@@ -79,7 +78,9 @@ class GraphWriterService:
                 await self._repo.merge_concept_into(concept, result.target)
             log.info(
                 "[gw] MERGE '%s' → '%s' (score=%.4f)",
-                result.incoming_name, result.target, result.score,
+                result.incoming_name,
+                result.target,
+                result.score,
             )
         else:
             await self._upsert_pg(concept)
@@ -87,8 +88,10 @@ class GraphWriterService:
             pg_written = True
             log.info(
                 "[gw] %s '%s' (score=%.4f, target=%s)",
-                result.action.value, result.incoming_name,
-                result.score, result.target,
+                result.action.value,
+                result.incoming_name,
+                result.score,
+                result.target,
             )
 
         return WriteResult(resolve=result, pg_written=pg_written)
@@ -110,8 +113,12 @@ class GraphWriterService:
                 ", ".join([concept.concept_name] + concept.aliases)
             )
             await _do_merge(
-                concept, resolve_result.target, in_name_vec,
-                self._pg, self._driver, self._emb,
+                concept,
+                resolve_result.target,
+                in_name_vec,
+                self._pg,
+                self._driver,
+                self._emb,
             )
             # 4-레이어 전체(domains/labels/mechanisms/code_examples/root_cause/
             # affected_components/properties/doc_id)를 target 노드에 적용.
@@ -119,18 +126,27 @@ class GraphWriterService:
                 await self._repo.merge_concept_into(concept, resolve_result.target)
             log.info(
                 "[gw] MERGE(pre) '%s' → '%s' (score=%.4f)",
-                resolve_result.incoming_name, resolve_result.target, resolve_result.score,
+                resolve_result.incoming_name,
+                resolve_result.target,
+                resolve_result.score,
             )
         else:
             await self._upsert_pg(concept)
             await self._repo.merge_concept(concept)
             pg_written = True
-            if resolve_result.action == MergeAction.RELATED_TO and resolve_result.target:
-                await _do_related_to(concept.concept_name, resolve_result.target, self._driver)
+            if (
+                resolve_result.action == MergeAction.RELATED_TO
+                and resolve_result.target
+            ):
+                await _do_related_to(
+                    concept.concept_name, resolve_result.target, self._driver
+                )
             log.info(
                 "[gw] %s(pre) '%s' (score=%.4f, target=%s)",
-                resolve_result.action.value, resolve_result.incoming_name,
-                resolve_result.score, resolve_result.target,
+                resolve_result.action.value,
+                resolve_result.incoming_name,
+                resolve_result.score,
+                resolve_result.target,
             )
 
         return WriteResult(resolve=resolve_result, pg_written=pg_written)
@@ -145,11 +161,12 @@ class GraphWriterService:
         """
         sev = "low" if concept.severity == "info" else (concept.severity or "medium")
 
-        name_corpus  = ", ".join([concept.concept_name] + concept.aliases)
+        name_corpus = ", ".join([concept.concept_name] + concept.aliases)
         name_vec_str = _vec_to_str(self._emb.embed(name_corpus))
         desc_vec_str = (
             _vec_to_str(self._emb.embed(concept.description_ko))
-            if concept.description_ko else None
+            if concept.description_ko
+            else None
         )
 
         await self._pg.execute(
