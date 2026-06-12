@@ -587,8 +587,8 @@ async def _log_rag_references(
                     text("""
                         INSERT INTO rag_references (doc_id, chunk_id, team_id, queried_at)
                         VALUES (
-                            :doc_id::uuid,
-                            :chunk_id::uuid,
+                            CAST(:doc_id AS uuid),
+                            CAST(:chunk_id AS uuid),
                             :team_id,
                             NOW()
                         )

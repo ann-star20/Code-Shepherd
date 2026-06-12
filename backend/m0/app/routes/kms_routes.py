@@ -1091,7 +1091,7 @@ async def get_doc_stats(
                     MAX(queried_at) AS last_used_at,
                     BOOL_OR(queried_at >= NOW() - INTERVAL '7 days') AS recent_search_reflected
                 FROM rag_references
-                WHERE doc_id = :doc_id::uuid
+                WHERE doc_id = CAST(:doc_id AS uuid)
                   AND team_id = :team_id
             """),
             {"doc_id": doc_id, "team_id": team_id},
