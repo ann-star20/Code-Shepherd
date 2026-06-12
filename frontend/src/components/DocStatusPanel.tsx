@@ -10,14 +10,14 @@ const STATUS_LABEL: Record<string, string> = {
 
 function qualityColor(score: number | null | undefined): string {
   if (score == null) return "#94a3b8";
-  if (score >= 80) return "#22c55e";
-  if (score >= 60) return "#f59e0b";
+  if (score >= 0.8) return "#22c55e";
+  if (score >= 0.6) return "#f59e0b";
   return "#ef4444";
 }
 function qualityLabel(score: number | null | undefined): string {
   if (score == null) return "분석 미완료";
-  if (score >= 80) return "양호";
-  if (score >= 60) return "보통";
+  if (score >= 0.8) return "양호";
+  if (score >= 0.6) return "보통";
   return "낮음";
 }
 
@@ -99,7 +99,7 @@ export function DocStatusPanel({ doc, details, detailLoading, onRefresh }: Props
           flexShrink: 0,
         }}>
           <span style={{ fontSize: 15, fontWeight: 800, color }}>
-            {score != null ? Math.round(score) : "—"}
+            {score != null ? Math.round(score * 100) : "—"}
           </span>
         </div>
         <div>
