@@ -135,6 +135,85 @@ services:
     restart: unless-stopped
     command: uv run uvicorn app.main:app --host 0.0.0.0 --port 8006 --reload
 
+  neo4j_m6:
+    image: neo4j:5-community
+    ports:
+      - "7475:7474"
+      - "7688:7687"
+    environment:
+      NEO4J_AUTH: neo4j/${NEO4J_PASSWORD:-codeshepherd}
+    volumes:
+      - neo4j_m6_data:/data
+    networks:
+      - code-shepherd
+    restart: unless-stopped
+
+  redis:
+    image: redis:7-alpine
+    ports:
+      - "6379:6379"
+    networks:
+      - code-shepherd
+    restart: unless-stopped
+
+  cloud-sql-proxy:
+    image: gcr.io/cloud-sql-connectors/cloud-sql-proxy:2
+    command:
+      - "--address=0.0.0.0"
+      - "--port=5432"
+      - "${CLOUD_SQL_INSTANCE_CONNECTION_NAME}"
+    ports:
+      - "15432:5432"
+    volumes:
+      - ${GOOGLE_ADC_PATH}:/secrets/credentials.json:ro
+    environment:
+      GOOGLE_APPLICATION_CREDENTIALS: /secrets/credentials.json
+    networks:
+      - code-shepherd
+    restart: unless-stopped
+
+  m6:
+    build:
+      context: ./backend
+      dockerfile: m6/Dockerfile
+    ports:
+      - "8007:8007"
+    env_file: .env
+    environment:
+      NEO4J_URI: bolt://neo4j_m6:7687
+      NEO4J_DATABASE: neo4j
+      REDIS_URL: redis://redis:6379/0
+    volumes:
+      - ./backend/_shared:/app/_shared:ro
+      - ./backend/m6:/app/service
+    networks:
+      - code-shepherd
+    depends_on:
+      - neo4j_m6
+      - redis
+    restart: unless-stopped
+    command: uv run uvicorn app.main:app --host 0.0.0.0 --port 8007 --reload
+
+  celery_worker_m6:
+    build:
+      context: ./backend
+      dockerfile: m6/Dockerfile
+    env_file: .env
+    environment:
+      NEO4J_URI: bolt://neo4j_m6:7687
+      NEO4J_DATABASE: neo4j
+      REDIS_URL: redis://redis:6379/0
+    volumes:
+      - ./backend/_shared:/app/_shared:ro
+      - ./backend/m6:/app/service
+    networks:
+      - code-shepherd
+    depends_on:
+      - neo4j_m6
+      - redis
+    restart: unless-stopped
+    command: uv run celery -A celery_app worker --loglevel=info -Q m6_graph
+
   frontend:
     build:
       context: ./frontend
@@ -153,3 +232,4 @@ services:
 
 volumes:
   neo4j_data:
+  neo4j_m6_data:
