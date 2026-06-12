@@ -57,6 +57,31 @@ logger = logging.getLogger(__name__)
 # Harness 래핑 헬퍼
 # ---------------------------------------------------------------------------
 
+async def _overwrite_trace_as_fail(
+    trace_id: str,
+    factory: async_sessionmaker[AsyncSession],
+    error_msg: str,
+) -> None:
+    """stage 함수가 예외 없이 status='failed' dict를 반환한 경우 trace를 소급 수정."""
+    try:
+        async with factory() as session:
+            await session.execute(
+                text("""
+                    UPDATE agent_traces
+                    SET status        = 'fail',
+                        error_message = :error_message
+                    WHERE trace_id = :trace_id
+                """),
+                {"trace_id": trace_id, "error_message": error_msg},
+            )
+            await session.commit()
+    except Exception as e:
+        logger.warning(
+            "agent_traces 소급 실패 기록 오류 (무시)",
+            extra={"trace_id": trace_id, "error": str(e)},
+        )
+
+
 def _wrap_with_harness(
     stage: DocPipelineStage,
     agent_name: str,
@@ -68,17 +93,26 @@ def _wrap_with_harness(
     LangGraph 노드 함수를 AgentHarness로 감싼다.
     타임아웃 및 agent_traces 기록은 harness가 담당한다.
     fn_kwargs에 db_session_factory를 포함하면 fn에도 전달된다 (stage6_store 등).
+
+    stage 함수가 예외 없이 {"status": "failed"} dict를 반환하는 경우(내부 try-except로
+    오류를 흡수한 경우)에도 agent_traces를 소급하여 "fail"로 업데이트한다.
     """
     async def _node(state: DocPipelineState, **_) -> dict:
         trace_id = new_pipeline_trace(stage, UUID(state["doc_id"]))
         try:
+            result: dict = {}
             async with AgentHarness(
                 trace_id=trace_id,
                 agent_name=agent_name,
                 db_session_factory=_factory,
                 doc_id=UUID(state["doc_id"]),
             ) as harness:
-                return await harness.run(fn, state, **fn_kwargs)
+                result = await harness.run(fn, state, **fn_kwargs)
+            # stage가 예외 없이 failed를 반환한 경우 trace를 소급 수정
+            if isinstance(result, dict) and result.get("status") == "failed":
+                error_msg = result.get("error") or f"{agent_name} 실패 (오류 메시지 없음)"
+                await _overwrite_trace_as_fail(trace_id, _factory, error_msg)
+            return result
         except Exception as e:
             logger.error(
                 f"{agent_name} 실패",
