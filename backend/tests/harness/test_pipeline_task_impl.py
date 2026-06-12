@@ -5,7 +5,6 @@ from unittest.mock import patch
 
 import aiohttp
 import pytest
-
 from app.domain.models import ConceptExtractionSchema
 from app.infrastructure.llm.interface import ILLMClient
 from app.usecases.interfaces.pipeline_task import PipelineTask
@@ -78,7 +77,7 @@ class _MockLLM(ILLMClient):
 
 async def _insert_doc(conn, doc_id: str) -> None:
     await conn.execute(
-        "INSERT INTO knowledge_document (doc_id, source_prefix, original_url, content_hash) "
+        "INSERT INTO knowledge_documents (doc_id, source_prefix, original_url, content_hash) "
         "VALUES ($1,'EXT','https://example.com/pipeline-impl-test','abcd1234') "
         "ON CONFLICT DO NOTHING",
         doc_id,
@@ -89,7 +88,7 @@ async def _cleanup(conn, session_id: str, doc_id: str) -> None:
     await conn.execute(
         "DELETE FROM staging_concepts WHERE session_id=$1::uuid", session_id
     )
-    await conn.execute("DELETE FROM knowledge_document WHERE doc_id=$1", doc_id)
+    await conn.execute("DELETE FROM knowledge_documents WHERE doc_id=$1", doc_id)
 
 
 def test_impl_protocol():

@@ -59,7 +59,7 @@ def _log(conn, doc_id: str, session_id: str, agent: str, level: str, message: st
 def _set_state(conn, doc_id: str, state: str):
     with conn.cursor() as cur:
         cur.execute(
-            "UPDATE knowledge_document SET state=%s, updated_at=now() WHERE doc_id=%s",
+            "UPDATE knowledge_documents SET state=%s, updated_at=now() WHERE doc_id=%s",
             (state, doc_id),
         )
     conn.commit()
@@ -70,12 +70,12 @@ def _set_state(conn, doc_id: str, state: str):
 
 @celery_app.task(name="pipeline.crawler", bind=True, max_retries=3)
 def crawl_task(self, session_id: str, doc_id: str):
-    """knowledge_document.original_url 조회 → HTTP 크롤링 → 텍스트 청크 분리."""
+    """knowledge_documents.original_url 조회 → HTTP 크롤링 → 텍스트 청크 분리."""
     conn = _pg_conn()
     try:
         with conn.cursor() as cur:
             cur.execute(
-                "SELECT state, original_url FROM knowledge_document WHERE doc_id=%s",
+                "SELECT state, original_url FROM knowledge_documents WHERE doc_id=%s",
                 (doc_id,),
             )
             row = cur.fetchone()
@@ -96,7 +96,7 @@ def crawl_task(self, session_id: str, doc_id: str):
                 conn.commit()
                 _set_state(conn, doc_id, "PENDING")
         if not row:
-            raise ValueError(f"doc_id '{doc_id}' not found in knowledge_document")
+            raise ValueError(f"doc_id '{doc_id}' not found in knowledge_documents")
         url = row[1]
 
         _log(conn, doc_id, session_id, "Crawler", "INFO", f"크롤링 시작: {url}")
@@ -122,6 +122,7 @@ def crawl_task(self, session_id: str, doc_id: str):
 
 async def _do_crawl(url: str) -> tuple:
     import aiohttp
+
     from app.infrastructure.crawler import http_crawler
 
     async with aiohttp.ClientSession() as session:
@@ -225,13 +226,13 @@ async def _save_infer_scores(
 
 
 async def _do_extract(session_id: str, doc_id: str, chunks: list[str]) -> int:
-    from app.infrastructure.llm.factory import (
-        create_llm_client,
-        create_embedding_client,
-    )
     from app.infrastructure.database.domain_repo import get_registered_domains
-    from app.usecases.write_staging_draft import write_staging_draft
     from app.infrastructure.graph.hybrid_resolver import compute_resolve_score
+    from app.infrastructure.llm.factory import (
+        create_embedding_client,
+        create_llm_client,
+    )
+    from app.usecases.write_staging_draft import write_staging_draft
 
     # USE_REAL_LLM=true → GeminiClient, false(기본) → MockClient (llm_response.json)
     llm_mode = "production" if _USE_REAL_LLM else "development"
@@ -258,7 +259,7 @@ async def _do_extract(session_id: str, doc_id: str, chunks: list[str]) -> int:
         async with pool.acquire() as db_conn:
             registered = await get_registered_domains(db_conn)
             doc_meta_row = await db_conn.fetchrow(
-                "SELECT framework, lang FROM knowledge_document WHERE doc_id=$1", doc_id
+                "SELECT framework, lang FROM knowledge_documents WHERE doc_id=$1", doc_id
             )
             metadata = {
                 "framework": (doc_meta_row["framework"] if doc_meta_row else None)
@@ -350,10 +351,11 @@ async def _do_write_graph(session_id: str) -> dict[str, int]:
     Returns: {"MERGE": n, "RELATED_TO": n, "NEW": n}
     """
     from neo4j import AsyncGraphDatabase
-    from app.domain.models import ConceptExtractionSchema
-    from app.infrastructure.graph.neo4j_service import GraphWriterService
+
     from app.adapters.db.neo4j_repo import Neo4jConceptRepo
+    from app.domain.models import ConceptExtractionSchema
     from app.infrastructure.graph.hybrid_resolver import MergeAction, ResolveResult
+    from app.infrastructure.graph.neo4j_service import GraphWriterService
     from app.infrastructure.llm.factory import create_embedding_client
 
     # USE_REAL_EMBEDDING=true → GeminiEmbeddingService, false(기본) → MockEmbeddingService

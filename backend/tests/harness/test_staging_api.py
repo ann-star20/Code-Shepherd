@@ -2,12 +2,11 @@
 
 import json
 import uuid
-import pytest
+
 import httpx
+import pytest
+from app.interfaces.api.staging import _get_conn, router
 from fastapi import FastAPI
-
-from app.interfaces.api.staging import router, _get_conn
-
 
 # ── 테스트 앱 팩토리 ──────────────────────────────────────────────────────────
 
@@ -24,7 +23,7 @@ def _make_test_app(conn) -> FastAPI:
 
 async def _insert_doc(conn, doc_id: str) -> None:
     await conn.execute(
-        "INSERT INTO knowledge_document (doc_id, source_prefix, original_url, content_hash) "
+        "INSERT INTO knowledge_documents (doc_id, source_prefix, original_url, content_hash) "
         "VALUES ($1,'EXT','https://example.com/staging-api-test','abcd1234') ON CONFLICT DO NOTHING",
         doc_id,
     )
@@ -59,7 +58,7 @@ async def _cleanup(conn, session_id: str, doc_id: str) -> None:
     await conn.execute(
         "DELETE FROM staging_concepts WHERE session_id = $1::uuid", session_id
     )
-    await conn.execute("DELETE FROM knowledge_document WHERE doc_id = $1", doc_id)
+    await conn.execute("DELETE FROM knowledge_documents WHERE doc_id = $1", doc_id)
 
 
 # ── T_get_staging_list ────────────────────────────────────────────────────────

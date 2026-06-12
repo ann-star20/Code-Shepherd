@@ -1,14 +1,15 @@
 """통합 테스트 — POST /api/documents (실제 DB 연결).
 
 TDD RED→GREEN:
-  RED  : knowledge_document 테이블 미존재 → 500 또는 DB 오류
+  RED  : knowledge_documents 테이블 미존재 → 500 또는 DB 오류
   GREEN: 스키마 적용 후 → 201 + PENDING 반환
 """
 
 import os
-import pytest
+
 import asyncpg
-from httpx import AsyncClient, ASGITransport
+import pytest
+from httpx import ASGITransport, AsyncClient
 
 
 def _pg_dsn() -> str:
@@ -48,7 +49,7 @@ async def db_with_schema():
 
 @pytest.mark.anyio
 async def test_post_documents_real_db_single_url(db_with_schema):
-    """실제 DB에 knowledge_document 테이블이 존재할 때 POST /api/documents → 201."""
+    """실제 DB에 knowledge_documents 테이블이 존재할 때 POST /api/documents → 201."""
     from app.main import app
 
     app.state.pool = db_with_schema

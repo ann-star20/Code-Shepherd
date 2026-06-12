@@ -12,7 +12,6 @@ import uuid
 from pathlib import Path
 
 import pytest
-
 from app.adapters.db.neo4j_repo import Neo4jConceptRepo
 from app.usecases.commit_staging import commit_staging
 
@@ -39,7 +38,7 @@ def _uid(base: str) -> str:
 
 async def _insert_doc(conn, doc_id: str) -> None:
     await conn.execute(
-        "INSERT INTO knowledge_document (doc_id, source_prefix, original_url, content_hash) "
+        "INSERT INTO knowledge_documents (doc_id, source_prefix, original_url, content_hash) "
         "VALUES ($1,'EXT','https://example.com/commit-test','abcd1234') ON CONFLICT DO NOTHING",
         doc_id,
     )
@@ -79,7 +78,7 @@ async def _cleanup_pg(
         await conn.execute(
             "DELETE FROM concepts WHERE concept_name = ANY($1)", concept_names
         )
-    await conn.execute("DELETE FROM knowledge_document WHERE doc_id = $1", doc_id)
+    await conn.execute("DELETE FROM knowledge_documents WHERE doc_id = $1", doc_id)
 
 
 async def _cleanup_neo4j(driver, names: list[str]) -> None:

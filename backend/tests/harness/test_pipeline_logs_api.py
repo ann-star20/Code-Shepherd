@@ -1,13 +1,12 @@
 """A2-T1: GET /api/pipeline/logs/{session_id} 통합 테스트."""
 
 import uuid
-import pytest
+
 import httpx
-from fastapi import FastAPI
-
-from app.interfaces.api.pipeline import router
+import pytest
 from app.interfaces.api._deps import get_conn
-
+from app.interfaces.api.pipeline import router
+from fastapi import FastAPI
 
 # ── 테스트 앱 팩토리 ──────────────────────────────────────────────────────────
 
@@ -24,7 +23,7 @@ def _make_test_app(conn) -> FastAPI:
 
 async def _insert_doc(conn, doc_id: str, state: str = "CRAWLING") -> None:
     await conn.execute(
-        "INSERT INTO knowledge_document (doc_id, source_prefix, original_url, content_hash, state) "
+        "INSERT INTO knowledge_documents (doc_id, source_prefix, original_url, content_hash, state) "
         "VALUES ($1,'EXT','https://example.com/log-test','aa000000', $2) ON CONFLICT DO NOTHING",
         doc_id,
         state,
@@ -49,7 +48,7 @@ async def _cleanup(conn, session_id: str, doc_id: str) -> None:
     await conn.execute(
         "DELETE FROM pipeline_logs WHERE session_id = $1::uuid", session_id
     )
-    await conn.execute("DELETE FROM knowledge_document WHERE doc_id = $1", doc_id)
+    await conn.execute("DELETE FROM knowledge_documents WHERE doc_id = $1", doc_id)
 
 
 # ── T1: 로그 행 반환 ──────────────────────────────────────────────────────────
@@ -85,7 +84,7 @@ async def test_logs_returns_rows(asyncpg_pool):
 
 @pytest.mark.anyio
 async def test_logs_includes_doc_state(asyncpg_pool):
-    """knowledge_document.state = EXTRACTED → response.doc_state == EXTRACTED."""
+    """knowledge_documents.state = EXTRACTED → response.doc_state == EXTRACTED."""
     session_id = str(uuid.uuid4())
     doc_id = f"EXT_log_{uuid.uuid4().hex[:8]}"
 

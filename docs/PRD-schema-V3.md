@@ -65,7 +65,7 @@ Link Resolver 엔진의 유사도 분석 투명성을 극대화하기 위해 Pos
 CREATE TABLE IF NOT EXISTS concepts (
   id             UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   concept_name   TEXT NOT NULL UNIQUE, -- 영문 표준 파스칼케이스 수렴 축
-  doc_id         TEXT REFERENCES knowledge_document(doc_id) ON DELETE SET NULL,
+  doc_id         TEXT REFERENCES knowledge_documents(doc_id) ON DELETE SET NULL,
   domains        TEXT[] NOT NULL,      -- 물리 멀티 라벨 동치 데이터
   concept_type   TEXT,                 -- 대칭 유형 식별자
   cwe_id         TEXT,
@@ -93,7 +93,7 @@ Link Resolver의 유사도 가중치 판정 근거를 투명하게 박제하여 
 CREATE TABLE IF NOT EXISTS staging_concepts (
   id               UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   session_id       UUID NOT NULL,
-  doc_id           TEXT REFERENCES knowledge_document(doc_id) ON DELETE CASCADE,
+  doc_id           TEXT REFERENCES knowledge_documents(doc_id) ON DELETE CASCADE,
   concept_json     JSONB NOT NULL,     -- Gemini 가 배출한 규격 JSON 본문
   state            TEXT NOT NULL DEFAULT 'DRAFT', -- DRAFT | DOMAIN_PENDING | COMMITTED
   known_domains    TEXT[] DEFAULT '{}',

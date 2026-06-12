@@ -102,7 +102,7 @@ async def check_duplicate_document(
     is_duplicate = False
     if etag:
         row = await conn.fetchrow(
-            "SELECT 1 FROM knowledge_document WHERE doc_id = $1 AND etag = $2 AND state = 'COMMITTED'",
+            "SELECT 1 FROM knowledge_documents WHERE doc_id = $1 AND etag = $2 AND state = 'COMMITTED'",
             doc_id,
             etag,
         )
@@ -137,7 +137,7 @@ async def submit_documents(
         content_hash = _content_hash(url)
 
         existing = await conn.fetchrow(
-            "SELECT state FROM knowledge_document WHERE doc_id = $1",
+            "SELECT state FROM knowledge_documents WHERE doc_id = $1",
             doc_id,
         )
 
@@ -154,7 +154,7 @@ async def submit_documents(
                         "DELETE FROM pipeline_logs WHERE doc_id = $1", doc_id
                     )
                     await conn.execute(
-                        """UPDATE knowledge_document
+                        """UPDATE knowledge_documents
                               SET state = 'PENDING', content_hash = $2, updated_at = now()
                             WHERE doc_id = $1""",
                         doc_id,
@@ -166,7 +166,7 @@ async def submit_documents(
             else:
                 # 알 수 없는 상태: PENDING 으로 리셋
                 await conn.execute(
-                    """UPDATE knowledge_document
+                    """UPDATE knowledge_documents
                           SET state = 'PENDING', content_hash = $2, updated_at = now()
                         WHERE doc_id = $1""",
                     doc_id,
@@ -174,7 +174,7 @@ async def submit_documents(
                 )
         else:
             await conn.execute(
-                """INSERT INTO knowledge_document (doc_id, source_prefix, original_url, content_hash, state)
+                """INSERT INTO knowledge_documents (doc_id, source_prefix, original_url, content_hash, state)
                    VALUES ($1, 'EXT', $2, $3, 'PENDING')
                    ON CONFLICT (doc_id) DO NOTHING""",
                 doc_id,
@@ -183,7 +183,7 @@ async def submit_documents(
             )
 
         row = await conn.fetchrow(
-            "SELECT doc_id, state, original_url FROM knowledge_document WHERE doc_id = $1",
+            "SELECT doc_id, state, original_url FROM knowledge_documents WHERE doc_id = $1",
             doc_id,
         )
         results.append(

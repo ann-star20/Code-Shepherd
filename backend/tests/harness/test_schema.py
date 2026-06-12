@@ -1,16 +1,17 @@
 """P1-T1 통합 테스트 — PostgreSQL DDL v2 (PRD-schema.md §15.2).
 
-T01: knowledge_document 테이블 — state CHECK 제약 및 UPSERT 멱등성
+T01: knowledge_documents 테이블 — state CHECK 제약 및 UPSERT 멱등성
 T02: staging_concepts 테이블 — concept_json JSONB, state CHECK 제약
 T03: concepts 테이블 — concept_name UNIQUE, domain/severity CHECK 제약
 T04: pipeline_logs 테이블 — level CHECK 제약
 T05: concept_snapshots 테이블 — raw_output_json JSONB 적재
 """
 
-import uuid
 import json
-import pytest
+import uuid
+
 import psycopg2
+import pytest
 
 
 def _apply_schema(cursor):
@@ -27,7 +28,7 @@ def _apply_schema(cursor):
     cursor.execute(sql)
 
 
-# ── T01: knowledge_document ─────────────────────────────────────────────────────────
+# ── T01: knowledge_documents ─────────────────────────────────────────────────────────
 
 
 def test_T01_knowledge_document_upsert_idempotent(pg_cursor):
@@ -39,7 +40,7 @@ def test_T01_knowledge_document_upsert_idempotent(pg_cursor):
 
     doc_id = f"EXT_test-upsert_{uuid.uuid4().hex[:8]}"
     upsert = """
-        INSERT INTO knowledge_document (doc_id, source_prefix, original_url, content_hash, updated_at)
+        INSERT INTO knowledge_documents (doc_id, source_prefix, original_url, content_hash, updated_at)
         VALUES (%s, 'EXT', 'https://example.com', 'deadbeef', now())
         ON CONFLICT (doc_id) DO UPDATE
           SET updated_at = now()
@@ -53,7 +54,7 @@ def test_T01_knowledge_document_upsert_idempotent(pg_cursor):
     t2 = pg_cursor.fetchone()[0]
 
     pg_cursor.execute(
-        "SELECT COUNT(*) FROM knowledge_document WHERE doc_id=%s", (doc_id,)
+        "SELECT COUNT(*) FROM knowledge_documents WHERE doc_id=%s", (doc_id,)
     )
     assert pg_cursor.fetchone()[0] == 1, "UPSERT 후 행이 1개여야 함"
     assert t2 >= t1, "2회차 updated_at이 1회차보다 이전일 수 없음"
@@ -69,7 +70,7 @@ def test_T01_knowledge_document_state_check(pg_cursor):
     doc_id = f"EXT_invalid-state_{uuid.uuid4().hex[:8]}"
     with pytest.raises(psycopg2.errors.CheckViolation):
         pg_cursor.execute(
-            """INSERT INTO knowledge_document
+            """INSERT INTO knowledge_documents
                (doc_id, source_prefix, original_url, content_hash, state)
                VALUES (%s, 'EXT', 'https://x.com', 'abcd1234', 'INVALID')""",
             (doc_id,),
@@ -78,18 +79,18 @@ def test_T01_knowledge_document_state_check(pg_cursor):
 
 def test_T01_knowledge_document_infer_confidence_default(pg_cursor):
     """Arrange: infer_confidence 미지정.
-    Act: INSERT knowledge_document.
+    Act: INSERT knowledge_documents.
     Assert: infer_confidence = 0 (DEFAULT).
     """
     _apply_schema(pg_cursor)
 
     doc_id = f"EXT_conf-default_{uuid.uuid4().hex[:8]}"
     pg_cursor.execute(
-        "INSERT INTO knowledge_document (doc_id, source_prefix, original_url, content_hash) VALUES (%s,'EXT','https://x.com','ab12ef34')",
+        "INSERT INTO knowledge_documents (doc_id, source_prefix, original_url, content_hash) VALUES (%s,'EXT','https://x.com','ab12ef34')",
         (doc_id,),
     )
     pg_cursor.execute(
-        "SELECT infer_confidence FROM knowledge_document WHERE doc_id=%s", (doc_id,)
+        "SELECT infer_confidence FROM knowledge_documents WHERE doc_id=%s", (doc_id,)
     )
     assert pg_cursor.fetchone()[0] == 0.0
 
@@ -99,7 +100,7 @@ def test_T01_knowledge_document_infer_confidence_default(pg_cursor):
 
 def _insert_doc(cursor, doc_id="EXT_seed_0000abcd"):
     cursor.execute(
-        "INSERT INTO knowledge_document (doc_id, source_prefix, original_url, content_hash) "
+        "INSERT INTO knowledge_documents (doc_id, source_prefix, original_url, content_hash) "
         "VALUES (%s,'EXT','https://docs.example.com','0000abcd') ON CONFLICT DO NOTHING",
         (doc_id,),
     )
@@ -107,7 +108,7 @@ def _insert_doc(cursor, doc_id="EXT_seed_0000abcd"):
 
 
 def test_T02_staging_concept_json_stored(pg_cursor):
-    """Arrange: knowledge_document 선행 삽입 후 concept_json 준비.
+    """Arrange: knowledge_documents 선행 삽입 후 concept_json 준비.
     Act: staging_concepts INSERT.
     Assert: concept_json JSONB 필드 완전 복원.
     """

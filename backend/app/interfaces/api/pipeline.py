@@ -66,7 +66,7 @@ async def _event_stream(
     """파이프라인 로그 + 상태 변이를 SSE로 푸시하는 비동기 제너레이터.
 
     - pipeline_logs: 신규 행마다 event: log 발행
-    - knowledge_document.state: 변이 감지 시 event: step_update 발행
+    - knowledge_documents.state: 변이 감지 시 event: step_update 발행
     - COMMITTED/FAILED 상태 도달 시 스트림 종료
     """
     last_ts: Optional[object] = None
@@ -105,7 +105,7 @@ async def _event_stream(
 
             # ── 문서 상태 변이 감지 ────────────────────────────────────────
             doc_row = await conn.fetchrow(
-                "SELECT state FROM knowledge_document WHERE doc_id = "
+                "SELECT state FROM knowledge_documents WHERE doc_id = "
                 "(SELECT doc_id FROM pipeline_logs WHERE session_id=$1::uuid LIMIT 1)",
                 session_id,
             )
@@ -161,7 +161,7 @@ async def _event_stream(
 async def stream_pipeline(session_id: str, request: Request):
     """SSE 실시간 파이프라인 로그 스트림.
 
-    Celery 워커가 pipeline_logs에 적재하거나 knowledge_document.state가 변이할 때마다
+    Celery 워커가 pipeline_logs에 적재하거나 knowledge_documents.state가 변이할 때마다
     이벤트를 푸시한다. COMMITTED/FAILED 도달 시 스트림 자동 종료.
     """
     pool = request.app.state.pool
@@ -199,7 +199,7 @@ async def trigger_pipeline(
 ):
     """PENDING 문서에 대해 파이프라인을 트리거하고 Celery 큐에 태스크를 적재."""
     row = await conn.fetchrow(
-        "SELECT doc_id, state, original_url FROM knowledge_document WHERE doc_id = $1",
+        "SELECT doc_id, state, original_url FROM knowledge_documents WHERE doc_id = $1",
         body.doc_id,
     )
     if row is None:
@@ -222,7 +222,7 @@ async def trigger_pipeline(
         session_id,
     )
     await conn.execute(
-        "UPDATE knowledge_document SET state='CRAWLING', updated_at=now() WHERE doc_id=$1",
+        "UPDATE knowledge_documents SET state='CRAWLING', updated_at=now() WHERE doc_id=$1",
         body.doc_id,
     )
 
@@ -271,7 +271,7 @@ async def resume_pipeline(
     doc_id = doc_row["doc_id"]
 
     state_row = await conn.fetchrow(
-        "SELECT state FROM knowledge_document WHERE doc_id=$1", doc_id
+        "SELECT state FROM knowledge_documents WHERE doc_id=$1", doc_id
     )
     if state_row is None or state_row["state"] != "FAILED":
         current = state_row["state"] if state_row else "unknown"
@@ -311,10 +311,10 @@ async def resume_pipeline(
 
         crawl_task.delay(session_id=session_id, doc_id=doc_id)
     else:
-        # write_graph_task는 완료/실패 시까지 knowledge_document.state를 변경하지 않으므로,
+        # write_graph_task는 완료/실패 시까지 knowledge_documents.state를 변경하지 않으므로,
         # SSE 재연결 시 잔류 FAILED 상태로 즉시 종료되지 않도록 EXTRACTED로 되돌린다.
         await conn.execute(
-            "UPDATE knowledge_document SET state='EXTRACTED', updated_at=now() WHERE doc_id=$1",
+            "UPDATE knowledge_documents SET state='EXTRACTED', updated_at=now() WHERE doc_id=$1",
             doc_id,
         )
         from app.worker.tasks import write_graph_task
@@ -353,7 +353,7 @@ async def get_pipeline_logs(
     session_id: str,
     conn=Depends(get_conn),
 ):
-    """session_id 기준 pipeline_logs 조회 + knowledge_document.state 반환."""
+    """session_id 기준 pipeline_logs 조회 + knowledge_documents.state 반환."""
     rows = await conn.fetch(
         """SELECT l.agent, l.level, l.message, l.created_at
            FROM pipeline_logs l
@@ -365,7 +365,7 @@ async def get_pipeline_logs(
     doc_state: Optional[str] = None
     if rows:
         doc_row = await conn.fetchrow(
-            "SELECT state FROM knowledge_document WHERE doc_id = "
+            "SELECT state FROM knowledge_documents WHERE doc_id = "
             "(SELECT doc_id FROM pipeline_logs WHERE session_id=$1::uuid LIMIT 1)",
             session_id,
         )

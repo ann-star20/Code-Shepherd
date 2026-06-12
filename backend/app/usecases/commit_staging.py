@@ -1,6 +1,6 @@
 """G9+G13: commit_staging — APPROVED → concepts + Neo4j → COMMITTED.
 
-규칙④: concepts 커밋 성공 시 동일 트랜잭션에서 knowledge_document.state='COMMITTED' 동기화.
+규칙④: concepts 커밋 성공 시 동일 트랜잭션에서 knowledge_documents.state='COMMITTED' 동기화.
 """
 
 import json
@@ -76,7 +76,7 @@ async def commit_staging(
         # 규칙④: 출처 document 상태를 COMMITTED로 동기화 (동일 트랜잭션)
         if committed_doc_ids:
             await conn.execute(
-                "UPDATE knowledge_document SET state='COMMITTED', updated_at=NOW() "
+                "UPDATE knowledge_documents SET state='COMMITTED', updated_at=NOW() "
                 "WHERE doc_id = ANY($1)",
                 list(committed_doc_ids),
             )
