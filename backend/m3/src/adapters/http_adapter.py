@@ -20,6 +20,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 
 from contracts import Finding, ReviewInput, ReviewOutput
+from src.adapters.db_adapter import insert_review_issues
 from src.graph import run_review_traced
 
 log = logging.getLogger(__name__)
@@ -232,6 +233,7 @@ async def post_review(payload: M3ReviewRequest) -> M3ReviewResponse:
 
     posted, comment_url = await _post_github_comment(owner, repo, payload.pr_number, output.comment_md)
     _store_result(owner, repo, payload.pr_number, output, trace)
+    insert_review_issues(output.findings or [], payload.pr_number, payload.repository)
 
     log.info(
         "http_adapter: review done task_id=%s verdict=%s posted=%s",
