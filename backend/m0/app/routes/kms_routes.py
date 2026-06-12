@@ -178,6 +178,26 @@ class DocEntitiesResponse(BaseModel):
     total: int
 
 
+class DocStatsResponse(BaseModel):
+    doc_id: str
+    rag_reference_count: int
+    last_used_at: str | None = None
+    recent_search_reflected: bool
+
+
+class RelatedDocItem(BaseModel):
+    doc_id: str
+    title: str | None = None
+    category: str | None = None
+    shared_count: int
+
+
+class DocRelatedResponse(BaseModel):
+    doc_id: str
+    related: list[RelatedDocItem]
+    total: int
+
+
 # ---------------------------------------------------------------------------
 # 중복 감지 응답 모델
 # ---------------------------------------------------------------------------
@@ -1039,6 +1059,86 @@ async def get_doc_entities(doc_id: str) -> DocEntitiesResponse:
     ]
 
     return DocEntitiesResponse(doc_id=doc_id, entities=entities, total=len(entities))
+
+
+_CYPHER_RELATED_DOCS = """\
+MATCH (d:Document {doc_id: $doc_id})-[:COVERS]->(e:Entity)<-[:COVERS]-(r:Document)
+WHERE r.doc_id <> $doc_id
+WITH r, COUNT(e) AS shared_count
+ORDER BY shared_count DESC
+LIMIT 3
+RETURN r.doc_id AS doc_id, r.title AS title, r.category AS category, shared_count"""
+
+
+@router.get("/docs/{doc_id}/stats", response_model=DocStatsResponse)
+async def get_doc_stats(
+    doc_id: str,
+    current_user: dict = Depends(get_current_kms_user),
+) -> DocStatsResponse:
+    """문서 RAG 활용 통계 — rag_references 기반 참조 횟수, 최근 사용 시각, 최근 7일 활용 여부."""
+    try:
+        UUID(doc_id)
+    except ValueError:
+        raise HTTPException(status_code=422, detail=f"유효하지 않은 doc_id 형식: {doc_id}")
+
+    team_id = current_user.get("team", "")
+    session_factory = _get_session_factory()
+    async with session_factory() as session:
+        result = await session.execute(
+            text("""
+                SELECT
+                    COUNT(*)::int AS rag_reference_count,
+                    MAX(queried_at) AS last_used_at,
+                    BOOL_OR(queried_at >= NOW() - INTERVAL '7 days') AS recent_search_reflected
+                FROM rag_references
+                WHERE doc_id = :doc_id::uuid
+                  AND team_id = :team_id
+            """),
+            {"doc_id": doc_id, "team_id": team_id},
+        )
+        row = result.mappings().fetchone()
+
+    count = int(row["rag_reference_count"]) if row else 0
+    last_used = row["last_used_at"].isoformat() if row and row["last_used_at"] else None
+    reflected = bool(row["recent_search_reflected"]) if row else False
+
+    return DocStatsResponse(
+        doc_id=doc_id,
+        rag_reference_count=count,
+        last_used_at=last_used,
+        recent_search_reflected=reflected,
+    )
+
+
+@router.get("/docs/{doc_id}/related", response_model=DocRelatedResponse)
+async def get_doc_related(
+    doc_id: str,
+    current_user: dict = Depends(get_current_kms_user),
+) -> DocRelatedResponse:
+    """Neo4j 공유 엔티티 기반 연관 문서 최대 3개 반환. Neo4j 오프라인 시 빈 목록 반환."""
+    try:
+        UUID(doc_id)
+    except ValueError:
+        raise HTTPException(status_code=422, detail=f"유효하지 않은 doc_id 형식: {doc_id}")
+
+    try:
+        records = await _run_neo4j_cypher(_CYPHER_RELATED_DOCS, {"doc_id": doc_id})
+    except Exception as e:
+        logger.warning(f"연관 문서 Neo4j 조회 실패 doc_id={doc_id}: {e}")
+        records = []
+
+    related = [
+        RelatedDocItem(
+            doc_id=r["doc_id"],
+            title=r.get("title"),
+            category=r.get("category"),
+            shared_count=int(r.get("shared_count", 0)),
+        )
+        for r in records
+        if r.get("doc_id")
+    ]
+
+    return DocRelatedResponse(doc_id=doc_id, related=related, total=len(related))
 
 
 async def _embed_query(query_text: str) -> list[float]:

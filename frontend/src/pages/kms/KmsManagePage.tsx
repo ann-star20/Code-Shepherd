@@ -3,11 +3,13 @@ import { DocumentUpload } from "../../components/DocumentUpload";
 import { HitlQueue } from "../../components/HitlQueue";
 import { PipelineFlow } from "../../components/PipelineFlow";
 import { DocumentAnalyzer } from "../../components/DocumentAnalyzer";
+import { DocStatusPanel } from "../../components/DocStatusPanel";
+import { DocUsagePanel } from "../../components/DocUsagePanel";
 import { getDocDetails, listDocuments } from "../../lib/kmsApi";
 import type { DocDetailsResponse, DocListItem } from "../../types/kms";
 
 type Tab = "upload" | "hitl" | "stored";
-type DetailTab = "info" | "analyzer" | "pipeline";
+type DetailTab = "status" | "usage" | "technical";
 
 const STATUS_LABEL: Record<string, string> = {
   stored:         "저장 완료",
@@ -114,7 +116,7 @@ function StoredDocsList() {
   const [selected, setSelected]         = useState<DocListItem | null>(null);
   const [details, setDetails]           = useState<DocDetailsResponse | null>(null);
   const [detailLoading, setDetailLoading] = useState(false);
-  const [detailTab, setDetailTab]       = useState<DetailTab>("info");
+  const [detailTab, setDetailTab]       = useState<DetailTab>("status");
 
   const load = useCallback(async (pageOffset = 0) => {
     setLoading(true);
@@ -148,7 +150,7 @@ function StoredDocsList() {
 
   const handleRowClick = useCallback(async (doc: DocListItem) => {
     setSelected(doc);
-    setDetailTab("info");
+    setDetailTab("status");
     if (details?.doc_id === doc.doc_id) return;
     setDetails(null);
     setDetailLoading(true);
@@ -166,9 +168,9 @@ function StoredDocsList() {
   const hasNext = offset + STORED_PAGE < total;
 
   const DETAIL_TABS: { key: DetailTab; label: string }[] = [
-    { key: "info",     label: "기본 정보" },
-    { key: "analyzer", label: "문서 분석" },
-    { key: "pipeline", label: "파이프라인" },
+    { key: "status",    label: "문서 현황" },
+    { key: "usage",     label: "활용 & 연관" },
+    { key: "technical", label: "기술 정보" },
   ];
 
   return (
@@ -320,15 +322,25 @@ function StoredDocsList() {
             </div>
 
             {/* Panel content */}
-            <div style={{ padding: detailTab === "pipeline" ? 0 : 16, maxHeight: 520, overflowY: "auto" }}>
-              {detailLoading ? (
+            <div style={{ padding: detailTab === "technical" ? 0 : 16, maxHeight: 520, overflowY: "auto" }}>
+              {detailTab === "status" ? (
+                <DocStatusPanel
+                  doc={selected}
+                  details={details}
+                  detailLoading={detailLoading}
+                  onRefresh={() => { void load(offset); setSelected(null); }}
+                />
+              ) : detailTab === "usage" ? (
+                <DocUsagePanel docId={selected.doc_id} />
+              ) : detailLoading ? (
                 <div style={{ textAlign: "center", color: "#94a3b8", fontSize: 13, padding: 24 }}>불러오는 중...</div>
-              ) : detailTab === "info" ? (
-                <DocInfoPanel doc={selected} details={details} />
-              ) : detailTab === "analyzer" ? (
-                <DocumentAnalyzer chunks={details?.chunks ?? []} docId={selected.doc_id} />
               ) : (
-                <PipelineFlow traces={details?.agent_traces ?? []} />
+                <div>
+                  <DocumentAnalyzer chunks={details?.chunks ?? []} docId={selected.doc_id} />
+                  <div style={{ marginTop: 0 }}>
+                    <PipelineFlow traces={details?.agent_traces ?? []} />
+                  </div>
+                </div>
               )}
             </div>
           </div>

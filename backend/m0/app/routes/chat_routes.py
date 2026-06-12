@@ -21,7 +21,7 @@ import os
 from dataclasses import dataclass, field
 
 import httpx
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, BackgroundTasks, Depends
 from langchain_google_genai import ChatGoogleGenerativeAI
 from app.dependencies import get_current_kms_user
 from pydantic import BaseModel, field_validator
@@ -78,6 +78,7 @@ class ChatSource(BaseModel):
     doc_title: str | None = None
     source_type: str = "pgvector"
     page_image_path: str | None = None
+    doc_id: str | None = None
 
 
 class ChatResponse(BaseModel):
@@ -256,7 +257,8 @@ async def _query_pgvector(
                         ce.content,
                         1 - (ce.embedding <=> CAST(:embedding AS vector)) AS score,
                         ce.metadata->>'doc_title' AS doc_title,
-                        ce.metadata
+                        ce.metadata,
+                        d.doc_id::text AS doc_id
                     FROM chunk_embeddings ce
                     INNER JOIN chunks c ON ce.chunk_id = c.chunk_id
                     INNER JOIN documents d ON c.doc_id = d.doc_id
@@ -288,6 +290,7 @@ async def _query_pgvector(
                 "doc_title": r["doc_title"],
                 "source_type": "pgvector",
                 "metadata": r["metadata"] if isinstance(r.get("metadata"), dict) else {},
+                "doc_id": r.get("doc_id"),
             })
 
     # 여러 모델이 섞인 경우 score 내림차순 재정렬 후 top_k 반환
@@ -563,12 +566,52 @@ async def _generate_answer(
 
 
 # ---------------------------------------------------------------------------
+# RAG 참조 로깅 (fire-and-forget)
+# ---------------------------------------------------------------------------
+
+async def _log_rag_references(
+    sources: list[ChatSource],
+    team_id: str,
+) -> None:
+    """pgvector 소스에 한해 rag_references 테이블에 참조 기록을 남긴다.
+    BackgroundTasks에서 실행되므로 실패해도 chat 응답에 영향 없음.
+    """
+    pgvector_sources = [s for s in sources if s.source_type == "pgvector" and s.doc_id]
+    if not pgvector_sources:
+        return
+    try:
+        session_factory = _get_session_factory()
+        async with session_factory() as session:
+            for src in pgvector_sources:
+                await session.execute(
+                    text("""
+                        INSERT INTO rag_references (doc_id, chunk_id, team_id, queried_at)
+                        VALUES (
+                            :doc_id::uuid,
+                            :chunk_id::uuid,
+                            :team_id,
+                            NOW()
+                        )
+                    """),
+                    {
+                        "doc_id": src.doc_id,
+                        "chunk_id": src.chunk_id,
+                        "team_id": team_id,
+                    },
+                )
+            await session.commit()
+    except Exception as e:
+        logger.warning(f"RAG 참조 로깅 실패 (무시됨): {e}")
+
+
+# ---------------------------------------------------------------------------
 # 엔드포인트
 # ---------------------------------------------------------------------------
 
 @router.post("", response_model=ChatResponse)
 async def chat(
     request: ChatRequest,
+    background_tasks: BackgroundTasks,
     current_user: dict = Depends(get_current_kms_user),
 ) -> ChatResponse:
     """
@@ -619,9 +662,16 @@ async def chat(
             doc_title=c.get("doc_title"),
             source_type=c.get("source_type", "pgvector"),
             page_image_path=(c.get("metadata") or {}).get("page_image_path"),
+            doc_id=c.get("doc_id"),
         )
         for c in raw_chunks
     ]
+
+    background_tasks.add_task(
+        _log_rag_references,
+        sources=sources,
+        team_id=current_user.get("team", ""),
+    )
 
     return ChatResponse(
         question=request.question,

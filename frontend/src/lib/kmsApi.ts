@@ -1,5 +1,5 @@
 import axios, { type InternalAxiosRequestConfig } from "axios";
-import type { DocDetailsResponse, DocListResponse, SearchResponse, StatusResponse, UploadResponse } from "../types/kms";
+import type { DocDetailsResponse, DocListResponse, DocStats, RelatedDoc, SearchResponse, StatusResponse, UploadResponse } from "../types/kms";
 import type { PageImage } from "./hitlApi";
 
 // m0 전용 클라이언트 — baseURL 없음, /kms/* 요청이 vite proxy → m0:8002로 라우팅됨
@@ -121,6 +121,32 @@ export interface ReplaceDocumentResult {
   old_doc_id: string;
   status: string;
   message: string;
+}
+
+export async function getDocStats(docId: string): Promise<DocStats> {
+  try {
+    const { data } = await m0Client.get<DocStats>(`/kms/docs/${docId}/stats`);
+    return data;
+  } catch (e) {
+    throw extractDetail(e, "활용 통계 조회 실패");
+  }
+}
+
+export async function getDocRelated(docId: string): Promise<RelatedDoc[]> {
+  try {
+    const { data } = await m0Client.get<{ doc_id: string; related: RelatedDoc[]; total: number }>(`/kms/docs/${docId}/related`);
+    return data.related;
+  } catch (e) {
+    throw extractDetail(e, "연관 문서 조회 실패");
+  }
+}
+
+export async function deleteDocument(docId: string): Promise<void> {
+  try {
+    await m0Client.delete(`/kms/docs/${docId}`);
+  } catch (e) {
+    throw extractDetail(e, "문서 삭제 실패");
+  }
 }
 
 export async function replaceDocument(
