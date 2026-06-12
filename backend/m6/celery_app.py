@@ -10,7 +10,7 @@ celery_app = Celery(
     "m6_knowledge_graph",
     broker=REDIS_URL,
     backend=REDIS_URL,
-    include=["app.services.pipeline"],
+    include=["app.services.pipeline", "app.worker.tasks"],
 )
 
 celery_app.conf.update(

@@ -6,6 +6,8 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from app.api.routes import router as graph_router
+from app.api.pipeline import router as pipeline_router
+from app.api.staging import router as staging_router
 from shared.logging import TraceIDMiddleware, configure_logging
 
 
@@ -30,6 +32,8 @@ app.add_middleware(
 )
 app.add_middleware(TraceIDMiddleware)
 app.include_router(graph_router, prefix="/graph")
+app.include_router(pipeline_router)
+app.include_router(staging_router)
 
 
 @app.get("/health")
