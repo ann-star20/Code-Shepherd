@@ -171,3 +171,41 @@ export const memberHandlers = [
     HttpResponse.json({ scope: "self", prs: [] })
   ),
 ];
+
+const M6_BASE = "/m6-api";
+
+export const m6Handlers = [
+  http.post(`${M6_BASE}/documents/check-duplicate`, () =>
+    HttpResponse.json({ is_duplicate: false, doc_id: "doc-123" })
+  ),
+  http.post(`${M6_BASE}/pipeline/trigger`, () =>
+    HttpResponse.json({ session_id: "sess-123", message: "started" }, { status: 202 })
+  ),
+  http.get(`${M6_BASE}/staging/:sessionId`, () =>
+    HttpResponse.json({ items: [] })
+  ),
+  http.get(`${M6_BASE}/staging/:sessionId/diff`, () =>
+    HttpResponse.json({ draft: 0, approved: 0, committed: 0 })
+  ),
+  http.post(`${M6_BASE}/staging/:sessionId/approve`, () =>
+    HttpResponse.json({ ok: true })
+  ),
+  http.post(`${M6_BASE}/staging/:sessionId/reject`, () =>
+    HttpResponse.json({ ok: true })
+  ),
+  http.post(`${M6_BASE}/staging/:sessionId/commit`, () =>
+    HttpResponse.json({ ok: true })
+  ),
+  http.post(`${M6_BASE}/staging/:id/approve`, () =>
+    HttpResponse.json({ ok: true })
+  ),
+  http.post(`${M6_BASE}/staging/:id/reject`, () =>
+    HttpResponse.json({ ok: true })
+  ),
+  http.get(`${M6_BASE}/graph/topology`, () =>
+    HttpResponse.json({ nodes: [], edges: [] })
+  ),
+  http.post(`${M6_BASE}/documents/metadata/learn`, () =>
+    HttpResponse.json({ ok: true })
+  ),
+];
