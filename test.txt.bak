@@ -3,7 +3,7 @@ docker compose -f docker-compose.yml -f docker-compose.mock.yml up --build postg
 
 docker compose -f docker-compose.yml -f docker-compose.mock.yml up --build frontend
 
-
+.
 wsl --shutdown
 """
 APP_MODE=mock → MockClient → 6건 내장 개념 반환
