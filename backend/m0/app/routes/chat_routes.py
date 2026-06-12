@@ -21,8 +21,9 @@ import os
 from dataclasses import dataclass, field
 
 import httpx
-from fastapi import APIRouter
+from fastapi import APIRouter, Depends
 from langchain_google_genai import ChatGoogleGenerativeAI
+from app.dependencies import get_current_kms_user
 from pydantic import BaseModel, field_validator
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
@@ -218,11 +219,14 @@ async def _query_pgvector(
     question: str,
     session_factory: async_sessionmaker[AsyncSession],
     top_k: int = 5,
+    user_team: str | None = None,
+    user_id: str | None = None,
 ) -> list[dict]:
     """질문을 임베딩해 chunk_embeddings에서 코사인 유사도 상위 k개를 반환한다.
 
     chunk_embeddings에 저장된 model_name을 확인해 쿼리 임베딩 모델을 맞춘다.
     모델이 섞여 있으면 각 모델로 임베딩 후 UNION해서 top_k를 재정렬한다.
+    user_team / user_id가 제공되면 문서 권한 필터를 적용한다.
     """
     async with session_factory() as session:
         model_rows = await session.execute(
@@ -248,17 +252,31 @@ async def _query_pgvector(
             result = await session.execute(
                 text("""
                     SELECT
-                        chunk_id::text,
-                        content,
-                        1 - (embedding <=> CAST(:embedding AS vector)) AS score,
-                        metadata->>'doc_title' AS doc_title,
-                        metadata
-                    FROM chunk_embeddings
-                    WHERE model_name = :model_name
-                    ORDER BY embedding <=> CAST(:embedding AS vector)
+                        ce.chunk_id::text,
+                        ce.content,
+                        1 - (ce.embedding <=> CAST(:embedding AS vector)) AS score,
+                        ce.metadata->>'doc_title' AS doc_title,
+                        ce.metadata
+                    FROM chunk_embeddings ce
+                    INNER JOIN chunks c ON ce.chunk_id = c.chunk_id
+                    INNER JOIN documents d ON c.doc_id = d.doc_id
+                    WHERE ce.model_name = :model_name
+                      AND d.upload_status IN ('stored', 'stored_partial')
+                      AND (
+                          d.permission_level = 'public'
+                          OR (:user_team IS NOT NULL AND d.department_id = :user_team)
+                          OR (:user_id IS NOT NULL AND d.user_id = :user_id)
+                      )
+                    ORDER BY ce.embedding <=> CAST(:embedding AS vector)
                     LIMIT :top_k
                 """),
-                {"embedding": embedding_str, "top_k": top_k, "model_name": model_name},
+                {
+                    "embedding": embedding_str,
+                    "top_k": top_k,
+                    "model_name": model_name,
+                    "user_team": user_team,
+                    "user_id": user_id,
+                },
             )
             rows = result.mappings().fetchall()
 
@@ -549,7 +567,10 @@ async def _generate_answer(
 # ---------------------------------------------------------------------------
 
 @router.post("", response_model=ChatResponse)
-async def chat(request: ChatRequest) -> ChatResponse:
+async def chat(
+    request: ChatRequest,
+    current_user: dict = Depends(get_current_kms_user),
+) -> ChatResponse:
     """
     멀티 스토리지 RAG 챗봇 엔드포인트.
 
@@ -566,7 +587,13 @@ async def chat(request: ChatRequest) -> ChatResponse:
     raw_chunks: list[dict] = []
     for storage in storages:
         if storage == "pgvector":
-            results = await _query_pgvector(request.question, session_factory, top_k=request.top_k)
+            results = await _query_pgvector(
+                request.question,
+                session_factory,
+                top_k=request.top_k,
+                user_team=current_user["team"],
+                user_id=current_user["user_id"],
+            )
         elif storage == "postgresql":
             results = await _query_postgresql(request.question, session_factory)
         elif storage == "neo4j":
