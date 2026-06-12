@@ -208,6 +208,41 @@ def normalize_text(s: str) -> str:
     return _KO_EN_SYNONYMS.get(base, base)
 
 
+def _base_normalize(s: str) -> str:
+    """별칭 적용 없이 공백·특수문자 제거 + 소문자 변환만 수행."""
+    return re.sub(r"[\s\-_\(\)（）·]+", "", s.lower())
+
+
+def _has_cjk(s: str) -> bool:
+    """문자열에 한국어·중국어·일본어 글자가 포함되어 있는지 확인."""
+    return any(
+        "ᄀ" <= c <= "ᇿ"   # Hangul Jamo
+        or "㄰" <= c <= "㆏"  # Hangul Compat Jamo
+        or "가" <= c <= "힣"  # Hangul Syllables (한국어 음절)
+        or "一" <= c <= "鿿"  # CJK Unified Ideographs
+        for c in s
+    )
+
+
+def _terms_match(s1: str, s2: str) -> bool:
+    """두 태그/엔티티 이름이 의미상 일치하는지 판단.
+
+    1순위: normalize_text 이후 exact match (동의어 별칭 포함)
+    2순위: 별칭 적용 전 base 형태의 substring 포함 관계
+           — 파이프라인이 compound 태그("REST API")를 생성하고
+             golden이 atomic 태그("REST")를 사용하는 경우를 처리.
+           — 오탐 방지: ASCII는 3자 이상, CJK는 2자 이상에서만 적용
+             (한국어 2글자는 의미 밀도가 높아 "검색", "회고" 등 유효한 매칭 가능)
+    """
+    if normalize_text(s1) == normalize_text(s2):
+        return True
+    b1, b2 = _base_normalize(s1), _base_normalize(s2)
+    min_len = 2 if (_has_cjk(b1) or _has_cjk(b2)) else 3
+    if len(b1) >= min_len and len(b2) >= min_len:
+        return b1 in b2 or b2 in b1
+    return False
+
+
 # ---------------------------------------------------------------------------
 # 매칭 로직
 # ---------------------------------------------------------------------------
@@ -225,10 +260,13 @@ def compute_tags_metrics(
         return (1.0, 1.0) if not actual else (1.0, 0.0)
     if not actual:
         return (0.0, 0.0)
-    exp_norm = {normalize_text(t) for t in expected}
-    act_norm = {normalize_text(t) for t in actual}
-    tp = len(exp_norm & act_norm)
-    return tp / len(exp_norm), tp / len(act_norm)
+    recall = sum(
+        1 for e in expected if any(_terms_match(e, a) for a in actual)
+    ) / len(expected)
+    precision = sum(
+        1 for a in actual if any(_terms_match(a, e) for e in expected)
+    ) / len(actual)
+    return recall, precision
 
 
 def compute_entity_metrics(
@@ -243,26 +281,25 @@ def compute_entity_metrics(
     if not all_expected:
         return 1.0, 1.0
 
-    actual_all = {
-        normalize_text(n)
-        for names in result.entities.values()
-        for n in names
-    }
+    actual_names: list[str] = [
+        n for names in result.entities.values() for n in names
+    ]
 
-    # 이름 재현율 (타입 무관)
-    matched = sum(1 for n in all_expected if normalize_text(n) in actual_all)
+    # 이름 재현율 (타입 무관, substring 매칭 포함)
+    matched = sum(
+        1 for n in all_expected if any(_terms_match(n, a) for a in actual_names)
+    )
     name_recall = matched / len(all_expected)
 
     # Partial credit (타입 일치 보너스)
     mapped = golden.expected_entities_mapped
     partial_total = 0.0
     for p_type, exp_names in mapped.items():
-        act_type_names = {normalize_text(n) for n in result.entities.get(p_type, [])}
+        act_type_names = result.entities.get(p_type, [])
         for n in exp_names:
-            n_norm = normalize_text(n)
-            if n_norm in act_type_names:
+            if any(_terms_match(n, a) for a in act_type_names):
                 partial_total += 1.0
-            elif n_norm in actual_all:
+            elif any(_terms_match(n, a) for a in actual_names):
                 partial_total += 0.5
     partial_score = partial_total / len(all_expected)
 
