@@ -29,24 +29,26 @@ from pydantic import BaseModel, Field, model_validator
 
 # ─── 상태 Enum ────────────────────────────────────────────────────────────────
 
+
 class PipelineState(str, Enum):
-    PENDING   = "PENDING"
-    CRAWLING  = "CRAWLING"
+    PENDING = "PENDING"
+    CRAWLING = "CRAWLING"
     EXTRACTED = "EXTRACTED"
-    APPROVED  = "APPROVED"
+    APPROVED = "APPROVED"
     COMMITTED = "COMMITTED"
-    FAILED    = "FAILED"
+    FAILED = "FAILED"
 
 
 class StagingState(str, Enum):
-    DRAFT          = "DRAFT"
+    DRAFT = "DRAFT"
     DOMAIN_PENDING = "DOMAIN_PENDING"
-    APPROVED       = "APPROVED"
-    COMMITTED      = "COMMITTED"
-    REJECTED       = "REJECTED"
+    APPROVED = "APPROVED"
+    COMMITTED = "COMMITTED"
+    REJECTED = "REJECTED"
 
 
 # ─── 유틸리티 ─────────────────────────────────────────────────────────────────
+
 
 def _to_snake(s: str) -> str:
     """어떤 포맷 문자열도 완전 소문자_스네이크_케이스로 강제 변환."""
@@ -70,6 +72,7 @@ def build_doc_id(prefix: str, url: str, content: str = "", etag: str = "") -> st
 
 # ─── Layer 4: CodeExample ─────────────────────────────────────────────────────
 
+
 class CodeExampleIn(BaseModel):
     lang: str
     lang_version: Optional[str] = "*"
@@ -91,6 +94,7 @@ class CodeExampleIn(BaseModel):
 
 # ─── Layer 3: Mechanism ───────────────────────────────────────────────────────
 
+
 class MechanismIn(BaseModel):
     """
     :Mechanism 노드 입력.
@@ -107,6 +111,7 @@ class MechanismIn(BaseModel):
 
 
 # ─── Layer 3: Property ────────────────────────────────────────────────────────
+
 
 class PropertyIn(BaseModel):
     """
@@ -125,6 +130,7 @@ class PropertyIn(BaseModel):
 
 
 # ─── 내부 수렴 헬퍼 ──────────────────────────────────────────────────────────
+
 
 def _coerce_mechanism(item: Any) -> MechanismIn:
     if isinstance(item, MechanismIn):
@@ -154,6 +160,7 @@ def _coerce_code_example(item: Any) -> CodeExampleIn:
 
 # ─── Layer 2: Concept 핵심 스키마 ─────────────────────────────────────────────
 
+
 class ConceptExtractionSchema(BaseModel):
     """
     LLM Extractor 출력 + 프론트엔드 입력을 단일 수렴하는 핵심 도메인 엔티티.
@@ -169,7 +176,7 @@ class ConceptExtractionSchema(BaseModel):
     concept_type: str = "vulnerability_root_cause"
     cwe_id: Optional[str] = None
     owasp_id: Optional[str] = None
-    owasp_category: Optional[str] = None       # 구형 alias
+    owasp_category: Optional[str] = None  # 구형 alias
     severity: Optional[Literal["critical", "high", "medium", "low", "info"]] = None
     domains: list[str] = Field(default_factory=lambda: ["security"])
     description_ko: str = ""
@@ -217,7 +224,9 @@ class ConceptExtractionSchema(BaseModel):
                     self.mechanism[0].code_examples.extend(parsed)
             else:
                 self.mechanism = [
-                    MechanismIn(mechanism_name="general_mitigation", code_examples=parsed)
+                    MechanismIn(
+                        mechanism_name="general_mitigation", code_examples=parsed
+                    )
                 ]
             self.code_examples = []
 
@@ -246,6 +255,7 @@ ConceptIn = ConceptExtractionSchema
 
 # ─── 부분 수정 모델 ───────────────────────────────────────────────────────────
 
+
 class ConceptUpdate(BaseModel):
     """PUT /concepts/{name} 바디 — None 필드는 SET 대상 제외."""
 
@@ -266,6 +276,7 @@ class ConceptUpdate(BaseModel):
 
 
 # ─── Document ─────────────────────────────────────────────────────────────────
+
 
 class DocumentIn(BaseModel):
     prefix: Literal["EXT", "INT"] = "EXT"
