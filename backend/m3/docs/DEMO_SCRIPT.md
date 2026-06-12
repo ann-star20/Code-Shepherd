@@ -2,14 +2,62 @@
 
 > 발표 순서 고정 (브리프 §7). 입력은 전부 `fixtures/demo/` 박제본.
 > 사전 준비: `make reindex` (bge-m3 인덱스) + 리허설 1회로 LLM 캐시 워밍 → 시연 중 API 0원·결정적 재생.
-> 실행 UI: `make demo` (Streamlit). 장애 시 백업: `python scripts/run_scene.py <diff파일>` (터미널).
+> 실행 UI: 팀 스택 통합 환경 (프론트 http://localhost:5173). 장애 시 폴백: Streamlit `make demo`.
 > **스왑 중 `make eval` 절대 금지** — 골든셋 지표 오염.
+
+---
+
+## 통합 환경 실행 절차 (2026-06-13 기준)
+
+### 기동 순서
+
+```bash
+# 1. Ollama bge-m3 확인
+ollama list  # bge-m3:latest 있어야 함
+
+# 2. dev3 m3 기동 (Code-Shepherd-new 루트)
+cd C:\Users\user\Code-Shepherd-new
+docker compose up -d m3
+
+# 3. 구 스택 m3 정지 유지, old stack 기동
+cd C:\Users\user\Code-Shepherd  # (구 팀 스택 경로)
+docker compose up -d
+
+# 4. 네트워크 브리지 (컨테이너 재시작마다 필요)
+docker network connect --alias m3 code-shepherd_code-shepherd code-shepherd-new-m3-1
+
+# 5. 캐시 워밍 1회
+docker exec code-shepherd-m1-1 python /app/service/_send_test_webhook.py
+```
+
+### 핫스왑 절차 (통합 환경)
+
+```bash
+# 1. 호스트에서 corpus 수정
+copy fixtures\demo\hotswap_external_api.md corpus\external_api.md
+
+# 2. 컨테이너 내 reindex
+docker exec code-shepherd-new-m3-1 python -m src.ingestion
+
+# 3. 재실행 → 판정 변경 확인
+docker exec code-shepherd-m1-1 python /app/service/_send_test_webhook.py
+
+# 4. 원복
+git checkout corpus/
+docker exec code-shepherd-new-m3-1 python -m src.ingestion
+```
+
+---
 
 ## 사전 체크리스트 (시연 5분 전)
 
-- [ ] ollama 기동 (`http://localhost:11434` — bge-m3)
-- [ ] `make eval` 12/12 확인 후 corpus 깨끗한 상태인지 `git status corpus/`
-- [ ] Streamlit 기동: `make demo` → 사이드바 "코퍼스 규칙 8개 로드"
+- [ ] Ollama 기동 (`http://localhost:11434` — bge-m3 확인: `ollama list`)
+- [ ] Docker Desktop 기동 + 전체 스택 상태 확인
+- [ ] `code-shepherd-new-m3-1` 실행 중 + 네트워크 연결됨
+- [ ] 캐시 워밍 1회: `docker exec code-shepherd-m1-1 python /app/service/_send_test_webhook.py`
+- [ ] `ENABLE_DB_WRITE=false` 확인 (`.env` 기본값)
+- [ ] 프론트 http://localhost:5173 접근 가능 확인
+- [ ] **폴백 준비**: Streamlit `make demo` (m3 직접실행 — 팀 스택 불필요)
 - [ ] 녹화 백업 준비
 
 ## 장면1 — 위반 탐지 (3분)
