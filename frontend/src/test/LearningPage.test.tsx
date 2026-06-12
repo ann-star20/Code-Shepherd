@@ -138,6 +138,159 @@ describe("LearningPage — 학습 카드 렌더링 (T9 Slice 3)", () => {
   });
 });
 
+describe("LearningPage — 학습할 이슈 없음 안내", () => {
+  afterEach(() => {
+    vi.mocked(m4Api.post).mockClear();
+    vi.mocked(m4Api.get).mockClear();
+  });
+
+  it("폴링 결과 issues가 빈 배열이면 빈 화면 대신 안내 문구를 표시한다", async () => {
+    vi.mocked(m4Api.post).mockResolvedValue({ data: { scan_id: "scan-empty", plan_ids: [] }, status: 200 });
+    vi.mocked(m4Api.get).mockResolvedValue({ data: { issues: [] }, status: 200 });
+
+    const user = userEvent.setup();
+    render(<LearningPage />);
+
+    await user.click(screen.getByRole("button", { name: "예" }));
+
+    expect(await screen.findByText("학습할 이슈를 찾지 못했어요")).toBeInTheDocument();
+    expect(
+      screen.getByText(/PR 리뷰가 진행 중이거나 발견된 이슈가 없을 수 있어요/),
+    ).toBeInTheDocument();
+    expect(screen.queryByText("학습 카드를 생성하고 있어요...")).not.toBeInTheDocument();
+  });
+
+  it("'다시 확인하기' 버튼 클릭 시 /api/learn을 재호출하고, 이번엔 이슈가 있으면 카드를 렌더링한다", async () => {
+    vi.mocked(m4Api.post)
+      .mockResolvedValueOnce({ data: { scan_id: "scan-empty", plan_ids: [] }, status: 200 })
+      .mockResolvedValueOnce({ data: { scan_id: "scan-empty", plan_ids: ["p1"] }, status: 200 });
+    vi.mocked(m4Api.get)
+      .mockResolvedValueOnce({ data: { issues: [] }, status: 200 })
+      .mockResolvedValueOnce({
+        data: {
+          issues: [
+            {
+              id: "issue-1",
+              keyword: "SQL Injection",
+              severity: "high",
+              plan: {
+                id: "p1",
+                status: "completed",
+                llm_fallback: false,
+                error_message: null,
+                ragas_reason: null,
+                attempt_count: 1,
+                card_content: {
+                  header: {
+                    keyword: "SQL Injection",
+                    name_of_function: "search_products",
+                    sub_category: "input validation",
+                    language: "Python",
+                    framework: "FastAPI",
+                    framework_version: "0.104.0",
+                    depth: "deep",
+                  },
+                  before_code: null,
+                  after_code: 'def safe_query(keyword):\n    return "SELECT * FROM t WHERE x=%s", (keyword,)',
+                  explanation: "사용자 입력을 직접 SQL에 삽입하면 공격자가 쿼리를 조작할 수 있습니다.",
+                  why_dangerous: "상품 검색에 SQL Injection이 발생하면 전체 DB가 노출될 수 있습니다.",
+                  core_summary: "SQL Injection: 사용자 입력은 Parameterized Query로만 처리한다",
+                  learning_recommendations: [],
+                },
+              },
+            },
+          ],
+        },
+        status: 200,
+      });
+
+    const user = userEvent.setup();
+    render(<LearningPage />);
+
+    await user.click(screen.getByRole("button", { name: "예" }));
+
+    expect(await screen.findByText("학습할 이슈를 찾지 못했어요")).toBeInTheDocument();
+
+    await user.click(screen.getByRole("button", { name: "다시 확인하기" }));
+
+    expect(await screen.findByText(/\[SQL Injection\]/)).toBeInTheDocument();
+    expect(screen.queryByText("학습할 이슈를 찾지 못했어요")).not.toBeInTheDocument();
+    const learnCalls = vi.mocked(m4Api.post).mock.calls.filter(([url]: [string]) => url === "/api/learn");
+    expect(learnCalls).toHaveLength(2);
+  });
+});
+
+describe("LearningPage — 카드 생성 모두 실패 안내", () => {
+  afterEach(() => {
+    vi.mocked(m4Api.post).mockClear();
+    vi.mocked(m4Api.get).mockClear();
+  });
+
+  it("issues 전부 status가 failed면 카드별 실패 메시지 대신 안내 문구를 한 번만 표시한다", async () => {
+    vi.mocked(m4Api.post).mockResolvedValue({
+      data: { scan_id: "scan-1", plan_ids: ["p1", "p2", "p3"] },
+      status: 202,
+    });
+    vi.mocked(m4Api.get).mockResolvedValue({
+      data: {
+        issues: [
+          {
+            id: "issue-1",
+            keyword: "A",
+            severity: "high",
+            plan: {
+              id: "p1",
+              status: "failed",
+              llm_fallback: false,
+              error_message: "err1",
+              card_content: null,
+              ragas_reason: null,
+              attempt_count: 3,
+            },
+          },
+          {
+            id: "issue-2",
+            keyword: "B",
+            severity: "medium",
+            plan: {
+              id: "p2",
+              status: "failed",
+              llm_fallback: false,
+              error_message: "err2",
+              card_content: null,
+              ragas_reason: null,
+              attempt_count: 3,
+            },
+          },
+          {
+            id: "issue-3",
+            keyword: "C",
+            severity: "low",
+            plan: {
+              id: "p3",
+              status: "failed",
+              llm_fallback: false,
+              error_message: "err3",
+              card_content: null,
+              ragas_reason: null,
+              attempt_count: 3,
+            },
+          },
+        ],
+      },
+      status: 200,
+    });
+
+    const user = userEvent.setup();
+    render(<LearningPage />);
+
+    await user.click(screen.getByRole("button", { name: "예" }));
+
+    expect(await screen.findByText("카드를 생성하는 중 문제가 발생했어요")).toBeInTheDocument();
+    expect(screen.getAllByText("카드를 생성하는 중 문제가 발생했어요")).toHaveLength(1);
+  });
+});
+
 describe("LearningPage — 학습 시작 실패 안내 (FRONTEND_SPEC Section 8)", () => {
   afterEach(() => {
     vi.mocked(m4Api.post).mockClear();

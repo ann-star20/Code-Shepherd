@@ -101,14 +101,12 @@ ALTER TABLE curriculum_plan ADD CONSTRAINT curriculum_plan_issue_id_unique UNIQU
 -- chunk_embeddings에 HNSW 인덱스 이미 존재:
 --   CREATE INDEX idx_chunk_embeddings_hnsw ON chunk_embeddings USING hnsw (embedding vector_cosine_ops);
 -- 카테고리 필터는 chunk_embeddings.metadata JSONB 필드 사용:
---   metadata @> '{"category": "security_guide"}'
---   또는 metadata->>'category' = 'security_guide'
--- TODO: KMS 임베딩 시 실제로 metadata에 category 키가 저장되어 있는지 확인 필요
---   확인 방법: SELECT DISTINCT metadata->>'category' FROM chunk_embeddings LIMIT 20;
--- category 값 정의 (기존 documents.category와 별개):
---   'security_guide'    : 보안/도메인 공식문서 → 검색 1 대상
---   'coding_convention' : 사내 코딩 컨벤션 자료 → 검색 2 대상
---   'learning_resource' : 심화 학습 자료        → 검색 3 대상
+--   metadata @> '{"category": "보안"}'
+--   또는 metadata->>'category' = '보안'
+-- category 값 정의 (기존 documents.category와 별개, T11에서 실제 데이터 분포 확인 후 확정):
+--   '보안'        : 보안/도메인 공식문서 → 검색 1 대상 (9개 청크)
+--   '코딩컨벤션'  : 사내 코딩 컨벤션 자료 → 검색 2 대상 (55개 청크)
+--   '코드성능검증': 심화 학습 자료        → 검색 3 대상 (1개 청크, placeholder — D15 fallback 상시 발동)
 
 -- Phase 2: curriculum_plan에 Curator 결과 저장
 ALTER TABLE curriculum_plan ADD COLUMN curator_instruction JSONB;
@@ -222,34 +220,34 @@ async def embed_query(query_text: str) -> list[float]:
 # SearchAdapter 인터페이스 (D33) — Phase 1: PgvectorAdapter 사용
 # TODO-4 결과 후 FTSAdapter / HybridAdapter 교체 가능 (pipeline 코드 변경 없음)
 
-# 검색 1 — 개념 설명 문서 (category='security_guide')
+# 검색 1 — 개념 설명 문서 (category='보안')
 # category 필터: chunk_embeddings.metadata @> '{"category": "<값>"}' (JSONB 쿼리)
 docs_concept = rag_search(await embed_query(build_search1_text(issue)),
-    category='security_guide')
+    category='보안')
 if len(docs_concept) == 0:
     docs_concept = None  # → LLM 자체 생성 fallback
 
-# 검색 2 — 코드 예제 문서 (category='coding_convention')
+# 검색 2 — 코드 예제 문서 (category='코딩컨벤션')
 # code_snippet 없는 경우: metadata 기반 쿼리로 대체 (before_code = null)
 if issue.code_snippet:
     docs_example = rag_search(embed_query(
         keyword, sub_category, code_snippet
-    ), category='coding_convention')
+    ), category='코딩컨벤션')
 else:
     # code_snippet 없음 → name_of_function 등 메타데이터로 검색
     docs_example = rag_search(embed_query(
         keyword, sub_category, code_context,
         programming_language, framework, framework_version
-    ), category='coding_convention')
+    ), category='코딩컨벤션')
 if len(docs_example) == 0:
     docs_example = None  # → LLM 자체 생성 fallback
 
-# 검색 3 — 학습 추천 문서 (category='learning_resource')
+# 검색 3 — 학습 추천 문서 (category='코드성능검증')
 docs_recommend = rag_search(embed_query(
     keyword, sub_category, code_context,
     suggestion, programming_language,
     framework, framework_version
-), category='learning_resource')  # → chunk_embeddings.metadata->>'category' = 'learning_resource'
+), category='코드성능검증')  # → chunk_embeddings.metadata->>'category' = '코드성능검증'
 if len(docs_recommend) == 0:
     docs_recommend = None  # → LLM 자체 추천 fallback (섹션 표시는 유지)
 
@@ -269,17 +267,17 @@ llm_fallback = (docs_concept is None or docs_example is None)
 | | 검색 1 | 검색 2 | 검색 3 |
 |--|--------|--------|--------|
 | 임베딩 입력 | keyword + sub_category + code_context | keyword + sub_category + code_snippet(있으면) + programming_language + framework + version | keyword + sub_category + programming_language + framework + version + code_snippet(있으면) |
-| 문서 카테고리 | `security_guide` (chunk_embeddings.metadata->>'category') | `coding_convention` | `learning_resource` |
-| 찾는 것 | "왜 이 패턴이 나쁜가" 개념 | 컨벤션에 맞는 올바른 코드 작성 방법 | 관련 개념·심화 학습 자료 |
+| 문서 카테고리 | `보안` (chunk_embeddings.metadata->>'category') | `코딩컨벤션` | `코드성능검증` |
+| 찾는 것 | "왜 이 패턴이 나쁜가" 개념 | 컨벤션에 맞는 올바른 코드 작성 방법 | 코드 성능 검증 관련 자료 |
 | 카드 활용 | 설명 섹션 + 왜 위험한가 + 왜 중요한가 | After 코드 생성 근거 | 학습 추천 섹션 |
 | Before 코드 | — | code_snippet 인풋 그대로 (RAG/LLM 없음) | — |
 | After 코드 | — | RAG → 컨벤션 기반 LLM 수정 | — |
 | fallback | LLM 자체 생성 | LLM 자체 생성 | LLM 일반 추천 (섹션 유지) |
 
 **chunk_embeddings.metadata 카테고리** (doc_chunk 없음 → chunk_embeddings 사용)
-- `security_guide` — 보안/도메인 공식문서 → 검색 1
-- `coding_convention` — 사내 코딩 컨벤션 → 검색 2
-- `learning_resource` — 심화 학습 자료, 관련 개념 가이드 → 검색 3
+- `보안` — 보안/도메인 공식문서 → 검색 1
+- `코딩컨벤션` — 사내 코딩 컨벤션 → 검색 2
+- `코드성능검증` — 코드 성능 검증 관련 자료/가이드 → 검색 3
 - Phase 1: `scripts/embed_kms_docs.py`로 직접 삽입 (Section 19-3 참조)
 
 ---
@@ -808,11 +806,11 @@ import os
 SAMPLE_DOCS = [
     {
         "content": "SQL Injection 방지를 위해 항상 Parameterized Query를 사용한다.",
-        "metadata": {"category": "security_guide", "source": "m4-direct-embed"},
+        "metadata": {"category": "보안", "source": "m4-direct-embed"},
     },
     {
         "content": "FastAPI에서 SQLAlchemy를 이용한 안전한 쿼리 작성: session.execute(select(User).where(User.id == user_id))",
-        "metadata": {"category": "coding_convention", "source": "m4-direct-embed"},
+        "metadata": {"category": "코딩컨벤션", "source": "m4-direct-embed"},
     },
     # ... 추가 문서
 ]
@@ -858,7 +856,7 @@ m0 연동 후 방법:
 
 연동 체크리스트:
   □ m0가 chunk_embeddings.metadata에 'category' 키를 저장하는지 확인
-  □ category 값이 'security_guide', 'coding_convention', 'learning_resource'와 일치하는지 확인
+  □ category 값이 '보안', '코딩컨벤션', '코드성능검증'와 일치하는지 확인
   □ 임베딩 차원(vector 컬럼 길이)이 동일한지 확인
   □ embed_kms_docs.py로 삽입한 더미 데이터 정리
 ```
@@ -924,7 +922,7 @@ CREATE TABLE kms_search_log (
     plan_id UUID NOT NULL REFERENCES curriculum_plan(id) ON DELETE CASCADE,
     search_type INTEGER NOT NULL,             -- 1, 2, 3 (검색 종류)
     query_text TEXT NOT NULL,                 -- embed_query()에 전달된 쿼리 문자열
-    category TEXT NOT NULL,                   -- security_guide | coding_convention | learning_resource
+    category TEXT NOT NULL,                   -- 보안 | 코딩컨벤션 | 코드성능검증
     result_count INTEGER NOT NULL,            -- 반환된 청크 수
     top_similarity FLOAT,                     -- 상위 1개 유사도 점수
     created_at TIMESTAMPTZ NOT NULL DEFAULT now()
