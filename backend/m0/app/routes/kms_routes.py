@@ -24,6 +24,7 @@ import httpx
 from fastapi import APIRouter, BackgroundTasks, Depends, File, Form, HTTPException, Query, UploadFile
 
 from app.dependencies import get_current_kms_user
+from app.pipeline.graph_sync import sync_old_document_version
 from pydantic import BaseModel
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
@@ -198,6 +199,12 @@ class ReplaceDocumentResponse(BaseModel):
     old_doc_id: str
     status: str
     message: str
+
+
+class DeleteDocumentResponse(BaseModel):
+    doc_id: str
+    status: str
+    sync_warning: str | None = None
 
 
 # ---------------------------------------------------------------------------
@@ -862,6 +869,62 @@ async def get_doc_details(
         parsing_time_ms=doc_row["parsing_time_ms"],
         agent_traces=traces,
         chunks=chunks,
+    )
+
+
+@router.delete("/docs/{doc_id}", response_model=DeleteDocumentResponse)
+async def delete_document(
+    doc_id: str,
+    current_user: dict = Depends(get_current_kms_user),
+) -> DeleteDocumentResponse:
+    """문서를 4개 저장소(PG/pgvector, Neo4j, GCS)에서 일괄 삭제한다."""
+    try:
+        UUID(doc_id)
+    except ValueError:
+        raise HTTPException(status_code=422, detail="유효하지 않은 doc_id 형식")
+
+    session_factory = _get_session_factory()
+    async with session_factory() as session:
+        doc_result = await session.execute(
+            text("""
+                SELECT title, upload_status, permission_level, department_id, user_id
+                FROM documents WHERE doc_id = :doc_id
+            """),
+            {"doc_id": doc_id},
+        )
+        doc_row = doc_result.mappings().fetchone()
+
+    if doc_row is None:
+        raise HTTPException(status_code=404, detail=f"문서를 찾을 수 없음: {doc_id}")
+
+    perm = doc_row["permission_level"]
+    owner_user = doc_row["user_id"]
+    owner_dept = doc_row["department_id"]
+    can_delete = (
+        perm == "public"
+        or (owner_dept is not None and owner_dept == current_user["team"])
+        or owner_user == current_user["user_id"]
+    )
+    if not can_delete:
+        raise HTTPException(status_code=403, detail="이 문서를 삭제할 권한이 없습니다.")
+
+    sync_warning: str | None = None
+    try:
+        async with session_factory() as session:
+            await sync_old_document_version(
+                old_doc_id=doc_id,
+                session=session,
+                delete_gcs=True,
+                delete_neo4j=True,
+            )
+    except Exception as e:
+        logger.error(f"[delete_document] sync 실패 doc_id={doc_id}: {e}")
+        sync_warning = f"PG 삭제 완료. 외부 저장소(Neo4j/GCS) 동기화 실패: {e}"
+
+    return DeleteDocumentResponse(
+        doc_id=doc_id,
+        status="deleted",
+        sync_warning=sync_warning,
     )
 
 
