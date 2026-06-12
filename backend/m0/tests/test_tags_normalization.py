@@ -104,3 +104,51 @@ class TestComputeTagsMetricsCrossLanguage:
         recall, prec = compute_tags_metrics(golden, actual)
         f1 = 2 * recall * prec / (recall + prec) if recall + prec else 0
         assert f1 == 1.0  # RED: 현재 f1 = 0.857 (3/4)
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# compound 태그 substring 매칭 테스트
+# ─────────────────────────────────────────────────────────────────────────────
+
+
+class TestCompoundTagSubstringMatching:
+    """파이프라인이 compound 태그를 생성할 때 atomic golden 태그와 매칭되어야 한다."""
+
+    def test_rest_api_matches_rest(self):
+        """'REST API' ⊇ 'REST' → 매칭."""
+        recall, prec = compute_tags_metrics(["REST"], ["REST API"])
+        f1 = 2 * recall * prec / (recall + prec) if recall + prec else 0
+        assert f1 > 0  # RED: 현재 0
+
+    def test_semantic_search_matches_search(self):
+        """'시맨틱 검색' ⊇ '검색' → 매칭."""
+        recall, prec = compute_tags_metrics(["검색"], ["시맨틱 검색"])
+        f1 = 2 * recall * prec / (recall + prec) if recall + prec else 0
+        assert f1 > 0  # RED: 현재 0
+
+    def test_jwt_auth_matches_jwt(self):
+        """'JWT 인증' ⊇ 'JWT' → 매칭."""
+        recall, prec = compute_tags_metrics(["JWT"], ["JWT 인증"])
+        f1 = 2 * recall * prec / (recall + prec) if recall + prec else 0
+        assert f1 > 0  # RED: 현재 0
+
+    def test_kpt_retrospective_matches_retrospective(self):
+        """'KPT 회고' ⊇ '회고' → 매칭."""
+        recall, prec = compute_tags_metrics(["회고"], ["KPT 회고"])
+        f1 = 2 * recall * prec / (recall + prec) if recall + prec else 0
+        assert f1 > 0  # RED: 현재 0
+
+    def test_md03_rest_api_scenario_f1_gte_70(self):
+        """md_03 REST API 레퍼런스: compound actual vs atomic golden, F1 ≥ 0.70."""
+        golden = ["API", "REST", "JWT", "인증", "문서관리", "검색", "웹훅", "페이지네이션"]
+        actual = ["REST API", "API 레퍼런스", "문서 관리", "시맨틱 검색", "JWT 인증", "웹훅", "Rate Limiting", "HTTP Status Code"]
+        recall, prec = compute_tags_metrics(golden, actual)
+        f1 = 2 * recall * prec / (recall + prec) if recall + prec else 0
+        assert f1 >= 0.70  # RED: 현재 0.25
+
+    def test_short_tag_no_false_match(self):
+        """2자 이하 태그는 substring 매칭 금지 — 오탐 방지."""
+        # 'AI'(2자)가 'RLHF'에 substring으로 매칭되면 안 됨
+        recall, prec = compute_tags_metrics(["AI"], ["RLHF", "Docker"])
+        f1 = 2 * recall * prec / (recall + prec) if recall + prec else 0
+        assert f1 == 0.0  # 'ai' ⊄ 'rlhf', 'ai' ⊄ 'docker'
