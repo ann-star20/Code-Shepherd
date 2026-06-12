@@ -179,13 +179,20 @@ async def test_save_document_defaults_when_no_permission_fields():
 # ---------------------------------------------------------------------------
 
 def test_upload_endpoint_accepts_permission_form_fields():
-    """upload_document()는 department_id, user_id, permission_level, visibility를 Form으로 받아야 한다."""
+    """Security Guardrail 적용 후 업로드 엔드포인트 파라미터 검증.
+
+    - permission_level, visibility: 클라이언트 지정 가능 (공개 범위)
+    - department_id, user_id: 서버에서 JWT 토큰으로 자동 주입 (클라이언트 지정 불가)
+    - current_user: JWT Depends 파라미터 존재
+    """
     from app.routes.kms_routes import upload_document
 
     sig = inspect.signature(upload_document)
     param_names = set(sig.parameters.keys())
 
-    assert "department_id" in param_names, "upload_document must accept department_id"
-    assert "user_id" in param_names, "upload_document must accept user_id"
     assert "permission_level" in param_names, "upload_document must accept permission_level"
     assert "visibility" in param_names, "upload_document must accept visibility"
+    assert "current_user" in param_names, "upload_document must have current_user (JWT Depends)"
+    # department_id, user_id는 토큰에서 서버 자동 주입 — Form 파라미터 아님
+    assert "department_id" not in param_names, "department_id must be injected from token, not Form"
+    assert "user_id" not in param_names, "user_id must be injected from token, not Form"

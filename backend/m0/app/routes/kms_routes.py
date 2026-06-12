@@ -21,7 +21,9 @@ from pathlib import Path
 from uuid import UUID, uuid4
 
 import httpx
-from fastapi import APIRouter, BackgroundTasks, File, Form, HTTPException, Query, UploadFile
+from fastapi import APIRouter, BackgroundTasks, Depends, File, Form, HTTPException, Query, UploadFile
+
+from app.dependencies import get_current_kms_user
 from pydantic import BaseModel
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
@@ -234,11 +236,10 @@ async def upload_document(
     background_tasks: BackgroundTasks,
     file: UploadFile = File(...),
     source: str = Form(default="upload"),
-    department_id: str | None = Form(default=None),
-    user_id: str | None = Form(default=None),
     permission_level: str = Form(default="public"),
     visibility: str = Form(default="all"),
     file_hash: str | None = Form(default=None),
+    current_user: dict = Depends(get_current_kms_user),
 ) -> UploadResponse:
     """
     문서를 업로드하고 KMS 파이프라인을 실행한다.
@@ -306,8 +307,8 @@ async def upload_document(
 
     initial_state = _build_initial_state(
         doc_id, source, tmp_path, ext, filename,
-        department_id=department_id,
-        user_id=user_id,
+        department_id=current_user["team"],
+        user_id=current_user["user_id"],
         permission_level=permission_level,
         visibility=visibility,
         file_hash=file_hash,
@@ -504,6 +505,7 @@ async def search_kms(
     q: str = Query(..., min_length=1, description="검색 쿼리"),
     limit: int = Query(default=5, ge=1, le=20, description="반환할 최대 청크 수"),
     category: str | None = Query(default=None, description="카테고리 필터 (metadata.category)"),
+    current_user: dict = Depends(get_current_kms_user),
 ) -> SearchResponse:
     """
     pgVector 코사인 유사도 검색.
@@ -532,10 +534,21 @@ async def search_kms(
                 LEFT JOIN documents d ON c.doc_id = d.doc_id
                 WHERE d.upload_status IN ('stored', 'stored_partial')
                 AND (:category IS NULL OR ce.metadata->>'category' = :category)
+                AND (
+                    d.permission_level = 'public'
+                    OR d.department_id = :user_team
+                    OR d.user_id = :user_id
+                )
                 ORDER BY ce.embedding <=> CAST(:embedding AS vector)
                 LIMIT :limit
             """),
-            {"embedding": embedding_str, "limit": limit, "category": category},
+            {
+                "embedding": embedding_str,
+                "limit": limit,
+                "category": category,
+                "user_team": current_user["team"],
+                "user_id": current_user["user_id"],
+            },
         )
         rows = result.mappings().fetchall()
 
@@ -562,6 +575,7 @@ async def list_documents(
     status: str | None = None,
     limit: int = 20,
     offset: int = 0,
+    current_user: dict = Depends(get_current_kms_user),
 ) -> DocListResponse:
     """문서 목록을 조회한다. status 필터와 페이지네이션을 지원한다."""
     if limit <= 0 or limit > 100:
@@ -576,14 +590,29 @@ async def list_documents(
 
     session_factory = _get_session_factory()
     async with session_factory() as session:
+        perm_params = {
+            "user_team": current_user["team"],
+            "user_id": current_user["user_id"],
+        }
+        _perm_clause = """
+            AND (
+                permission_level = 'public'
+                OR department_id = :user_team
+                OR user_id = :user_id
+            )
+        """
         if status is not None:
             count_result = await session.execute(
-                text("SELECT COUNT(*) AS count FROM documents WHERE upload_status = :status"),
-                {"status": status},
+                text(
+                    "SELECT COUNT(*) AS count FROM documents "
+                    "WHERE upload_status = :status" + _perm_clause
+                ),
+                {"status": status, **perm_params},
             )
         else:
             count_result = await session.execute(
-                text("SELECT COUNT(*) AS count FROM documents"),
+                text("SELECT COUNT(*) AS count FROM documents WHERE TRUE" + _perm_clause),
+                perm_params,
             )
         count_row = count_result.mappings().fetchone()
 
@@ -594,10 +623,11 @@ async def list_documents(
                            neo4j_synced, category, doc_complexity
                     FROM documents
                     WHERE upload_status = :status
+                """ + _perm_clause + """
                     ORDER BY created_at DESC NULLS LAST
                     LIMIT :limit OFFSET :offset
                 """),
-                {"status": status, "limit": limit, "offset": offset},
+                {"status": status, "limit": limit, "offset": offset, **perm_params},
             )
         else:
             list_result = await session.execute(
@@ -605,10 +635,12 @@ async def list_documents(
                     SELECT doc_id::text, title, file_type, upload_status, created_at,
                            neo4j_synced, category, doc_complexity
                     FROM documents
+                    WHERE TRUE
+                """ + _perm_clause + """
                     ORDER BY created_at DESC NULLS LAST
                     LIMIT :limit OFFSET :offset
                 """),
-                {"limit": limit, "offset": offset},
+                {"limit": limit, "offset": offset, **perm_params},
             )
         rows = list_result.mappings().fetchall()
 
@@ -729,7 +761,10 @@ async def get_doc_metadata(doc_id: str) -> DocMetadataResponse:
 
 
 @router.get("/docs/{doc_id}/details", response_model=DocDetailsResponse)
-async def get_doc_details(doc_id: str) -> DocDetailsResponse:
+async def get_doc_details(
+    doc_id: str,
+    current_user: dict = Depends(get_current_kms_user),
+) -> DocDetailsResponse:
     """에이전트 트레이스 + 청크 상세 조회."""
     try:
         UUID(doc_id)
@@ -741,7 +776,8 @@ async def get_doc_details(doc_id: str) -> DocDetailsResponse:
         doc_result = await session.execute(
             text("""
                 SELECT title, file_type, upload_status, created_at,
-                       parser_used, quality_score, doc_complexity, parsing_time_ms
+                       parser_used, quality_score, doc_complexity, parsing_time_ms,
+                       permission_level, department_id, user_id
                 FROM documents WHERE doc_id = :doc_id
             """),
             {"doc_id": doc_id},
@@ -749,6 +785,17 @@ async def get_doc_details(doc_id: str) -> DocDetailsResponse:
         doc_row = doc_result.mappings().fetchone()
         if doc_row is None:
             raise HTTPException(status_code=404, detail=f"문서를 찾을 수 없음: {doc_id}")
+
+        perm = doc_row["permission_level"]
+        owner_user = doc_row["user_id"]
+        owner_dept = doc_row["department_id"]
+        can_access = (
+            perm == "public"
+            or (owner_dept is not None and owner_dept == current_user["team"])
+            or owner_user == current_user["user_id"]
+        )
+        if not can_access:
+            raise HTTPException(status_code=403, detail="이 문서에 접근할 권한이 없습니다.")
 
         trace_result = await session.execute(
             text("""
