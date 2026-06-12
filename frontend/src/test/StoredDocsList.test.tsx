@@ -101,7 +101,6 @@ describe("StoredDocsList — 페이지네이션 (stored + stored_partial 통합)
   const PARTIAL_2 = [makeDoc("p1", "stored_partial"), makeDoc("p2", "stored_partial")];
 
   beforeEach(() => {
-    vi.clearAllMocks();
     vi.mocked(listDocuments).mockImplementation((status: string) => {
       if (status === "stored") {
         return Promise.resolve({ docs: STORED_21, total: 21, limit: 20, offset: 0 });
@@ -116,8 +115,8 @@ describe("StoredDocsList — 페이지네이션 (stored + stored_partial 통합)
   it("총 건수는 stored + stored_partial 합산이다 (23건)", async () => {
     render(<KmsManagePage />);
     fireEvent.click(screen.getByText(/적재 완료 문서/));
-    await screen.findByText("페이지문서 1");
-    // 표 헤더의 "총 23건" — getByText는 동일 텍스트 다수 요소 시 실패하므로 getAllByText 사용
+    // 정렬 DESC 기준 가장 최신 문서(id=21)가 첫 페이지 상단에 위치
+    await screen.findByText("페이지문서 21");
     const totalLabels = screen.getAllByText("총 23건");
     expect(totalLabels.length).toBeGreaterThan(0);
   });
@@ -125,8 +124,9 @@ describe("StoredDocsList — 페이지네이션 (stored + stored_partial 통합)
   it("첫 페이지에는 최대 STORED_PAGE(20)건만 표시된다", async () => {
     render(<KmsManagePage />);
     fireEvent.click(screen.getByText(/적재 완료 문서/));
-    await screen.findByText("페이지문서 1");
-    // 제목 셀만 추출 — 21 stored + 2 stored_partial = 23건이지만 첫 페이지는 20건이어야 함
+    // id=21이 첫 번째, id=2가 마지막 — id=1,p1,p2는 2페이지
+    await screen.findByText("페이지문서 21");
+    // 21 stored + 2 stored_partial = 23건 → 첫 페이지는 최대 20건만 표시해야 함
     const titleCells = screen.getAllByText(/^페이지문서 /);
     expect(titleCells.length).toBeLessThanOrEqual(20);
   });

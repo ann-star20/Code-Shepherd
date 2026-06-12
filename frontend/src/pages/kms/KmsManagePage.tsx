@@ -120,19 +120,22 @@ function StoredDocsList() {
     setLoading(true);
     setError(null);
     try {
+      // 전체 로드 후 클라이언트 슬라이싱 — 두 status를 동일 offset으로 각각 20건 페치하면
+      // 한 페이지에 최대 40건이 표시되는 버그가 있어 limit=10000으로 전체 수집 후 slice
       const [storedRes, partialRes] = await Promise.all([
-        listDocuments("stored",         STORED_PAGE, pageOffset),
-        listDocuments("stored_partial", STORED_PAGE, pageOffset),
+        listDocuments("stored",         10000, 0),
+        listDocuments("stored_partial", 10000, 0),
       ]);
-      const merged = [...storedRes.docs, ...partialRes.docs].sort(
+      const allDocs = [...storedRes.docs, ...partialRes.docs].sort(
         (a, b) => (b.created_at ?? "").localeCompare(a.created_at ?? ""),
       );
-      setDocs(merged);
-      setTotal(storedRes.total + partialRes.total);
+      const totalCount = storedRes.total + partialRes.total;
+      setDocs(allDocs.slice(pageOffset, pageOffset + STORED_PAGE));
+      setTotal(totalCount);
       setOffset(pageOffset);
       setKpi({
-        total:   storedRes.total + partialRes.total,
-        neo4j:   merged.filter(d => d.neo4j_synced === true).length,
+        total:   totalCount,
+        neo4j:   allDocs.filter(d => d.neo4j_synced === true).length,
         partial: partialRes.total,
         loading: false,
       });
@@ -247,9 +250,9 @@ function StoredDocsList() {
                             }}>{doc.doc_complexity}</span>
                           ) : "-"}
                         </td>
-                        <td style={{ padding: "10px 12px", fontWeight: 700 }}>
+                        <td data-testid="neo4j-sync-cell" style={{ padding: "10px 12px", fontWeight: 700 }}>
                           <span style={{ color: doc.neo4j_synced === true ? "#22c55e" : "#cbd5e1" }}>
-                            {doc.neo4j_synced == null ? "—" : doc.neo4j_synced ? "✓" : "✗"}
+                            {doc.neo4j_synced == null ? "—" : doc.neo4j_synced ? "✓" : "-"}
                           </span>
                         </td>
                         <td style={{ padding: "10px 12px" }}>
