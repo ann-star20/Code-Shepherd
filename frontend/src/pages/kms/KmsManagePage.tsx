@@ -1,11 +1,13 @@
-import { useCallback, useEffect, useState, type CSSProperties, type ReactNode } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { DocumentUpload } from "../../components/DocumentUpload";
 import { HitlQueue } from "../../components/HitlQueue";
+import { PipelineFlow } from "../../components/PipelineFlow";
+import { DocumentAnalyzer } from "../../components/DocumentAnalyzer";
 import { getDocDetails, listDocuments } from "../../lib/kmsApi";
-import type { AgentTraceItem, ChunkItem, DocDetailsResponse, DocListItem } from "../../types/kms";
+import type { DocDetailsResponse, DocListItem } from "../../types/kms";
 
 type Tab = "upload" | "hitl" | "stored";
-type DetailTab = "info" | "chunks" | "traces";
+type DetailTab = "info" | "analyzer" | "pipeline";
 
 const STATUS_LABEL: Record<string, string> = {
   stored:         "저장 완료",
@@ -96,72 +98,6 @@ function DocInfoPanel({ doc, details }: { doc: DocListItem; details: DocDetailsR
   );
 }
 
-function ChunksPanel({ chunks }: { chunks: ChunkItem[] }) {
-  if (chunks.length === 0) return (
-    <div style={{ color: "#94a3b8", fontSize: 13, textAlign: "center", padding: 24 }}>청크 데이터 없음</div>
-  );
-  const parents  = chunks.filter(c => c.chunk_type === "parent");
-  const children = chunks.filter(c => c.chunk_type === "child");
-  return (
-    <div>
-      <div style={{ fontSize: 12, color: "#64748b", marginBottom: 10 }}>
-        Parent {parents.length}개 · Child {children.length}개 · 총 {chunks.length}개
-      </div>
-      {chunks.map((chunk) => (
-        <div key={chunk.chunk_id} style={{
-          marginBottom: 8, padding: "10px 12px", borderRadius: 8, fontSize: 12,
-          background: chunk.chunk_type === "parent" ? "#f0f9ff" : "#f8fafc",
-          border: `1px solid ${chunk.chunk_type === "parent" ? "#bae6fd" : "#e2e8f0"}`,
-        }}>
-          <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 4 }}>
-            <span style={{ fontWeight: 600, color: chunk.chunk_type === "parent" ? "#0284c7" : "#64748b" }}>
-              {chunk.chunk_type === "parent" ? "Parent" : "Child"}
-              {chunk.section_header ? ` · ${chunk.section_header}` : ""}
-            </span>
-            <span style={{ color: "#94a3b8" }}>{chunk.token_count ?? "—"}tok</span>
-          </div>
-          <div style={{ color: "#374151", lineHeight: 1.5, maxHeight: 72, overflow: "hidden" }}>
-            {chunk.content.slice(0, 180)}{chunk.content.length > 180 ? "…" : ""}
-          </div>
-        </div>
-      ))}
-    </div>
-  );
-}
-
-function TracesPanel({ traces }: { traces: AgentTraceItem[] }) {
-  if (traces.length === 0) return (
-    <div style={{ color: "#94a3b8", fontSize: 13, textAlign: "center", padding: 24 }}>처리 이력 없음</div>
-  );
-  return (
-    <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-      {traces.map((t) => (
-        <div key={t.trace_id} style={{
-          padding: "10px 12px", borderRadius: 8, background: "#f8fafc",
-          border: "1px solid #e2e8f0", fontSize: 12,
-        }}>
-          <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 4 }}>
-            <span style={{ fontWeight: 600, color: "#334155" }}>{t.agent_name}</span>
-            <span style={{
-              fontSize: 11, fontWeight: 600, color: "#fff",
-              background: t.status === "success" ? "#22c55e" : t.status === "fail" ? "#ef4444" : "#f59e0b",
-              padding: "1px 7px", borderRadius: 10,
-            }}>{t.status}</span>
-          </div>
-          <div style={{ color: "#94a3b8", fontFamily: "monospace", wordBreak: "break-all", marginBottom: 2 }}>
-            {t.trace_id}
-          </div>
-          {t.execution_ms !== null && (
-            <div style={{ color: "#64748b" }}>{t.execution_ms}ms</div>
-          )}
-          {t.error_message && (
-            <div style={{ color: "#ef4444", marginTop: 2 }}>{t.error_message}</div>
-          )}
-        </div>
-      ))}
-    </div>
-  );
-}
 
 // ── StoredDocsList ─────────────────────────────────────────────────────────────
 const STORED_PAGE = 20;
@@ -230,9 +166,9 @@ function StoredDocsList() {
   const hasNext = offset + STORED_PAGE < total;
 
   const DETAIL_TABS: { key: DetailTab; label: string }[] = [
-    { key: "info",   label: "기본 정보" },
-    { key: "chunks", label: "Chunk" },
-    { key: "traces", label: "처리 이력" },
+    { key: "info",     label: "기본 정보" },
+    { key: "analyzer", label: "문서 분석" },
+    { key: "pipeline", label: "파이프라인" },
   ];
 
   return (
@@ -384,15 +320,15 @@ function StoredDocsList() {
             </div>
 
             {/* Panel content */}
-            <div style={{ padding: 16, maxHeight: 520, overflowY: "auto" }}>
+            <div style={{ padding: detailTab === "pipeline" ? 0 : 16, maxHeight: 520, overflowY: "auto" }}>
               {detailLoading ? (
                 <div style={{ textAlign: "center", color: "#94a3b8", fontSize: 13, padding: 24 }}>불러오는 중...</div>
               ) : detailTab === "info" ? (
                 <DocInfoPanel doc={selected} details={details} />
-              ) : detailTab === "chunks" ? (
-                <ChunksPanel chunks={details?.chunks ?? []} />
+              ) : detailTab === "analyzer" ? (
+                <DocumentAnalyzer chunks={details?.chunks ?? []} docId={selected.doc_id} />
               ) : (
-                <TracesPanel traces={details?.agent_traces ?? []} />
+                <PipelineFlow traces={details?.agent_traces ?? []} />
               )}
             </div>
           </div>

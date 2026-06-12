@@ -14,7 +14,6 @@ import KmsPlaceholder from "../pages/kms/Placeholder";
 import ReviewPlaceholder from "../pages/review/Placeholder";
 import LearningPlaceholder from "../pages/learning/Placeholder";
 import YoutubePlaceholder from "../pages/youtube/Placeholder";
-import ApprovalsPlaceholder from "../pages/approvals/Placeholder";
 import KmsManagePlaceholder from "../pages/kms/ManagePlaceholder";
 
 function createQueryClient() {
@@ -77,12 +76,6 @@ describe("Placeholder pages", () => {
   it("Youtube placeholder shows 준비 중", () => {
     renderWithProviders(<YoutubePlaceholder />);
     expect(screen.getByTestId("placeholder-youtube")).toBeInTheDocument();
-    expect(screen.getByText(/준비 중/)).toBeInTheDocument();
-  });
-
-  it("Approvals placeholder shows 준비 중", () => {
-    renderWithProviders(<ApprovalsPlaceholder />);
-    expect(screen.getByTestId("placeholder-approvals")).toBeInTheDocument();
     expect(screen.getByText(/준비 중/)).toBeInTheDocument();
   });
 

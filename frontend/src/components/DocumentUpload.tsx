@@ -179,7 +179,7 @@ export function DocumentUpload({ isVisible = true }: { isVisible?: boolean }) {
     setUploadError(null);
     try {
       const result = await replaceDocument(oldDocId, file, fileHash);
-      setUploadResult({ doc_id: result.new_doc_id, status: result.status, message: result.message, hitl_required: false, chunk_count: 0 });
+      setUploadResult({ doc_id: result.new_doc_id, status: result.status, message: result.message, quality_score: null, hitl_required: false, chunk_count: 0 });
       setKpiRefreshKey(k => k + 1);
     } catch (e) {
       setUploadError(e instanceof Error ? e.message : "교체 중 오류 발생");
