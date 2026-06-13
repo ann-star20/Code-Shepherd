@@ -15,20 +15,28 @@ from src.embeddings import _active_model, embed_texts
 
 load_dotenv()
 
+_chroma_client: chromadb.PersistentClient | None = None
 _chroma_collection = None
 
 
 def _get_collection():
-    global _chroma_collection
-    if _chroma_collection is None:
-        client = chromadb.PersistentClient(path=CHROMA_DIR)
-        _chroma_collection = client.get_collection(CHROMA_COLLECTION)
-        idx_model = (_chroma_collection.metadata or {}).get("embedding_model")
-        if idx_model and idx_model != _active_model():
-            raise RuntimeError(
-                f"인덱스/질의 임베딩 불일치: 인덱스={idx_model}, 현재 설정={_active_model()} "
-                "— EMBEDDING_PROVIDER 확인 후 make reindex 필요"
-            )
+    """ChromaDB collection을 반환. reindex로 UUID가 바뀌면 자동 재로드."""
+    global _chroma_client, _chroma_collection
+    if _chroma_collection is not None:
+        try:
+            _chroma_collection.count()  # 유효성 확인 — stale UUID면 NotFoundError
+            return _chroma_collection
+        except Exception:
+            _chroma_collection = None  # 캐시 무효화 후 재로드
+    if _chroma_client is None:
+        _chroma_client = chromadb.PersistentClient(path=CHROMA_DIR)
+    _chroma_collection = _chroma_client.get_collection(CHROMA_COLLECTION)
+    idx_model = (_chroma_collection.metadata or {}).get("embedding_model")
+    if idx_model and idx_model != _active_model():
+        raise RuntimeError(
+            f"인덱스/질의 임베딩 불일치: 인덱스={idx_model}, 현재 설정={_active_model()} "
+            "— EMBEDDING_PROVIDER 확인 후 make reindex 필요"
+        )
     return _chroma_collection
 
 
