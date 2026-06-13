@@ -266,8 +266,28 @@ def _table_rows_to_markdown(rows_data: list[list[str]]) -> str:
     return "\n".join(md_lines)
 
 
+def _extract_textbox_lines_from_para(para_elem) -> list[str]:
+    """w:p 요소 안에 중첩된 w:txbxContent에서 텍스트 라인을 추출한다.
+
+    텍스트 박스는 앵커 단락(`<w:p>`)에 묶여 있으므로,
+    이 함수로 추출한 내용을 해당 단락 직후에 삽입하면 문서 순서가 유지된다.
+
+    실제 DOCX 구조:
+      w:p > w:r > w:drawing > wp:anchor > a:graphic > ... > wps:txbx > w:txbxContent
+    iter()는 깊이 무관하게 탐색하므로 중간 경로에 무관하게 동작한다.
+    """
+    from docx.oxml.ns import qn as _qn
+    lines: list[str] = []
+    for txbx_content in para_elem.iter(_qn("w:txbxContent")):
+        for p_elem in txbx_content.findall(_qn("w:p")):
+            text = "".join(t.text for t in p_elem.iter(_qn("w:t")) if t.text)
+            if text.strip():
+                lines.append(text.strip())
+    return lines
+
+
 def _convert_docx_with_python_docx(file_path: str) -> str:
-    """python-docx로 DOCX를 Markdown으로 변환. 단락과 표를 문서 순서대로 처리한다."""
+    """python-docx로 DOCX를 Markdown으로 변환. 단락·텍스트박스·표를 문서 순서대로 처리한다."""
     from docx import Document
     from docx.text.paragraph import Paragraph as DocxParagraph
     from docx.table import Table as DocxTable
@@ -283,6 +303,9 @@ def _convert_docx_with_python_docx(file_path: str) -> str:
             line = _paragraph_to_markdown_line(para)
             if line:
                 blocks.append(line)
+            # 텍스트 박스: 앵커 단락 직후 삽입 → 문서 순서 유지
+            for tb_line in _extract_textbox_lines_from_para(child):
+                blocks.append(tb_line)
 
         elif tag == "tbl":
             table = DocxTable(child, doc)
