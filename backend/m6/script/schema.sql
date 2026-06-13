@@ -67,7 +67,7 @@ CREATE TABLE IF NOT EXISTS concepts (
 -- 🎯 3-Factor 유사도 역추적 인프라를 위한 세부 점수 지표 컬럼 원자적 편입
 CREATE TABLE IF NOT EXISTS staging_concepts (
     id                  UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    session_id          UUID NOT NULL,
+    session_id          UUID NULL,
     doc_id              TEXT REFERENCES knowledge_documents(doc_id) ON DELETE CASCADE,
     concept_json        JSONB NOT NULL,
     state               TEXT NOT NULL DEFAULT 'DRAFT',
@@ -142,7 +142,7 @@ SET url_patterns = EXCLUDED.url_patterns,
 -- =============================================================================
 
 -- knowledge_documents: session_id 추가 (prd §1.3 SSE /api/pipeline/stream/{session_id})
-ALTER TABLE knowledge_documents ADD COLUMN IF NOT EXISTS session_id TEXT NOT NULL DEFAULT '';
+ALTER TABLE knowledge_documents ADD COLUMN IF NOT EXISTS session_id TEXT NULL DEFAULT '';
 CREATE INDEX IF NOT EXISTS idx_knowledge_document_session
     ON knowledge_documents (session_id);
 

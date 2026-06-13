@@ -39,7 +39,7 @@ PERF_JSON = SCRIPTS_DIR / "seed" / "performance" / "performance_concepts.json"
 def _driver() -> neo4j.AsyncDriver:
     uri = os.getenv("NEO4J_URI", "bolt://localhost:7688")
     user = os.getenv("NEO4J_USER", "neo4j")
-    pw = os.getenv("NEO4J_PASSWORD", "password")
+    pw = os.getenv("NEO4J_PASSWORD", "codeshepherd")
     return neo4j.AsyncGraphDatabase.driver(uri, auth=(user, pw))
 
 
@@ -62,7 +62,7 @@ async def _seed_batch(
 
 
 async def main() -> None:
-    uri = os.getenv("NEO4J_URI", "bolt://localhost:7687")
+    uri = os.getenv("NEO4J_URI", "bolt://localhost:7688")
     print(f"[seed_neo4j] 연결: {uri}")
 
     driver = _driver()

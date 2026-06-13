@@ -142,6 +142,9 @@ services:
       - "7688:7687"
     environment:
       NEO4J_AUTH: neo4j/${NEO4J_PASSWORD:-codeshepherd}
+      # NEO4J_URI: bolt://neo4j:7688 # 팀원들을 위해 그대로 유지
+      # 💡 [치트키 기입] 이 한 줄을 추가하면 유효성 검사를 안 해서 Neo4j가 절대 안 죽습니다!
+      # NEO4J_server_config_strict__validation_enabled: "false"
     volumes:
       - neo4j_m6_data:/data
     networks:
@@ -158,6 +161,7 @@ services:
 
   cloud-sql-proxy:
     image: gcr.io/cloud-sql-connectors/cloud-sql-proxy:2
+    env_file: .env
     command:
       - "--address=0.0.0.0"
       - "--port=5432"
