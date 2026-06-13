@@ -5,6 +5,9 @@ gap 경로: 지침공백 정직 보고 + 신규 지침 제안(GapReport.proposed
 """
 from __future__ import annotations
 
+import re
+from collections import defaultdict
+
 from contracts import Chunk, Finding, GapReport, ReviewState
 from src.llm import call_llm
 
@@ -36,6 +39,16 @@ def _severity_emoji(s: str) -> str:
     return {"Major": "🔴", "Minor": "🟡", "Info": "🔵"}.get(s, "⚪")
 
 
+def _extract_location(f: Finding) -> str:
+    """evidence_lines에서 함수명 추출. 없으면 file명 반환."""
+    for line in f.evidence_lines:
+        m = re.search(r"(?:async\s+)?def\s+(\w+)\s*\(", line.lstrip("+-").strip())
+        if m:
+            suffix = f" ({f.file})" if f.file else ""
+            return f"`{m.group(1)}`{suffix}"
+    return f"`{f.file}`" if f.file else ""
+
+
 def compose_comment(state: ReviewState) -> dict:
     route: str = state.get("route", "proceed")
     findings: list[Finding] = state.get("findings", [])
@@ -61,23 +74,42 @@ def _compose_findings(findings: list[Finding], chunks: list[Chunk]) -> dict:
         return {"comment_md": "\n".join(lines), "gap_report": None}
 
     if violations:
-        lines.append(f"**위반 {len(violations)}건** 발견되었습니다.\n")
+        # ISSUE-1: rule_id로 묶어 코멘트 1개 per rule
+        grouped: dict[str, list[Finding]] = defaultdict(list)
         for f in violations:
-            lines.append(f"---\n### {_severity_emoji(f.severity)} [{f.rule_id}] {f.severity}")
-            if f.file:
-                lines.append(f"**파일**: `{f.file}`")
-            source = source_map.get(f.rule_id, "")
-            src_link = f"([출처]({source}))" if source else ""
-            lines.append(f"\n**규칙 인용** {src_link}:")
-            lines.append(f"> {f.rule_quote}")
-            if f.evidence_lines:
-                lines.append("\n**위반 코드**:")
-                lines.append("```")
-                lines.extend(f.evidence_lines)
-                lines.append("```")
-            lines.append(f"\n**판단**: {f.reasoning}")
-            if f.fp_note:
-                lines.append(f"\n*오탐 검토*: {f.fp_note}")
+            grouped[f.rule_id].append(f)
+
+        lines.append(f"**위반 {len(violations)}건** 발견되었습니다.\n")
+
+        for rule_id, group in grouped.items():
+            first = group[0]
+            lines.append(f"---\n### {_severity_emoji(first.severity)} [{rule_id}] {first.severity}")
+
+            # 위반 위치 목록
+            locations = [loc for f in group if (loc := _extract_location(f))]
+            if locations:
+                lines.append(f"**위반 위치**: {', '.join(locations)}")
+
+            # ISSUE-2: URL 링크 대신 텍스트 출처
+            source = source_map.get(rule_id, "")
+            src_ref = f" (출처: {source})" if source else ""
+            lines.append(f"\n**규칙 인용**{src_ref}:")
+            lines.append(f"> {first.rule_quote}")
+
+            # 위반별 코드 블록
+            for f in group:
+                if f.evidence_lines:
+                    loc_label = _extract_location(f)
+                    label = f" — {loc_label}" if loc_label else ""
+                    lines.append(f"\n**위반 코드{label}**:")
+                    lines.append("```")
+                    lines.extend(f.evidence_lines)
+                    lines.append("```")
+
+            lines.append(f"\n**판단**: {first.reasoning}")
+            fp_notes = [f.fp_note for f in group if f.fp_note]
+            if fp_notes:
+                lines.append(f"\n*오탐 검토*: {'; '.join(fp_notes)}")
     else:
         lines.append("위반 사항이 없습니다.\n")
 
