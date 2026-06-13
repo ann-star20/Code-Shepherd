@@ -1,16 +1,20 @@
 """
-test_stage1_docx_parser.py — _paragraph_to_markdown_line / _convert_docx_with_python_docx 단위 테스트
+test_stage1_docx_parser.py — _paragraph_to_markdown_line / _calculate_quality_score 단위 테스트
 
 버그 재현:
   Bug 1: 코드 블록 미감지 — Code/Preformatted 스타일, 모노스페이스 폰트 단락이 평문으로 출력
   Bug 2: 헤딩 outline level 미적용 — 커스텀 스타일명의 Heading이 #로 변환 안 됨
   Bug 3: run 사이 공백 소실 — para.text 단순 concat으로 "ClassNameAttribute" 병합 발생
+  Bug 4: 이모지를 깨진 문자로 오판 — _BROKEN_CHAR_PATTERN이 이모지 범위 미포함
 """
 
 from unittest.mock import MagicMock, PropertyMock
 import pytest
 
-from app.pipeline.stage1_document_parser_agent import _paragraph_to_markdown_line
+from app.pipeline.stage1_document_parser_agent import (
+    _paragraph_to_markdown_line,
+    _calculate_quality_score,
+)
 
 
 # ---------------------------------------------------------------------------
@@ -177,3 +181,53 @@ class TestRunSpacePreservation:
         assert result is not None
         assert "ClassName" in result
         assert "Attribute" in result
+
+
+# ---------------------------------------------------------------------------
+# Bug 4: 이모지를 깨진 문자로 오판
+# ---------------------------------------------------------------------------
+
+class TestEmojiNotBrokenChar:
+    """_calculate_quality_score 가 이모지를 broken char로 계산하지 않아야 한다."""
+
+    EMOJI_HEAVY_MD = (
+        "# Django Clickjacking 보안\n\n"
+        "| 상태 | 설명 |\n"
+        "| --- | --- |\n"
+        "| 🟢 허용 | 공개 위젯 뷰 |\n"
+        "| 🔴 차단 | 기본 미들웨어 적용 |\n"
+        "| 🟡 경고 | 커스텀 헤더 필요 |\n"
+        "| ⚠ 주의 | X-Frame-Options 설정 확인 |\n"
+        "| 🖥 데스크톱 | 전체 지원 |\n"
+        "| 📊 통계 | 클릭재킹 공격 비율 |\n"
+        "| ★ 추천 | SAMEORIGIN 옵션 |\n\n"
+        "이모지가 포함된 표는 정상 마크다운입니다.\n" * 10
+    )
+
+    def test_emoji_does_not_lower_broken_ratio(self):
+        """이모지가 포함된 마크다운의 broken_ratio가 2% 미만이어야 한다."""
+        score = _calculate_quality_score(self.EMOJI_HEAVY_MD, "docx", has_tables=True)
+        # broken_ratio < 0.02 → +20점 획득 확인
+        # 헤딩+표+길이 보너스까지 합산해 60점 이상이어야 함
+        assert score >= 60, (
+            f"이모지로 인해 품질 점수 과소 산정: {score} (기대 >= 60)"
+        )
+
+    def test_emoji_only_paragraph_not_broken(self):
+        """이모지만으로 구성된 단락도 broken char로 처리하지 않는다."""
+        emoji_line = "🔴 🟡 🟢 ⚠ 🖥 📊 ★ 🔵"
+        md = "# 제목\n\n" + emoji_line + "\n\n" + ("본문 내용입니다.\n" * 20)
+        score = _calculate_quality_score(md, "docx")
+        assert score >= 50, f"이모지 단락으로 품질 과소 산정: {score}"
+
+    def test_misc_symbols_not_broken(self):
+        """U+2600-U+27BF 범위 (⚠ ★ 등 Misc Symbols/Dingbats)도 정상 처리된다."""
+        md = "# 제목\n\n⚠ 경고 메시지\n★ 별점 5개\n☑ 완료\n\n" + ("내용 " * 50)
+        score = _calculate_quality_score(md, "docx")
+        assert score >= 50, f"Misc Symbols가 broken char로 처리됨: {score}"
+
+    def test_pure_ascii_korean_still_high_score(self):
+        """이모지 없는 일반 문서는 여전히 높은 점수를 받는다."""
+        md = "# 제목\n\n## 소제목\n\n본문 내용입니다. " * 30
+        score = _calculate_quality_score(md, "docx")
+        assert score >= 75, f"일반 문서 점수가 낮아짐 (regression): {score}"
