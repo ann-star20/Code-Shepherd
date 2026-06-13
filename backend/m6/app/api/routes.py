@@ -4,10 +4,19 @@ import uuid
 
 from fastapi import APIRouter
 
+from app.adapters.db.neo4j_repo import Neo4jConceptRepo
+from app.core.neo4j_client import get_database, get_driver
 from app.schemas.graph import GraphQueryRequest, GraphQueryResponse
 from app.schemas.ingest import IngestRequest, IngestStatus
 
 router = APIRouter(tags=["knowledge-graph"])
+
+
+@router.get("/topology")
+async def get_topology() -> dict[str, list[dict]]:
+    """전체 Concept 토폴로지 - 노드/엣지 (force-graph 뷰어용)."""
+    repo = Neo4jConceptRepo(get_driver(), get_database())
+    return await repo.get_topology()
 
 
 @router.post("/ingest", status_code=202)

@@ -46,6 +46,40 @@ class Neo4jConceptRepo:
                 raise
         return name
 
+    async def get_topology(self) -> dict[str, list[dict]]:
+        """전체 Concept 노드 + RELATED_TO 엣지 - 토폴로지 뷰어용."""
+        async with self._driver.session(database=self._db) as session:
+            node_result = await session.run(
+                "MATCH (c:Concept) RETURN c.name AS name, c.domains AS domains, "
+                "c.cwe_id AS cwe_id, c.owasp_id AS owasp_id, c.severity AS severity, "
+                "c.description_ko AS description_ko, c.aliases AS aliases"
+            )
+            nodes = [
+                {
+                    "id": record["name"],
+                    "name": record["name"],
+                    "status": "COMMITTED",
+                    "domains": record["domains"] or [],
+                    "cwe_id": record["cwe_id"],
+                    "owasp_id": record["owasp_id"],
+                    "severity": record["severity"],
+                    "description_ko": record["description_ko"],
+                    "aliases": record["aliases"] or [],
+                }
+                async for record in node_result
+            ]
+
+            edge_result = await session.run(
+                "MATCH (a:Concept)-[r:RELATED_TO]->(b:Concept) "
+                "RETURN a.name AS source, b.name AS target, type(r) AS type"
+            )
+            edges = [
+                {"source": record["source"], "target": record["target"], "type": record["type"]}
+                async for record in edge_result
+            ]
+
+        return {"nodes": nodes, "edges": edges}
+
 
 async def _merge_concept_node(tx, concept: ConceptExtractionSchema) -> str:
     domain_labels = [d.capitalize() for d in concept.domains if d]

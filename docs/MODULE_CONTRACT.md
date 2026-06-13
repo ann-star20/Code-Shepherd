@@ -412,6 +412,83 @@ kms_extension_points:
 
 ---
 
+## Module 6 — 외부 문서 지식 그래프 (M6, HTTP API)
+
+```yaml
+module_id:    module_6_knowledge_graph
+module_name:  외부 문서 지식 그래프 파이프라인 (FastAPI + Celery + Neo4j)
+responsibility: >
+  외부 문서 URL을 입력받아 Prescan→Crawl→Extract→HITL→WriteGraph
+  5단계 파이프라인을 비동기로 수행하고, HITL 승인 후 Neo4j에
+  Concept 그래프를 구축한다. PlatformState와 독립된 별도 FastAPI
+  서비스이며, 프론트엔드는 Vite 프록시 `/m6-api` → `m6:8007`로 접근한다.
+
+# PlatformState 기반이 아닌 독립 HTTP 서비스이므로
+# input/output은 PlatformState 필드가 아닌 HTTP 요청/응답 형식으로 정의한다.
+endpoints:
+  - POST /documents/check-duplicate
+      request:  { url: HttpUrl }
+      response: { is_duplicate: bool, doc_id: str | null }
+
+  - POST /documents/metadata/learn
+      request:  { framework: str, pattern: str, supported_langs: [str], default_lang: str | null }
+      response: { framework: str, status: "learned" }
+
+  - POST /pipeline/trigger          (202)
+      request:  { doc_id: HttpUrl }   # 문서 원본 URL
+      response: { session_id: str, message: str }
+      side_effect: Celery chain (prescan|crawl|extract) 비동기 시작
+
+  - GET /pipeline/stream/{session_id}   (SSE, text/event-stream)
+      events: connected | log | step_update | heartbeat | finished
+      channel: Redis pub/sub "pipeline:{session_id}"
+
+  - GET /staging/{session_id}
+      response: { items: [StagingConcept] }
+      # StagingConcept = GraphNode + { staging_id, state }
+      # GraphNode = { id, name, status, domains, infer_action?, infer_confidence?,
+      #               target_concept_name?, cwe_id?, owasp_id?, severity?,
+      #               description_ko?, aliases?, mechanisms? }
+      # status: infer_action in (MERGE, RELATED_TO) → "MERGE_PENDING", else "DRAFT"
+
+  - GET /staging/{session_id}/diff
+      response: { draft: int, approved: int, committed: int }   # DiffSummary
+
+  - POST /staging/{id}/approve      (200)
+      # id가 staging_concepts.id로 존재 → 단일 승인 (FOR UPDATE SKIP LOCKED)
+      single_response: { id: str, state: "APPROVED" }   # 409 처리중, 400 DRAFT 아님
+      # id가 존재하지 않으면 session_id로 간주 → 세션 일괄 승인
+      bulk_response:   { session_id: str, approved: int }
+
+  - POST /staging/{id}/reject       (200)
+      single_response: { id: str, state: "REJECTED" }   # 400 DRAFT 아님
+      bulk_response:   { session_id: str, rejected: int }
+
+  - POST /staging/{session_id}/commit   (202)
+      response: { session_id: str, status: "write_graph_triggered" }
+      side_effect: write_graph_task.apply_async(args=[session_id])
+
+  - GET /graph/topology
+      response: { nodes: [GraphNode (status="COMMITTED")], edges: [{source, target, type}] }
+      source: Neo4jConceptRepo.get_topology() — Concept 노드 + RELATED_TO 엣지
+
+required_state_fields: []   # 독립 서비스, PlatformState 불사용
+uses_kms: false
+uses_langsmith: true        # LANGCHAIN_PROJECT=module6-{githubId}
+
+validation_rule:
+  - SQL은 전부 asyncpg 파라미터 바인딩 ($1, $2 ...) — f-string 조합 금지
+  - staging 승인은 SELECT FOR UPDATE SKIP LOCKED로 이중 승인 방지
+  - 3-Factor 점수(score_jaro_winkler/name_vector/desc_vector) 0.0 전부인 채로
+    state=APPROVED 전이 금지 (schema.sql ★ 주의)
+
+error_rule:
+  - approve 409: 이미 처리 중이거나 존재하지 않는 staging 항목
+  - approve/reject 400: DRAFT 상태가 아닌 항목
+```
+
+---
+
 ## 모듈 간 연결 흐름 요약
 
 ```

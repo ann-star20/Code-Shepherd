@@ -5,6 +5,7 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
+from app.api.documents import router as documents_router
 from app.api.routes import router as graph_router
 from app.api.pipeline import router as pipeline_router
 from app.api.staging import router as staging_router
@@ -34,6 +35,7 @@ app.add_middleware(TraceIDMiddleware)
 app.include_router(graph_router, prefix="/graph")
 app.include_router(pipeline_router)
 app.include_router(staging_router)
+app.include_router(documents_router)
 
 
 @app.get("/health")

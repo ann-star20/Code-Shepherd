@@ -33,7 +33,7 @@ score_name_vector  FLOAT DEFAULT 0.0   -- 30%
 score_desc_vector  FLOAT DEFAULT 0.0   -- 30%
 target_concept_name TEXT,    known_domains/unknown_domains TEXT[]
 
--- knowledge_document: content_hash CHAR(8), etag TEXT
+-- knowledge_documents: content_hash CHAR(8), etag TEXT
 --   state CHECK IN (PENDING,CRAWLING,EXTRACTING,EXTRACTED,COMMITTED,FAILED)
 -- domain_registry / framework_metadata(url_patterns[], supported_langs[], default_lang)
 ```

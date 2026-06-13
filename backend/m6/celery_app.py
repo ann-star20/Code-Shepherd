@@ -24,3 +24,9 @@ celery_app.conf.update(
     },
     task_default_queue="m6_graph",
 )
+
+if os.getenv("LOCAL_DEBUG") == "true":
+    celery_app.conf.update(
+        task_always_eager=True,       # 비동기 큐를 거치지 않고, 일반 함수처럼 즉시 실행
+        task_eager_propagates=True    # 태스크 내부에서 에러 발생 시 디버거 콘솔에 바로 에러 전파
+    )

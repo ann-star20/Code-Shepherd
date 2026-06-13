@@ -2,7 +2,7 @@
 
 실행 순서: Prescan -> Crawling -> Extract -> (HITL via API) -> WriteGraph
 PG -> Neo4j 쓰기 순서 고정 (데드락 방지)
-FAILED 클린업: staging DRAFT 삭제 + knowledge_document state=FAILED
+FAILED 클린업: staging DRAFT 삭제 + knowledge_documents state=FAILED
 """
 
 from __future__ import annotations
@@ -44,7 +44,7 @@ def _log(session_id: str, agent: str, message: str) -> None:
 
 @celery_app.task(name="m6.prescan", bind=True, max_retries=3, queue="m6_graph")
 def prescan_task(self, session_id: str, url: str) -> dict:
-    """URL 메타 분석 + ETag/hash 중복 검증 + knowledge_document PENDING 생성."""
+    """URL 메타 분석 + ETag/hash 중복 검증 + knowledge_documents PENDING 생성."""
     try:
         ctx = asyncio.run(_prescan_async(session_id, url))
         _emit(session_id, {"type": "step_update", "agent": "Prescan", "status": "SUCCESS"})
@@ -60,7 +60,7 @@ async def _prescan_async(session_id: str, url: str) -> dict:
     conn = await asyncpg.connect(_PG_DSN)
     try:
         existing = await conn.fetchrow(
-            "SELECT doc_id, state FROM knowledge_document "
+            "SELECT doc_id, state FROM knowledge_documents "
             "WHERE content_hash = $1 OR (original_url = $2 AND etag = $3 AND etag IS NOT NULL)",
             content_hash, url, etag,
         )
@@ -70,7 +70,7 @@ async def _prescan_async(session_id: str, url: str) -> dict:
         meta = await _match_framework(conn, url)
         doc_id = f"doc_{content_hash}"
         await conn.execute(
-            "INSERT INTO knowledge_document "
+            "INSERT INTO knowledge_documents "
             "    (doc_id, source_prefix, original_url, content_hash, etag, "
             "     lang, framework, version, state, session_id) "
             "VALUES ($1, $2, $3, $4, $5, $6, $7, $8, 'PENDING', $9) "
@@ -81,7 +81,7 @@ async def _prescan_async(session_id: str, url: str) -> dict:
             meta.get("lang"), meta.get("framework"), meta.get("version"),
             session_id,
         )
-        _log(session_id, "Prescan", f"knowledge_document 등록 완료: {doc_id}")
+        _log(session_id, "Prescan", f"knowledge_documents 등록 완료: {doc_id}")
         return {"skip": False, "doc_id": doc_id, "url": url, "session_id": session_id, **meta}
     finally:
         await conn.close()
@@ -384,7 +384,7 @@ async def _set_failed_async(session_id: str) -> None:
             "DELETE FROM staging_concepts WHERE session_id = $1 AND state = 'DRAFT'", sid
         )
         await conn.execute(
-            "UPDATE knowledge_document SET state = 'FAILED', updated_at = now() WHERE session_id = $1",
+            "UPDATE knowledge_documents SET state = 'FAILED', updated_at = now() WHERE session_id = $1",
             session_id,
         )
     finally:
@@ -401,7 +401,7 @@ async def _update_doc_state(doc_id: str, state: str) -> None:
 
 async def _update_doc_state_conn(conn: asyncpg.Connection, doc_id: str, state: str) -> None:
     await conn.execute(
-        "UPDATE knowledge_document SET state = $1, updated_at = now() WHERE doc_id = $2",
+        "UPDATE knowledge_documents SET state = $1, updated_at = now() WHERE doc_id = $2",
         state, doc_id,
     )
 

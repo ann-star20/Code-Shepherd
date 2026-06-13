@@ -13,24 +13,23 @@ from pydantic import BaseModel, HttpUrl
 from app.core.redis_client import get_redis
 from app.worker.tasks import trigger_pipeline
 
-router = APIRouter(prefix="/api/pipeline", tags=["pipeline"])
+router = APIRouter(prefix="/pipeline", tags=["pipeline"])
 
 
 class TriggerRequest(BaseModel):
-    url: HttpUrl
-    title: str = ""
+    doc_id: HttpUrl
 
 
 class TriggerResponse(BaseModel):
     session_id: str
-    status: str = "triggered"
+    message: str = "triggered"
 
 
 @router.post("/trigger", response_model=TriggerResponse, status_code=202)
 async def trigger(payload: TriggerRequest) -> TriggerResponse:
     """파이프라인 비동기 시작 - session_id 반환."""
     session_id = str(uuid.uuid4())
-    trigger_pipeline(session_id, str(payload.url))
+    trigger_pipeline(session_id, str(payload.doc_id))
     return TriggerResponse(session_id=session_id)
 
 
