@@ -7,7 +7,11 @@
 
 ---
 
-## 통합 환경 실행 절차 (2026-06-13 기준)
+## 통합 환경 실행 절차 (2026-06-13 기준 — 단일 스택)
+
+> **구 스택(Code-Shepherd) + network connect 절차는 폐기됨.**  
+> 모든 서비스가 `Code-Shepherd-new` 단일 compose 프로젝트로 통합됐다.  
+> `docker network connect` 없이 m1→m3 라우팅이 작동한다 (E2E 검증 완료, 2026-06-13).
 
 ### 기동 순서
 
@@ -15,19 +19,17 @@
 # 1. Ollama bge-m3 확인
 ollama list  # bge-m3:latest 있어야 함
 
-# 2. dev3 m3 기동 (Code-Shepherd-new 루트)
+# 2. 전체 스택 기동 (Code-Shepherd-new 루트)
 cd C:\Users\user\Code-Shepherd-new
-docker compose up -d m3
-
-# 3. 구 스택 m3 정지 유지, old stack 기동
-cd C:\Users\user\Code-Shepherd  # (구 팀 스택 경로)
 docker compose up -d
 
-# 4. 네트워크 브리지 (컨테이너 재시작마다 필요)
-docker network connect --alias m3 code-shepherd_code-shepherd code-shepherd-new-m3-1
+# 3. 서비스 기동 대기 (최초 기동 시 uv sync로 약 5~7분 소요)
+#    이후 재시작 시에는 캐시 덕에 30초 이내
+docker logs code-shepherd-new-m1-1 --follow  # "Application startup complete" 확인 후 Ctrl-C
 
-# 5. 캐시 워밍 1회
-docker exec code-shepherd-m1-1 python /app/service/_send_test_webhook.py
+# 4. 캐시 워밍 1회
+docker exec code-shepherd-new-m1-1 python3 /app/service/_send_test_webhook.py
+#    → HTTP 200, status: dispatched 확인
 ```
 
 ### 핫스왑 절차 (통합 환경)
@@ -40,7 +42,7 @@ copy fixtures\demo\hotswap_external_api.md corpus\external_api.md
 docker exec code-shepherd-new-m3-1 python -m src.ingestion
 
 # 3. 재실행 → 판정 변경 확인
-docker exec code-shepherd-m1-1 python /app/service/_send_test_webhook.py
+docker exec code-shepherd-new-m1-1 python3 /app/service/_send_test_webhook.py
 
 # 4. 원복
 git checkout corpus/
@@ -52,9 +54,9 @@ docker exec code-shepherd-new-m3-1 python -m src.ingestion
 ## 사전 체크리스트 (시연 5분 전)
 
 - [ ] Ollama 기동 (`http://localhost:11434` — bge-m3 확인: `ollama list`)
-- [ ] Docker Desktop 기동 + 전체 스택 상태 확인
-- [ ] `code-shepherd-new-m3-1` 실행 중 + 네트워크 연결됨
-- [ ] 캐시 워밍 1회: `docker exec code-shepherd-m1-1 python /app/service/_send_test_webhook.py`
+- [ ] Docker Desktop 기동 + 전체 스택 상태 확인 (`docker compose up -d`, 모든 서비스 Up)
+- [ ] 전체 서비스 startup 완료 대기 (최초 기동 시 약 5~7분, `Application startup complete` 확인)
+- [ ] 캐시 워밍 1회: `docker exec code-shepherd-new-m1-1 python3 /app/service/_send_test_webhook.py` → HTTP 200 확인
 - [ ] `ENABLE_DB_WRITE=false` 확인 (`.env` 기본값)
 - [ ] 프론트 http://localhost:5173 접근 가능 확인
 - [ ] **폴백 준비**: Streamlit `make demo` (m3 직접실행 — 팀 스택 불필요)
