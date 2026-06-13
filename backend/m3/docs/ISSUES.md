@@ -18,6 +18,8 @@
 
 **수정 위치:** `src/nodes/compose_comment.py` (findings를 rule_id로 group by)
 
+**✅ 해결:** 추천안 A로 구현. `_compose_findings`가 violation을 rule_id로 group by → 규칙당 코멘트 1개 + `위반 위치: get_user, get_orders` 나열(`_extract_location`이 evidence_lines에서 함수명 추출). 라이브 서버 반영 확인.
+
 ---
 
 ### ISSUE-2. 출처 링크 깨짐
@@ -28,6 +30,8 @@
 **기대 동작:** 실제 corpus 파일을 가리키거나, 링크가 불가능하면 파일명만 텍스트로 표기 (예: "출처: corpus/sql_binding.md §1").
 
 **수정 위치:** `src/nodes/compose_comment.py` 의 출처 URL 생성 로직
+
+**✅ 해결:** `([출처](corpus/...))` 마크다운 링크 → `(출처: corpus/sql_binding.md)` 텍스트로 교체. GitHub가 상대경로를 PR URL로 오해해 깨진 링크를 만들던 문제 제거.
 
 ---
 
@@ -45,11 +49,19 @@
 ### ChromaDB stale UUID 캐시 (67bc24d5)
 reindex가 collection을 삭제+재생성하면서 UUID가 바뀌는데, retrieve.py 전역 캐시가 옛 UUID를 참조해 500 NotFoundError. → count() liveness probe로 stale 캐시 자동 무효화. 20/20 테스트 통과.
 
+### ⭐ m3 컨테이너가 stale 이미지 코드 실행 (시연 4장면 500의 진짜 원인)
+**증상:** 67bc24d5(위 ChromaDB fix)를 src에 커밋했는데도, 리허설 4장면에서 corpus 스왑→reindex→reopen 시 m3 `/review`가 여전히 500(`NotFoundError: Collection [...] does not exist`)·m1은 502. fix가 적용 안 된 것처럼 동작.
+
+**원인:** `docker-compose.override.yml`이 m3를 `dev3-m3:latest` **이미지 베이크본 `/app/src`**로 실행하도록 설계됨(`uvicorn src.adapters.http_adapter:app`, WORKDIR `/app`). 마운트본 `/app/service/src`(=호스트 backend/m3/src, fix 포함)는 서버가 import하지 않음 → **src를 고쳐도 이미지 재빌드 전까지 서버에 반영되지 않음.** 67bc24d5도 compose_comment ISSUE-1/2 fix도 전부 미반영 상태였다. (eval은 `cd service && python -m eval.harness`로 마운트본을 직접 실행해 통과했으므로 이 괴리를 못 잡음.)
+
+**해결:** override의 m3 volumes에 `./backend/m3/src:/app/src` 라이브 마운트 추가 → 서버가 호스트 src를 직접 실행. 이제 src 변경이 `docker compose up -d m3` 재시작만으로 반영(재빌드 불필요). 검증: reindex→트리거→reindex(캐시 stale화)→트리거 = **둘 다 HTTP 200**(과거 두 번째에서 500).
+
 ---
 
 ## v1 잔여 작업 (기능 아님 — 마무리)
 
-- [ ] ISSUE-1, ISSUE-2 수정
+- [x] ISSUE-1, ISSUE-2 수정 (라이브 서버 반영 확인)
+- [x] m3 stale 이미지 코드 → src 라이브 마운트로 해결 (4장면 500 원인)
 - [ ] 리허설 4장면 2회 통과 (REHEARSAL.md 참조)
 - [ ] `git push origin feat/m3-dev3-integration`
 - [ ] ISSUE-3 팀 공지
