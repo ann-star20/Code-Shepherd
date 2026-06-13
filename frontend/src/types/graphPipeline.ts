@@ -15,6 +15,16 @@ export type InferAction = "NEW" | "MERGE" | "RELATED_TO";
 export type NodeStatus = "COMMITTED" | "DRAFT" | "MERGE_PENDING" | "REJECTED";
 export type ToastKind = "info" | "success" | "warning" | "error";
 
+export type GraphLayer = "L1" | "L2" | "L3" | "L4";
+export type GraphNodeType = "Domain" | "Concept" | "Mechanism" | "RootCause" | "Component" | "CodeExample";
+export type GraphEdgeType =
+  | "BELONGS_TO"
+  | "MITIGATED_BY"
+  | "CAUSED_BY"
+  | "AFFECTS"
+  | "HAS_EXAMPLE"
+  | "RELATED_TO";
+
 export interface MechanismInfo {
   mechanism_name: string;
   code_examples: CodeExampleInfo[];
@@ -33,6 +43,9 @@ export interface GraphNode {
   name: string;
   status: NodeStatus;
   domains: Domain[];
+  node_type?: GraphNodeType;
+  layer?: GraphLayer;
+  root_cause?: string | null;
   infer_action?: InferAction;
   infer_confidence?: number;
   target_concept_name?: string;
@@ -42,6 +55,12 @@ export interface GraphNode {
   description_ko?: string;
   aliases?: string[];
   mechanisms?: MechanismInfo[];
+  lang?: string;
+  lang_version?: string;
+  framework?: string;
+  framework_version?: string;
+  code?: string;
+  description?: string;
   x?: number;
   y?: number;
 }
@@ -49,7 +68,7 @@ export interface GraphNode {
 export interface GraphEdge {
   source: string;
   target: string;
-  type: string;
+  type: GraphEdgeType;
 }
 
 export interface DiffSummary {

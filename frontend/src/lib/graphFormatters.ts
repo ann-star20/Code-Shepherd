@@ -1,4 +1,4 @@
-﻿import type { Domain, InferAction, NodeStatus, NodeStyle } from "@/types/graphPipeline";
+﻿import type { Domain, GraphEdgeType, GraphLayer, InferAction, NodeStatus, NodeStyle } from "@/types/graphPipeline";
 
 export const DOMAIN_COLOR: Record<Domain | "rejected" | "default", string> = {
   security:    "#1D9E75",
@@ -27,8 +27,7 @@ export const SEVERITY_CLASS: Record<string, string> = {
   low:      "text-green-600",
 };
 
-export function getNodeStyle(status: NodeStatus, domain: string): NodeStyle {
-  const color = DOMAIN_COLOR[domain as Domain] ?? DOMAIN_COLOR.default;
+export function getNodeStyle(status: NodeStatus, color: string): NodeStyle {
   switch (status) {
     case "COMMITTED":
       return { opacity: 1,    dashed: false, color };
@@ -46,3 +45,19 @@ export function getNodeStyle(status: NodeStatus, domain: string): NodeStyle {
 export function formatConfidence(score: number): string {
   return `${(score * 100).toFixed(1)}%`;
 }
+
+export const LAYER_RADIUS: Record<GraphLayer, number> = {
+  L1: 10,
+  L2: 6,
+  L3: 3.5,
+  L4: 2.5,
+};
+
+export const EDGE_STYLE: Record<GraphEdgeType, { color: string; dashed: boolean; width: number }> = {
+  BELONGS_TO:   { color: "#94a3b8", dashed: false, width: 1.5 },
+  MITIGATED_BY: { color: "#1D9E75", dashed: false, width: 1 },
+  CAUSED_BY:    { color: "#E24B4A", dashed: false, width: 1 },
+  AFFECTS:      { color: "#BA7517", dashed: false, width: 1 },
+  HAS_EXAMPLE:  { color: "#534AB7", dashed: true,  width: 1 },
+  RELATED_TO:   { color: "#94a3b8", dashed: true,  width: 1 },
+};

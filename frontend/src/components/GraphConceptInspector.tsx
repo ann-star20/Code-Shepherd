@@ -1,9 +1,11 @@
-﻿import type { GraphNode } from "@/types/graphPipeline";
+﻿import type { GraphEdge, GraphNode } from "@/types/graphPipeline";
 import { SEVERITY_CLASS } from "@/lib/graphFormatters";
 import { DomainBadge, ActionBadge, GraphButton } from "./GraphBadge";
 
 interface GraphConceptInspectorProps {
   node: GraphNode | null;
+  allNodes?: GraphNode[];
+  edges?: GraphEdge[];
   isDraft: boolean;
   onApprove: (id: string) => void;
   onReject: (id: string) => void;
@@ -12,6 +14,8 @@ interface GraphConceptInspectorProps {
 
 export function GraphConceptInspector({
   node,
+  allNodes = [],
+  edges = [],
   isDraft,
   onApprove,
   onReject,
@@ -25,6 +29,17 @@ export function GraphConceptInspector({
       </div>
     );
   }
+
+  const nodesById = new Map(allNodes.map((n) => [n.id, n]));
+  const mechanismNodes = edges
+    .filter((e) => e.source === node.id && e.type === "MITIGATED_BY")
+    .map((e) => nodesById.get(e.target))
+    .filter((n): n is GraphNode => Boolean(n));
+  const codeExamplesFor = (mechanismId: string) =>
+    edges
+      .filter((e) => e.source === mechanismId && e.type === "HAS_EXAMPLE")
+      .map((e) => nodesById.get(e.target))
+      .filter((n): n is GraphNode => Boolean(n));
 
   return (
     <div className="flex flex-col gap-3 rounded-lg border bg-white p-4 shadow-sm">
@@ -108,6 +123,78 @@ export function GraphConceptInspector({
 
       {node.mechanisms?.length === 0 && (
         <p className="text-xs text-gray-400 italic">코드 예제 없음</p>
+      )}
+
+      {node.mechanisms && node.mechanisms.length > 0 && (
+        <div className="flex flex-col gap-2 border-t pt-3 text-sm">
+          <span className="text-xs font-semibold uppercase tracking-wide text-gray-400">
+            코드 예시
+          </span>
+          {node.mechanisms.map((mech) => (
+            <div key={mech.mechanism_name} className="flex flex-col gap-1.5">
+              <p className="font-medium text-gray-800">{mech.mechanism_name}</p>
+              {mech.code_examples.map((ce, idx) => (
+                <div key={`${mech.mechanism_name}-${idx}`} className="rounded-md bg-gray-50 p-2">
+                  <div className="mb-1 flex flex-wrap gap-1">
+                    <span className="rounded bg-violet-100 px-1.5 py-0.5 text-xs text-violet-800">
+                      {ce.lang}
+                      {ce.framework ? `/${ce.framework}` : ""}
+                    </span>
+                  </div>
+                  <pre className="overflow-x-auto rounded bg-gray-900 p-2 text-xs text-gray-100">
+                    <code>{ce.code}</code>
+                  </pre>
+                  {ce.description && (
+                    <p className="mt-1 text-xs text-gray-500">{ce.description}</p>
+                  )}
+                </div>
+              ))}
+            </div>
+          ))}
+        </div>
+      )}
+
+      {node.node_type === "Concept" && (
+        <div className="flex flex-col gap-2 border-t pt-3 text-sm">
+          {node.root_cause && (
+            <div>
+              <dt className="inline text-gray-400">근본 원인</dt>{" "}
+              <dd className="inline font-mono text-gray-800">{node.root_cause}</dd>
+            </div>
+          )}
+          <div className="flex flex-col gap-1.5">
+            <span className="text-xs font-semibold uppercase tracking-wide text-gray-400">
+              대응 메커니즘
+            </span>
+            {mechanismNodes.length === 0 ? (
+              <p className="text-xs italic text-gray-400">등록된 메커니즘이 없습니다</p>
+            ) : (
+              mechanismNodes.map((m) => (
+                <div key={m.id} className="rounded-md bg-gray-50 p-2">
+                  <p className="font-medium text-gray-800">{m.name}</p>
+                  <div className="mt-1 flex flex-col gap-1.5">
+                    {codeExamplesFor(m.id).map((ce) => (
+                      <div key={ce.id} className="flex flex-col gap-1">
+                        <span className="self-start rounded bg-violet-100 px-1.5 py-0.5 text-xs text-violet-800">
+                          {ce.lang}
+                          {ce.framework ? `/${ce.framework}` : ""}
+                        </span>
+                        {ce.code && (
+                          <pre className="overflow-x-auto rounded bg-gray-900 p-2 text-xs text-gray-100">
+                            <code>{ce.code}</code>
+                          </pre>
+                        )}
+                        {ce.description && (
+                          <p className="text-xs text-gray-500">{ce.description}</p>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              ))
+            )}
+          </div>
+        </div>
       )}
 
       {isDraft && (

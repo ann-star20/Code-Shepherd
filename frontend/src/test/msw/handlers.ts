@@ -203,7 +203,46 @@ export const m6Handlers = [
     HttpResponse.json({ ok: true })
   ),
   http.get(`${M6_BASE}/graph/topology`, () =>
-    HttpResponse.json({ nodes: [], edges: [] })
+    HttpResponse.json({
+      nodes: [
+        { id: "domain:security", name: "security", node_type: "Domain", layer: "L1", status: "COMMITTED" },
+        {
+          id: "XSS",
+          name: "XSS",
+          node_type: "Concept",
+          layer: "L2",
+          status: "COMMITTED",
+          domains: ["security"],
+          cwe_id: "CWE-79",
+          owasp_id: "A03:2021",
+          severity: "high",
+          description_ko: "설명",
+          aliases: ["Cross-Site Scripting"],
+          root_cause: "unsanitized_input",
+        },
+        { id: "mechanism:output_encoding", name: "output_encoding", node_type: "Mechanism", layer: "L3", status: "COMMITTED" },
+        { id: "rootcause:unsanitized_input", name: "unsanitized_input", node_type: "RootCause", layer: "L3", status: "COMMITTED" },
+        { id: "component:template_rendering_layer", name: "template_rendering_layer", node_type: "Component", layer: "L3", status: "COMMITTED" },
+        {
+          id: "codeexample:output_encoding_python_3.11_django_4.2",
+          name: "output_encoding_python_3.11_django_4.2",
+          node_type: "CodeExample",
+          layer: "L4",
+          status: "COMMITTED",
+          lang: "python",
+          lang_version: "3.11",
+          framework: "django",
+          framework_version: "4.2",
+        },
+      ],
+      edges: [
+        { source: "domain:security", target: "XSS", type: "BELONGS_TO" },
+        { source: "XSS", target: "mechanism:output_encoding", type: "MITIGATED_BY" },
+        { source: "XSS", target: "rootcause:unsanitized_input", type: "CAUSED_BY" },
+        { source: "XSS", target: "component:template_rendering_layer", type: "AFFECTS" },
+        { source: "mechanism:output_encoding", target: "codeexample:output_encoding_python_3.11_django_4.2", type: "HAS_EXAMPLE" },
+      ],
+    })
   ),
   http.post(`${M6_BASE}/documents/metadata/learn`, () =>
     HttpResponse.json({ ok: true })

@@ -44,7 +44,7 @@ export function useGraphMerge(): UseGraphMergeResult {
                 newEdges.push({
                   source: item.id,
                   target: targetNode.id,
-                  type: "RELATED_TO_CANDIDATE",
+                  type: "RELATED_TO",
                 });
               }
             }

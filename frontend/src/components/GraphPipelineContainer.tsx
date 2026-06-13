@@ -1,5 +1,5 @@
 ﻿import { useState, useCallback, useEffect } from "react";
-import type { GraphNode, GraphEdge, PipelineState, ToastKind, PrescanResult } from "@/types/graphPipeline";
+import type { Domain, GraphNode, GraphEdge, PipelineState, ToastKind, PrescanResult } from "@/types/graphPipeline";
 import { graphPipelineApi } from "@/lib/graphPipelineApi";
 import { useGraphPipelineSSE } from "@/hooks/useGraphPipelineSSE";
 import { useGraphStagingApproval } from "@/hooks/useGraphStagingApproval";
@@ -12,6 +12,8 @@ import { GraphTopologyViewer } from "./GraphTopologyViewer";
 import { GraphLogConsole } from "./GraphLogConsole";
 import { GraphDuplicateDocumentModal } from "./GraphDuplicateDocumentModal";
 import { GraphMetadataLearnModal } from "./GraphMetadataLearnModal";
+import { GraphDomainSelect } from "./GraphDomainSelect";
+import { GraphConceptList } from "./GraphConceptList";
 import { GraphButton } from "./GraphBadge";
 
 interface GraphPipelineContainerProps {
@@ -25,6 +27,8 @@ export function GraphPipelineContainer({ onToast }: GraphPipelineContainerProps)
   const [baseNodes, setBaseNodes]         = useState<GraphNode[]>([]);
   const [baseEdges, setBaseEdges]         = useState<GraphEdge[]>([]);
   const [selectedNode, setSelectedNode]   = useState<GraphNode | null>(null);
+  const [selectedDomain, setSelectedDomain]     = useState<Domain | "all">("all");
+  const [selectedConceptId, setSelectedConceptId] = useState<string | null>(null);
   const [duplicateUrl, setDuplicateUrl]   = useState<string | null>(null);
   const [prescanResult, setPrescanResult] = useState<PrescanResult | null>(null);
 
@@ -115,6 +119,22 @@ export function GraphPipelineContainer({ onToast }: GraphPipelineContainerProps)
     selectedNode && stagingItems.find((s) => s.id === selectedNode.id)
   );
 
+  const handleNodeClick = useCallback((node: GraphNode) => {
+    setSelectedNode(node);
+    if (node.node_type === "Concept") {
+      setSelectedConceptId(node.id);
+    }
+  }, []);
+
+  const handleConceptSelect = useCallback(
+    (id: string) => {
+      setSelectedConceptId(id);
+      const node = allNodes.find((n) => n.id === id);
+      if (node) setSelectedNode(node);
+    },
+    [allNodes]
+  );
+
   return (
     <div className="flex h-full flex-col gap-4 p-4">
       {/* URL 입력 바 */}
@@ -140,7 +160,7 @@ export function GraphPipelineContainer({ onToast }: GraphPipelineContainerProps)
       </div>
 
       {/* 3-Column Layout */}
-      <div className="grid flex-1 grid-cols-[220px_1fr_260px] gap-4 overflow-hidden">
+      <div className="grid flex-1 grid-cols-[220px_1fr_400px] gap-4 overflow-hidden">
         {/* Left: 파이프라인 단계 + 로그 */}
         <div className="flex flex-col gap-4 overflow-auto">
           <div className="rounded-lg border bg-white p-3 shadow-sm">
@@ -162,12 +182,13 @@ export function GraphPipelineContainer({ onToast }: GraphPipelineContainerProps)
             <GraphTopologyViewer
               nodes={allNodes}
               edges={allEdges}
-              onNodeClick={setSelectedNode}
+              onNodeClick={handleNodeClick}
+              focusNodeId={selectedConceptId}
             />
           )}
         </div>
 
-        {/* Right: HITL 승인 + 인스펙터 */}
+        {/* Right: 도메인/개념 선택 + HITL 승인 + 인스펙터 */}
         <div className="flex flex-col gap-4 overflow-auto">
           {pipelineState === "WAITING_APPROVAL" && (
             <div className="flex flex-col gap-2">
@@ -186,8 +207,29 @@ export function GraphPipelineContainer({ onToast }: GraphPipelineContainerProps)
               </GraphButton>
             </div>
           )}
+          <div className="rounded-lg border bg-white p-3 shadow-sm">
+            <h2 className="mb-2 text-xs font-semibold uppercase tracking-wide text-gray-400">
+              도메인
+            </h2>
+            <GraphDomainSelect value={selectedDomain} onChange={setSelectedDomain} />
+          </div>
+          <div className="flex max-h-48 flex-col rounded-lg border bg-white p-3 shadow-sm">
+            <h2 className="mb-2 text-xs font-semibold uppercase tracking-wide text-gray-400">
+              개념 (Concept)
+            </h2>
+            <div className="overflow-y-auto">
+              <GraphConceptList
+                nodes={allNodes}
+                selectedDomain={selectedDomain}
+                selectedConceptId={selectedConceptId}
+                onSelect={handleConceptSelect}
+              />
+            </div>
+          </div>
           <GraphConceptInspector
             node={selectedNode}
+            allNodes={allNodes}
+            edges={allEdges}
             isDraft={isDraftSelected}
             onApprove={(id) => {
               const item = stagingItems.find((s) => s.id === id);
@@ -197,7 +239,10 @@ export function GraphPipelineContainer({ onToast }: GraphPipelineContainerProps)
               const item = stagingItems.find((s) => s.id === id);
               if (item) void graphPipelineApi.rejectSingle(item.staging_id);
             }}
-            onClose={() => setSelectedNode(null)}
+            onClose={() => {
+              setSelectedNode(null);
+              setSelectedConceptId(null);
+            }}
           />
         </div>
       </div>

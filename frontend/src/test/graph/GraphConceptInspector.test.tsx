@@ -2,7 +2,7 @@
 import userEvent from "@testing-library/user-event";
 import { describe, it, expect, vi } from "vitest";
 import { GraphConceptInspector } from "@/components/GraphConceptInspector";
-import type { GraphNode } from "@/types/graphPipeline";
+import type { GraphEdge, GraphNode } from "@/types/graphPipeline";
 
 const mockNode: GraphNode = {
   id: "node-1",
@@ -114,5 +114,181 @@ describe("GraphConceptInspector", () => {
     );
     // Assert
     expect(screen.getByText("코드 예제 없음")).toBeInTheDocument();
+  });
+
+  it("Concept 노드의 근본 원인, 메커니즘, 코드 예제 뱃지 렌더링", () => {
+    // Arrange
+    const conceptNode: GraphNode = {
+      ...mockNode,
+      id: "XSS",
+      name: "XSS",
+      node_type: "Concept",
+      root_cause: "unsanitized_input",
+    };
+    const allNodes: GraphNode[] = [
+      conceptNode,
+      {
+        id: "mechanism:output_encoding",
+        name: "output_encoding",
+        node_type: "Mechanism",
+        status: "COMMITTED",
+      } as GraphNode,
+      {
+        id: "codeexample:output_encoding_python_3.11_django_4.2",
+        name: "output_encoding_python_3.11_django_4.2",
+        node_type: "CodeExample",
+        status: "COMMITTED",
+        lang: "python",
+        framework: "django",
+      } as GraphNode,
+    ];
+    const edges: GraphEdge[] = [
+      { source: "XSS", target: "mechanism:output_encoding", type: "MITIGATED_BY" },
+      {
+        source: "mechanism:output_encoding",
+        target: "codeexample:output_encoding_python_3.11_django_4.2",
+        type: "HAS_EXAMPLE",
+      },
+    ];
+
+    // Act
+    render(
+      <GraphConceptInspector
+        node={conceptNode}
+        allNodes={allNodes}
+        edges={edges}
+        isDraft={false}
+        onApprove={vi.fn()}
+        onReject={vi.fn()}
+        onClose={vi.fn()}
+      />
+    );
+
+    // Assert
+    expect(screen.getByText("unsanitized_input")).toBeInTheDocument();
+    expect(screen.getByText("output_encoding")).toBeInTheDocument();
+    expect(screen.getByText("python/django")).toBeInTheDocument();
+  });
+
+  it("allNodes/edges로 연결된 CodeExample 노드에 code가 있으면 코드 블록으로 렌더링", () => {
+    // Arrange
+    const conceptNode: GraphNode = {
+      ...mockNode,
+      id: "XSS",
+      name: "XSS",
+      node_type: "Concept",
+      root_cause: "unsanitized_input",
+    };
+    const allNodes: GraphNode[] = [
+      conceptNode,
+      {
+        id: "mechanism:output_encoding",
+        name: "output_encoding",
+        node_type: "Mechanism",
+        status: "COMMITTED",
+      } as GraphNode,
+      {
+        id: "codeexample:output_encoding_python_3.11_django_4.2",
+        name: "output_encoding_python_3.11_django_4.2",
+        node_type: "CodeExample",
+        status: "COMMITTED",
+        lang: "python",
+        framework: "django",
+        code: "escape(user_input)",
+        description: "사용자 입력을 이스케이프 처리",
+      } as GraphNode,
+    ];
+    const edges: GraphEdge[] = [
+      { source: "XSS", target: "mechanism:output_encoding", type: "MITIGATED_BY" },
+      {
+        source: "mechanism:output_encoding",
+        target: "codeexample:output_encoding_python_3.11_django_4.2",
+        type: "HAS_EXAMPLE",
+      },
+    ];
+
+    // Act
+    render(
+      <GraphConceptInspector
+        node={conceptNode}
+        allNodes={allNodes}
+        edges={edges}
+        isDraft={false}
+        onApprove={vi.fn()}
+        onReject={vi.fn()}
+        onClose={vi.fn()}
+      />
+    );
+
+    // Assert
+    expect(screen.getByText("output_encoding")).toBeInTheDocument();
+    expect(screen.getByText("python/django")).toBeInTheDocument();
+    expect(screen.getByText("escape(user_input)")).toBeInTheDocument();
+    expect(screen.getByText("사용자 입력을 이스케이프 처리")).toBeInTheDocument();
+  });
+
+  it("mechanisms에 code_examples가 있으면 코드 블록으로 렌더링", () => {
+    // Arrange
+    const nodeWithCode: GraphNode = {
+      ...mockNode,
+      node_type: "Concept",
+      mechanisms: [
+        {
+          mechanism_name: "output_encoding",
+          code_examples: [
+            {
+              lang: "python",
+              lang_version: "3.11",
+              framework: "django",
+              code: "escape(user_input)",
+              description: "사용자 입력을 이스케이프 처리",
+            },
+          ],
+        },
+      ],
+    };
+
+    // Act
+    render(
+      <GraphConceptInspector
+        node={nodeWithCode}
+        isDraft={false}
+        onApprove={vi.fn()}
+        onReject={vi.fn()}
+        onClose={vi.fn()}
+      />
+    );
+
+    // Assert
+    expect(screen.getByText("output_encoding")).toBeInTheDocument();
+    expect(screen.getByText("escape(user_input)")).toBeInTheDocument();
+    expect(screen.getByText("python/django")).toBeInTheDocument();
+    expect(screen.getByText("사용자 입력을 이스케이프 처리")).toBeInTheDocument();
+  });
+
+  it("Concept 노드에 MITIGATED_BY 엣지가 없으면 안내 문구 표시", () => {
+    // Arrange
+    const conceptNode: GraphNode = {
+      ...mockNode,
+      id: "XSS",
+      name: "XSS",
+      node_type: "Concept",
+    };
+
+    // Act
+    render(
+      <GraphConceptInspector
+        node={conceptNode}
+        allNodes={[conceptNode]}
+        edges={[]}
+        isDraft={false}
+        onApprove={vi.fn()}
+        onReject={vi.fn()}
+        onClose={vi.fn()}
+      />
+    );
+
+    // Assert
+    expect(screen.getByText("등록된 메커니즘이 없습니다")).toBeInTheDocument();
   });
 });

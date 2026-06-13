@@ -427,7 +427,7 @@
     "config_properties": [
       {"key": "x_frame_options", "value": "DENY", "type": "security"}
     ]
-  },
+  }, 
   {
     "concept_name": "N+1Query",
     "concept_type": "performance_antipattern",
