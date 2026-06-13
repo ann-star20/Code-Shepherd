@@ -651,9 +651,42 @@ backend/m4/
   - `DeveloperProfile` TypedDict(weak_categories, past_mistakes), `CURATOR_PROMPT`/`CURATOR_MODEL_NAME`(gemini-2.5-flash) 정의
   - D26 재시도 전략 — hint="narrow_query"(low_faithfulness)/"change_framing"(low_relevancy)에 따라 프롬프트에 다른 재지시 문구 추가
   - `tests/test_curator_agent.py` 6개 테스트 신규 (Mock 기반) — 전체 스위트 39/39 통과
-- [ ] **T12 (~15min)** — RAGAS reason 필드 활성화 + 재시도 전략 분기
-- [ ] **T13 (~15min)** — Curator 기반 RAG 필드 선택 (D15 룰 대체)
-- [ ] **T14 (~20min)** — build_card() curator_instruction 파라미터 추가 (additive)
+- [x] **T12 (~15min)** — RAGAS reason 필드 활성화
+  - 구현 완료: `_ragas_reason(faithfulness_score, relevancy_score)` 헬퍼 추가 — faithfulness 미달 시 "low_faithfulness"(우선),
+    relevancy 미달 시 "low_relevancy", 둘 다 통과면 None
+  - `ragas_eval()` 반환에 `reason` 포함, `generate_card()`가 RAGAS 재시도 루프의 마지막 시도 reason을 `curriculum_plan.ragas_reason`에 저장
+  - DB: `curriculum_plan.ragas_reason TEXT` 컬럼 추가 + Alembic migration `0003_curriculum_plan_ragas_reason.py` 작성·적용
+  - `routes.py` `_plan_json`/`_run_card_generation`에서 `ragas_reason` 그대로 노출
+  - `tests/conftest.py` 신규(.env의 SKIP_RAGAS_EVAL 누수를 autouse delenv로 차단), TDD RED→GREEN 확인 (전체 47/47 통과)
+  - 재시도 전략 분기(D26 — reason을 curator_agent `_retry_hint`로 연결)는 curator_agent 통합과 함께 T13에서 진행
+- [x] **T13 (~15min)** — Curator 기반 RAG 필드 선택 (D15 룰 대체) + RAGAS 재시도 전략 분기 (D26 — ragas_reason → curator_agent `_retry_hint` 연결)
+  - 구현 완료: `generate_card(issue, adapter, mistake_count=0, profile: DeveloperProfile | None = None)` —
+    D15의 고정 검색어(`build_search1/2/3_text`) 대신 `curator_agent(profile, issue)`가 정한
+    `query_fields`(보안/코딩컨벤션/코드성능검증)로 RAG 검색어를 결정. `profile`이 없으면 빈 프로필
+    (`weak_categories=[]`, `past_mistakes=[]`)로 호출
+  - `curator_agent.py`: 프롬프트에 `sub_category`/`code_context`/`code_snippet`(300자 제한)/
+    `programming_language`/`framework`/`framework_version` 추가 — D15가 검색 카테고리별로 참고하던
+    issue 필드를 Curator도 동일하게 참고할 수 있도록 함. `query_fields` 스키마를 `"object"`(추상) →
+    `{"보안": str, "코딩컨벤션": str, "코드성능검증": str}`로 구체화
+  - D26 재시도 분기: `_RETRY_HINT_BY_REASON = {"low_faithfulness": "narrow_query", "low_relevancy": "change_framing"}`
+    추가. RAGAS 재시도 루프(최대 3회, T3) 내에서 1·2차 시도 실패 시 `ragas_reason`에 맞는 hint로
+    `curator_agent`를 재호출 → 새 `query_fields`로 임베딩/RAG 재검색 → 다음 시도에 사용. 3차 실패 후에는
+    재호출 없이 바로 `fallback_card()` (총 curator_agent 호출 = 초기 1회 + 재시도 최대 2회)
+  - `routes.py`: `_build_developer_profile(session, user_id)` 추가 — 이 개발자의 review_issue 이력에서
+    최근 keyword 5개를 `past_mistakes`로, 2회 이상 반복된 `sub_category`를 `weak_categories`로 집계.
+    `user_id`가 없으면 빈 프로필. `_run_card_generation`에서 `generate_card(..., profile=profile)`로 전달
+  - `test_curator_agent.py` 1개, `test_pipeline.py` 5개(curator 연동 3개 + D26 재시도 hint 2개),
+    `test_routes.py` 2개 신규. TDD RED→GREEN 확인 (전체 55/55 통과)
+- [x] **T14 (~20min)** — build_card() curator_instruction 파라미터 추가 (additive)
+  - 구현 완료: `build_card(..., curator_instruction: dict | None = None)` — 새 파라미터 추가(D23, 하위 호환).
+    `curator_instruction`이 있으면 `_format_curator_guidance()`가 `focus`/`analogy`/`key_points`를
+    "Curator 지시" 섹션으로 포맷해 `_CARD_PROMPT_BODY`(새 `{curator_guidance}` 자리)에 추가.
+    `None`이면 빈 문자열 — 기존 프롬프트와 동일(하위 호환)
+  - `fallback_card(..., curator_instruction: dict | None = None)`도 동일 파라미터를 받아 `build_card()`로 전달
+  - `generate_card()`의 `build_card`/`fallback_card` 호출 3곳(스킵 경로, RAGAS 루프, 3회 실패 후 fallback)
+    모두에 그 시점의 `curator_instruction`(재시도로 갱신된 값 포함)을 전달
+  - `depth`/`card_type`은 기존과 동일하게 `determine_depth()`/`route_card_type()`로 결정 — D18/D16 그대로 유지(additive 범위)
+  - `test_pipeline.py` 5개 신규(빌더 프롬프트 포함/누락 2개 + generate_card 연동 3개). TDD RED→GREEN 확인 (전체 60/60 통과)
 - [ ] **T15 (~20min)** — Phase 2 통합 테스트 (5개)
 - [ ] **T16 (~15min)** — Phase 2 DB 마이그레이션
 

@@ -22,5 +22,6 @@ class CurriculumPlan(Base):
     error_message: Mapped[Optional[str]] = mapped_column(Text)
     card_content: Mapped[Optional[dict[str, Any]]] = mapped_column(JSONB)  # status=completed일 때 채워짐
     completed_at: Mapped[Optional[datetime]] = mapped_column()  # 사용자가 카드를 학습 완료한 시각 (POST /api/complete, D11) — status='completed'(카드 생성 성공)와 무관한 별개 개념
+    ragas_reason: Mapped[Optional[str]] = mapped_column(Text)  # RAGAS 평가 마지막 시도의 실패 원인 — "low_faithfulness" | "low_relevancy" | None (T12)
     created_at: Mapped[datetime] = mapped_column(nullable=False, server_default=func.now())
     updated_at: Mapped[datetime] = mapped_column(nullable=False, server_default=func.now(), onupdate=func.now())

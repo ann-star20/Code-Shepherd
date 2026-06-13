@@ -1,5 +1,6 @@
 """T2/T3 — 학습 카드 생성 파이프라인: 카드 타입 라우팅(D16) + RAG 검색(D15) + 카드 빌드 + RAGAS 평가 루프(Section 6)."""
 
+import asyncio
 import json
 import os
 import re
@@ -9,14 +10,12 @@ import httpx
 
 from app.kms.search_adapter import (
     SearchAdapter,
-    build_search1_text,
-    build_search2_text,
-    build_search3_text,
     embed_query,
     rag_search,
 )
 from app.models.curriculum_plan import CurriculumPlan
 from app.models.review_issue import ReviewIssue
+from app.pipeline.curator_agent import GEMINI_TIMEOUT_SECONDS, DeveloperProfile, curator_agent
 
 BUILDER_MODEL_NAME = "gemini-2.5-flash"
 JUDGE_MODEL_NAME = "gemini-2.5-pro"
@@ -25,10 +24,12 @@ RAGAS_PASS_THRESHOLD = 0.7
 
 _CARD_PROMPT_BODY = (
     "card_type: {card_type}\ndepth: {depth}\n"
-    "keyword: {keyword}\nseverity: {severity}\n"
+    "keyword: {keyword}\nseverity: {severity}\nsub_category: {sub_category}\n"
+    "{curator_guidance}"
     "개념 설명 참고 자료(security_guide):\n{docs_concept}\n"
     "코딩 컨벤션 참고 자료(coding_convention):\n{docs_example}\n"
     "학습 추천 참고 자료(learning_resource):\n{docs_recommend}\n"
+    "코드 맥락(code_context): {code_context}\n"
     "리뷰 대상 코드:\n{code_snippet}\n\n"
     "다음 키를 가진 JSON 객체만 반환해 (마크다운 문법 사용 금지 — **bold**, # 헤더, bullet 기호 등 절대 쓰지 말 것):\n"
     "- explanation: 이 취약점이 무엇인지, e-commerce 서비스 맥락에서 왜 위험한지를 포함해 최대 한 단락으로 설명 (개발자가 쉽게 이해할 수 있게)\n"
@@ -80,6 +81,19 @@ def _format_docs(docs: list[dict] | None) -> str:
     return "\n".join(f"- {doc.get('content', '')}" for doc in docs)
 
 
+def _format_curator_guidance(curator_instruction: dict | None) -> str:
+    """curator_instruction(D22)의 focus/analogy/key_points를 Builder 프롬프트에 추가 지시로 전달한다 (T14/D23, additive)."""
+    if curator_instruction is None:
+        return ""
+    key_points = curator_instruction.get("key_points") or []
+    return (
+        "Curator 지시 — 이 개발자에게 맞춰 아래 초점/비유/핵심 포인트를 카드에 반영해줘:\n"
+        f"focus: {curator_instruction.get('focus', '')}\n"
+        f"analogy: {curator_instruction.get('analogy', '')}\n"
+        f"key_points: {', '.join(key_points)}\n"
+    )
+
+
 async def build_card(
     *,
     issue: ReviewIssue,
@@ -88,17 +102,24 @@ async def build_card(
     docs_recommend: list[dict] | None,
     depth: str,
     card_type: str,
+    curator_instruction: dict | None = None,
 ) -> dict:
-    """Builder Agent (gemini-2.5-flash) — RAG 검색 결과 + 이슈 정보를 학습 카드 JSON으로 변환한다."""
+    """Builder Agent (gemini-2.5-flash) — RAG 검색 결과 + 이슈 정보를 학습 카드 JSON으로 변환한다.
+
+    curator_instruction(D22)을 넘기면 focus/analogy/key_points를 프롬프트에 추가 지시로 포함한다 (T14/D23, additive).
+    """
     template = DEEP_CARD_PROMPT if depth == "deep" else QUICK_CARD_PROMPT
     prompt = template.format(
         card_type=card_type,
         depth=depth,
         keyword=issue.keyword,
         severity=issue.severity,
+        sub_category=issue.sub_category or "(없음)",
+        curator_guidance=_format_curator_guidance(curator_instruction),
         docs_concept=_format_docs(docs_concept),
         docs_example=_format_docs(docs_example),
         docs_recommend=_format_docs(docs_recommend),
+        code_context=issue.code_context or "(없음)",
         code_snippet=issue.code_snippet or "(code_snippet 없음)",
     )
     model = genai.GenerativeModel(BUILDER_MODEL_NAME)
@@ -106,10 +127,16 @@ async def build_card(
     # Gemini가 가끔 malformed JSON을 반환하므로 최대 3회 재시도
     last_exc: Exception = RuntimeError("build_card: no attempts made")
     for _ in range(3):
-        response = await model.generate_content_async(
-            prompt,
-            generation_config=genai.GenerationConfig(response_mime_type="application/json"),
-        )
+        try:
+            response = await asyncio.wait_for(
+                model.generate_content_async(
+                    prompt,
+                    generation_config=genai.GenerationConfig(response_mime_type="application/json"),
+                ),
+                timeout=GEMINI_TIMEOUT_SECONDS,
+            )
+        except TimeoutError as exc:
+            raise TimeoutError(f"build_card: Gemini 응답 시간 초과 ({GEMINI_TIMEOUT_SECONDS}s)") from exc
         try:
             return _parse_llm_json(response.text)
         except json.JSONDecodeError as e:
@@ -122,12 +149,32 @@ def _skip_ragas_eval() -> bool:
     return os.environ.get("SKIP_RAGAS_EVAL", "false").lower() == "true"
 
 
+def _ragas_reason(faithfulness_score: float, relevancy_score: float) -> str | None:
+    """평가 실패 원인을 D26 재시도 힌트(curator_agent._retry_hint) 분기용으로 분류한다 (T12/D14).
+
+    faithfulness 미달이 relevancy 미달보다 우선한다 — 문서에 근거하지 않은 카드는
+    "질문과 관련 있는가"를 따지기 전에 먼저 근거 자체를 narrow_query로 좁혀야 하기 때문.
+    """
+    if faithfulness_score < RAGAS_PASS_THRESHOLD:
+        return "low_faithfulness"
+    if relevancy_score < RAGAS_PASS_THRESHOLD:
+        return "low_relevancy"
+    return None
+
+
+# D26 — ragas_reason → curator_agent hint 매핑 (T13). 매핑에 없는 reason(None 등)은 hint=None으로 처리.
+_RETRY_HINT_BY_REASON = {
+    "low_faithfulness": "narrow_query",
+    "low_relevancy": "change_framing",
+}
+
+
 async def ragas_eval(card: dict, docs: list[dict]) -> dict:
     """Validator Agent (gemini-2.5-pro + RAGAS) — faithfulness/answer_relevancy ≥ 0.7 통과 여부를 판정한다 (Section 6).
 
     question=keyword 대신 카드의 핵심 주장(explanation+core_summary)을 answer로,
     검색된 문서 전체를 contexts로 사용해 "근거 문서에 충실한 카드인가"를 측정한다.
-    reason은 Phase 1에서 항상 None — Phase 2(D14/T12)에서 전략 분기용으로 채워진다.
+    reason은 통과 시 None, 실패 시 "low_faithfulness"|"low_relevancy" (T12/D14, _ragas_reason 참조).
     """
     from ragas import SingleTurnSample
     from ragas.embeddings import LangchainEmbeddingsWrapper
@@ -151,10 +198,10 @@ async def ragas_eval(card: dict, docs: list[dict]) -> dict:
     faithfulness_score = await faithfulness.single_turn_ascore(sample)
     relevancy_score = await answer_relevancy.single_turn_ascore(sample)
     passed = faithfulness_score >= RAGAS_PASS_THRESHOLD and relevancy_score >= RAGAS_PASS_THRESHOLD
-    return {"passed": passed, "reason": None}
+    return {"passed": passed, "reason": _ragas_reason(faithfulness_score, relevancy_score)}
 
 
-async def fallback_card(*, issue: ReviewIssue, depth: str, card_type: str) -> dict:
+async def fallback_card(*, issue: ReviewIssue, depth: str, card_type: str, curator_instruction: dict | None = None) -> dict:
     """RAGAS 평가 3회 실패 시 — RAG 컨텍스트 없이 LLM 자체 지식만으로 카드를 생성한다 (D30, "LLM 자체 생성" fallback)."""
     return await build_card(
         issue=issue,
@@ -163,18 +210,39 @@ async def fallback_card(*, issue: ReviewIssue, depth: str, card_type: str) -> di
         docs_recommend=None,
         depth=depth,
         card_type=card_type,
+        curator_instruction=curator_instruction,
     )
 
 
-async def generate_card(issue: ReviewIssue, adapter: SearchAdapter, mistake_count: int = 0) -> CurriculumPlan:
+async def _embed_query_fields(query_fields: dict[str, str]) -> tuple[list[float], list[float], list[float]]:
+    """query_fields(보안/코딩컨벤션/코드성능검증) 3개를 동시에 임베딩한다 — 지연시간을 합산이 아닌 최대값으로 줄인다."""
+    return await asyncio.gather(
+        embed_query(query_fields["보안"]),
+        embed_query(query_fields["코딩컨벤션"]),
+        embed_query(query_fields["코드성능검증"]),
+    )
+
+
+async def generate_card(
+    issue: ReviewIssue,
+    adapter: SearchAdapter,
+    mistake_count: int = 0,
+    profile: DeveloperProfile | None = None,
+) -> CurriculumPlan:
     """이슈 1건을 받아 RAG 검색 3종 → 카드 빌드 → curriculum_plan 레코드를 생성한다.
 
+    RAG 검색어는 D15의 고정 규칙(build_search1/2/3_text) 대신 Curator Agent가 정한
+    curator_instruction.query_fields(보안/코딩컨벤션/코드성능검증)를 사용한다 (T13/D22).
     embed_query 타임아웃 등 외부 API 오류는 status='failed' + error_message로 기록한다 (T6).
     """
+    if profile is None:
+        profile = {"weak_categories": [], "past_mistakes": []}
+
+    curator_instruction = await curator_agent(profile=profile, issue=issue)
+    query_fields = curator_instruction["query_fields"]
+
     try:
-        embedding1 = await embed_query(build_search1_text(issue))
-        embedding2 = await embed_query(build_search2_text(issue))
-        embedding3 = await embed_query(build_search3_text(issue))
+        embedding1, embedding2, embedding3 = await _embed_query_fields(query_fields)
     except httpx.TimeoutException as exc:
         return CurriculumPlan(
             issue_id=issue.id,
@@ -192,6 +260,7 @@ async def generate_card(issue: ReviewIssue, adapter: SearchAdapter, mistake_coun
     depth = determine_depth(issue, mistake_count=mistake_count)
     card_type = route_card_type(issue)
 
+    ragas_reason: str | None = None
     try:
         if llm_fallback or _skip_ragas_eval():
             # llm_fallback=True면 docs가 없어 faithfulness 측정 대상이 없음(D30) → RAGAS 스킵
@@ -203,11 +272,12 @@ async def generate_card(issue: ReviewIssue, adapter: SearchAdapter, mistake_coun
                 docs_recommend=docs_recommend,
                 depth=depth,
                 card_type=card_type,
+                curator_instruction=curator_instruction,
             )
         else:
             # docs 3개 합산해서 RAGAS contexts로 전달 (Section 6)
             all_docs = [*(docs_concept or []), *(docs_example or []), *(docs_recommend or [])]
-            for _attempt in range(3):
+            for attempt in range(3):
                 card_content = await build_card(
                     issue=issue,
                     docs_concept=docs_concept,
@@ -215,13 +285,28 @@ async def generate_card(issue: ReviewIssue, adapter: SearchAdapter, mistake_coun
                     docs_recommend=docs_recommend,
                     depth=depth,
                     card_type=card_type,
+                    curator_instruction=curator_instruction,
                 )
                 result = await ragas_eval(card_content, all_docs)
+                ragas_reason = result["reason"]
                 if result["passed"]:
                     break
+                if attempt < 2:
+                    # D26 — 실패 원인(ragas_reason)에 맞는 hint로 curator_agent를 재호출해
+                    # query_fields를 다시 정하고 RAG를 재검색한다.
+                    hint = _RETRY_HINT_BY_REASON.get(ragas_reason)
+                    curator_instruction = await curator_agent(profile=profile, issue=issue, hint=hint)
+                    query_fields = curator_instruction["query_fields"]
+                    embedding1, embedding2, embedding3 = await _embed_query_fields(query_fields)
+                    docs_concept = await rag_search(adapter, embedding1, category="보안")
+                    docs_example = await rag_search(adapter, embedding2, category="코딩컨벤션")
+                    docs_recommend = await rag_search(adapter, embedding3, category="코드성능검증")
+                    all_docs = [*(docs_concept or []), *(docs_example or []), *(docs_recommend or [])]
             else:
                 # 3회 모두 실패 → fallback_card()로 대체, llm_fallback=True (T3)
-                card_content = await fallback_card(issue=issue, depth=depth, card_type=card_type)
+                card_content = await fallback_card(
+                    issue=issue, depth=depth, card_type=card_type, curator_instruction=curator_instruction
+                )
                 llm_fallback = True
     except Exception as exc:
         # build_card()/fallback_card() — Gemini API 오류, JSON 파싱 실패 등 (T6).
@@ -254,4 +339,5 @@ async def generate_card(issue: ReviewIssue, adapter: SearchAdapter, mistake_coun
         llm_fallback=llm_fallback,
         error_message=None,
         card_content=card_content,
+        ragas_reason=ragas_reason,
     )

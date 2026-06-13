@@ -87,6 +87,8 @@ class PgvectorAdapter(SearchAdapter):
         self._session = session
 
     async def search(self, embedding: list[float], category: str | None = None, limit: int = 5) -> list[dict]:
+        if not embedding:
+            return []
         vector_literal = "[" + ",".join(str(v) for v in embedding) + "]"
         params: dict = {"embedding": vector_literal, "limit": limit}
         category_clause = ""

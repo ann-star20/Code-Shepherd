@@ -14,6 +14,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.kms.search_adapter import PgvectorAdapter
 from app.models.curriculum_plan import CurriculumPlan
 from app.models.review_issue import ReviewIssue
+from app.pipeline.curator_agent import DeveloperProfile
 from app.pipeline.learn_pipeline import generate_card
 from shared.auth import get_current_user
 from shared.db import get_session
@@ -104,6 +105,28 @@ async def _count_user_mistakes(session: AsyncSession, *, user_id: uuid.UUID | No
     return result.scalar_one()
 
 
+async def _build_developer_profile(session: AsyncSession, user_id: uuid.UUID | None) -> DeveloperProfile:
+    """이 개발자의 review_issue 이력에서 curator_agent(D22)에 전달할 프로필을 만든다.
+
+    past_mistakes: 최근 keyword 5개. weak_categories: 2회 이상 반복된 sub_category.
+    """
+    if user_id is None:
+        return {"weak_categories": [], "past_mistakes": []}
+    result = await session.execute(
+        select(ReviewIssue.keyword, ReviewIssue.sub_category)
+        .where(ReviewIssue.user_id == user_id)
+        .order_by(ReviewIssue.created_at.desc())
+    )
+    rows = result.all()
+    past_mistakes = [keyword for keyword, _ in rows[:5]]
+    category_counts: dict[str, int] = {}
+    for _, sub_category in rows:
+        if sub_category:
+            category_counts[sub_category] = category_counts.get(sub_category, 0) + 1
+    weak_categories = [category for category, count in category_counts.items() if count >= 2]
+    return {"weak_categories": weak_categories, "past_mistakes": past_mistakes}
+
+
 async def _run_card_generation(plan_issue_pairs: list[tuple[uuid.UUID, ReviewIssue]]) -> None:
     """BackgroundTask — pending 상태로 미리 만들어둔 plan row를 generate_card 결과로 갱신한다 (D2: "202 즉시 응답 후 비동기 생성").
 
@@ -128,11 +151,13 @@ async def _run_card_generation(plan_issue_pairs: list[tuple[uuid.UUID, ReviewIss
                 await session.commit()
 
                 mistake_count = await _count_user_mistakes(session, user_id=issue.user_id, keyword=issue.keyword)
-                generated = await generate_card(issue, adapter, mistake_count=mistake_count)
+                profile = await _build_developer_profile(session, issue.user_id)
+                generated = await generate_card(issue, adapter, mistake_count=mistake_count, profile=profile)
                 plan.status = generated.status
                 plan.llm_fallback = generated.llm_fallback
                 plan.error_message = generated.error_message
                 plan.card_content = generated.card_content
+                plan.ragas_reason = generated.ragas_reason
                 await session.commit()
             except Exception as exc:
                 plan.status = "failed"
@@ -204,9 +229,8 @@ def _plan_json(plan: CurriculumPlan | None) -> dict | None:
         "llm_fallback": plan.llm_fallback,
         "error_message": plan.error_message,
         "card_content": plan.card_content,
-        # ragas_reason/attempt_count/curator_instruction: Phase 2(T12/T13/T14/T16) 전까지는
-        # curriculum_plan에 컬럼 자체가 없음 — ragas_eval.reason의 "Phase 1엔 항상 None" 전례를 따라 placeholder 반환
-        "ragas_reason": None,
+        "ragas_reason": plan.ragas_reason,
+        # attempt_count/curator_instruction: Phase 2(T13/T14/T16) 전까지는 curriculum_plan에 컬럼 자체가 없음 → placeholder
         "attempt_count": None,
         "curator_instruction": None,
     }

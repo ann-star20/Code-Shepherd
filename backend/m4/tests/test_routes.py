@@ -173,7 +173,9 @@ async def test_post_learn_race_condition_returns_200_with_winner_plan_ids(client
 @pytest.mark.asyncio
 async def test_get_pr_returns_issues_with_plans(client, auth_override, session_override):
     issue_with_plan = make_issue(keyword="SQL Injection", severity="critical")
-    plan = make_plan(issue_with_plan.id, status="completed", card_content={"explanation": "..."})
+    plan = make_plan(
+        issue_with_plan.id, status="completed", card_content={"explanation": "..."}, ragas_reason="low_faithfulness"
+    )
     issue_without_plan = make_issue(keyword="Naming Convention", severity="low")
 
     rows = [(issue_with_plan, plan), (issue_without_plan, None)]
@@ -191,6 +193,7 @@ async def test_get_pr_returns_issues_with_plans(client, auth_override, session_o
     assert first["plan"]["id"] == str(plan.id)
     assert first["plan"]["status"] == "completed"
     assert first["plan"]["card_content"] == {"explanation": "..."}
+    assert first["plan"]["ragas_reason"] == "low_faithfulness"  # T12 — RAGAS 평가 실패 원인을 그대로 노출
 
     second = body["issues"][1]
     assert second["id"] == str(issue_without_plan.id)
@@ -270,19 +273,21 @@ class _FakeCardSession:
     DB 일시 장애 시나리오를 재현한다.
     """
 
-    def __init__(self, plans_by_id, commit_exception=None, commit_fail_at=None, mistake_count=0):
+    def __init__(self, plans_by_id, commit_exception=None, commit_fail_at=None, mistake_count=0, issue_history=()):
         self._plans = plans_by_id
         self.commit_count = 0
         self._commit_exception = commit_exception
         self._commit_fail_at = commit_fail_at
         self._mistake_count = mistake_count
+        self._issue_history = list(issue_history)
 
     async def get(self, _model, plan_id):
         return self._plans.get(plan_id)
 
     async def execute(self, _stmt):
-        """_count_user_mistakes()의 select(func.count()) 더블 — scalar_one()이 mistake_count를 반환."""
-        return SimpleNamespace(scalar_one=lambda: self._mistake_count)
+        """_count_user_mistakes()의 select(func.count())와 _build_developer_profile()의
+        select(keyword, sub_category) 더블 — scalar_one()/all() 양쪽을 지원한다."""
+        return SimpleNamespace(scalar_one=lambda: self._mistake_count, all=lambda: list(self._issue_history))
 
     async def commit(self):
         self.commit_count += 1
@@ -365,6 +370,66 @@ async def test_run_card_generation_passes_counted_mistake_count_to_generate_card
         await routes._run_card_generation([(plan_id, issue)])
 
     assert generate_card_mock.call_args.kwargs["mistake_count"] == 3
+
+
+@pytest.mark.asyncio
+async def test_run_card_generation_persists_ragas_reason_on_plan():
+    """generate_card()가 반환한 ragas_reason을 pending plan에 그대로 반영한다 (T12)."""
+    plan_id = uuid.uuid4()
+    issue = make_issue()
+    plan = make_plan(issue.id, id=plan_id, status="pending")
+    generated = make_plan(
+        issue.id, status="completed", card_content={"explanation": "..."}, ragas_reason="low_relevancy"
+    )
+    session = _FakeCardSession({plan_id: plan})
+
+    p1, p2, p3, p4 = _patch_card_generation_infra(session)
+    with p1, p2, p3, p4, patch.object(routes, "generate_card", new=AsyncMock(return_value=generated)):
+        await routes._run_card_generation([(plan_id, issue)])
+
+    assert plan.ragas_reason == "low_relevancy"
+
+
+@pytest.mark.asyncio
+async def test_run_card_generation_passes_developer_profile_to_generate_card():
+    """이 개발자의 review_issue 이력에서 만든 DeveloperProfile(D22)을 generate_card에 전달한다 (T13) —
+    최근 keyword 5개를 past_mistakes로, 2회 이상 반복된 sub_category를 weak_categories로 집계."""
+    plan_id = uuid.uuid4()
+    issue = make_issue()
+    plan = make_plan(issue.id, id=plan_id, status="pending")
+    generated = make_plan(issue.id, status="completed", card_content={"explanation": "..."})
+    session = _FakeCardSession(
+        {plan_id: plan},
+        issue_history=[
+            ("SQL Injection", "input validation"),
+            ("SQL Injection", "input validation"),
+            ("Hardcoded Secret", "authentication"),
+        ],
+    )
+
+    p1, p2, p3, p4 = _patch_card_generation_infra(session)
+    with p1, p2, p3, p4, patch.object(routes, "generate_card", new=AsyncMock(return_value=generated)) as generate_card_mock:
+        await routes._run_card_generation([(plan_id, issue)])
+
+    profile = generate_card_mock.call_args.kwargs["profile"]
+    assert profile["past_mistakes"] == ["SQL Injection", "SQL Injection", "Hardcoded Secret"]
+    assert profile["weak_categories"] == ["input validation"]
+
+
+@pytest.mark.asyncio
+async def test_run_card_generation_uses_empty_profile_when_issue_has_no_user():
+    """issue.user_id가 None이면 DB 이력 조회 없이 빈 DeveloperProfile로 generate_card를 호출한다."""
+    plan_id = uuid.uuid4()
+    issue = make_issue(user_id=None)
+    plan = make_plan(issue.id, id=plan_id, status="pending")
+    generated = make_plan(issue.id, status="completed", card_content={"explanation": "..."})
+    session = _FakeCardSession({plan_id: plan})
+
+    p1, p2, p3, p4 = _patch_card_generation_infra(session)
+    with p1, p2, p3, p4, patch.object(routes, "generate_card", new=AsyncMock(return_value=generated)) as generate_card_mock:
+        await routes._run_card_generation([(plan_id, issue)])
+
+    assert generate_card_mock.call_args.kwargs["profile"] == {"weak_categories": [], "past_mistakes": []}
 
 
 # ---------------------------------------------------------------------------

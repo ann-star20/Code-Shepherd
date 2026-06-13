@@ -7,6 +7,7 @@ User journey:
   (D22 — Phase 1의 고정 규칙 D16/D18/D15를 대체).
 """
 
+import asyncio
 import json
 import uuid
 from types import SimpleNamespace
@@ -55,7 +56,11 @@ FIXED_INSTRUCTION = {
     "analogy": "자물쇠에 맞는 열쇠를 매번 새로 깎지 않고 마스터키 틀에 끼워 쓰는 것",
     "key_points": ["사용자 입력은 절대 쿼리 문자열에 직접 삽입하지 않는다", "파라미터 바인딩을 사용한다"],
     "card_type": "code_fix",
-    "query_fields": {"category": "security_guide", "topic": "SQL Injection prevention"},
+    "query_fields": {
+        "보안": "SQL Injection 방지 가이드",
+        "코딩컨벤션": "파라미터 바인딩 코딩 컨벤션",
+        "코드성능검증": "SQL Injection 학습 자료",
+    },
 }
 
 
@@ -100,6 +105,24 @@ async def test_curator_agent_prompt_includes_profile_and_issue_details(monkeypat
     assert "SQL Injection 반복 발생" in prompt
     assert "SQL Injection" in prompt
     assert "critical" in prompt
+
+
+@pytest.mark.asyncio
+async def test_curator_agent_prompt_includes_code_and_language_details(monkeypatch):
+    """프롬프트에 D15가 RAG 검색어(query_fields) 구성에 쓰던 sub_category/code_context/code_snippet/
+    programming_language/framework/framework_version이 포함된다 — 검색 카테고리마다 참고하던 issue
+    필드가 달랐던 것을 Curator가 query_fields를 만들 때도 동일하게 참고할 수 있게 한다 (T13)."""
+    captured = _capture_curator_prompt(monkeypatch)
+
+    await curator_agent(profile=make_profile(), issue=make_issue())
+
+    prompt = captured[0]
+    assert "input validation" in prompt  # sub_category
+    assert "상품 검색 기능" in prompt  # code_context
+    assert "search_products" in prompt  # code_snippet
+    assert "Python" in prompt  # programming_language
+    assert "FastAPI" in prompt  # framework
+    assert "0.104.0" in prompt  # framework_version
 
 
 @pytest.mark.asyncio
@@ -155,3 +178,23 @@ async def test_curator_agent_uses_curator_model(monkeypatch):
     await curator_agent(profile=make_profile(), issue=make_issue())
 
     assert captured_model_names == ["gemini-2.5-flash"]
+
+
+@pytest.mark.asyncio
+async def test_curator_agent_raises_timeout_error_when_gemini_hangs(monkeypatch):
+    """Gemini 호출이 응답 없이 멈추면 GEMINI_TIMEOUT_SECONDS 후 TimeoutError를 던진다 — 그렇지 않으면
+    background task(_run_card_generation)가 예외 없이 멈춰 plan이 error_message=None인 채
+    status='running'에 영구히 남는다 (재생성 중 실제로 발생한 버그)."""
+    monkeypatch.setattr(curator_agent_module, "GEMINI_TIMEOUT_SECONDS", 0.05)
+
+    class HangingGenerativeModel:
+        def __init__(self, *_args, **_kwargs):
+            pass
+
+        async def generate_content_async(self, _prompt, **_kwargs):
+            await asyncio.sleep(10)
+
+    monkeypatch.setattr(curator_agent_module.genai, "GenerativeModel", HangingGenerativeModel)
+
+    with pytest.raises(TimeoutError):
+        await curator_agent(profile=make_profile(), issue=make_issue())
