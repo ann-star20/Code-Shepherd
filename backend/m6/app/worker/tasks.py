@@ -8,21 +8,42 @@ FAILED 클린업: staging DRAFT 삭제 + knowledge_documents state=FAILED
 from __future__ import annotations
 
 import asyncio
+import concurrent.futures
 import hashlib
 import json
 import re
 import uuid
 from datetime import datetime, timezone
-from typing import Any
+from typing import Any, Coroutine
 
 import asyncpg
 import httpx
 import redis as sync_redis
-
 from celery_app import celery_app
-from app.core.config import pg_dsn, REDIS_URL, USE_REAL_LLM, GEMINI_API_KEY, GEMINI_MODEL
+
+from app.core.config import (
+    GEMINI_API_KEY,
+    GEMINI_MODEL,
+    REDIS_URL,
+    USE_REAL_LLM,
+    pg_dsn,
+)
 
 _PG_DSN = pg_dsn()
+
+
+def _run_async(coro: Coroutine[Any, Any, Any]) -> Any:
+    """코루틴 실행 - LOCAL_DEBUG(task_always_eager) 모드에서 FastAPI 이벤트 루프 내부 호출 대응.
+
+    이미 실행 중인 이벤트 루프가 있으면(asyncio.run 호출 불가) 별도 스레드에서
+    새 루프를 만들어 실행한다.
+    """
+    try:
+        asyncio.get_running_loop()
+    except RuntimeError:
+        return asyncio.run(coro)
+    with concurrent.futures.ThreadPoolExecutor(max_workers=1) as pool:
+        return pool.submit(asyncio.run, coro).result()
 
 
 def _emit(session_id: str, event: dict[str, Any]) -> None:
@@ -46,7 +67,7 @@ def _log(session_id: str, agent: str, message: str) -> None:
 def prescan_task(self, session_id: str, url: str) -> dict:
     """URL 메타 분석 + ETag/hash 중복 검증 + knowledge_documents PENDING 생성."""
     try:
-        ctx = asyncio.run(_prescan_async(session_id, url))
+        ctx = _run_async(_prescan_async(session_id, url))
         _emit(session_id, {"type": "step_update", "agent": "Prescan", "status": "SUCCESS"})
         return ctx
     except Exception as exc:
@@ -56,7 +77,7 @@ def prescan_task(self, session_id: str, url: str) -> dict:
 
 async def _prescan_async(session_id: str, url: str) -> dict:
     _log(session_id, "Prescan", f"URL 사전 탐색 시작: {url}")
-    etag, content_hash = await _fetch_meta(url)
+    etag, content_hash, content_lang = await _fetch_meta(url)
     conn = await asyncpg.connect(_PG_DSN)
     try:
         existing = await conn.fetchrow(
@@ -71,13 +92,13 @@ async def _prescan_async(session_id: str, url: str) -> dict:
         doc_id = f"doc_{content_hash}"
         await conn.execute(
             "INSERT INTO knowledge_documents "
-            "    (doc_id, source_prefix, original_url, content_hash, etag, "
+            "    (doc_id, source_prefix, original_url, content_hash, etag, doc_lang,"
             "     lang, framework, version, state, session_id) "
             "VALUES ($1, $2, $3, $4, $5, $6, $7, $8, 'PENDING', $9) "
             "ON CONFLICT (doc_id) DO UPDATE "
             "SET state = 'PENDING', session_id = EXCLUDED.session_id, updated_at = now()",
-            doc_id, meta.get("source_prefix", "external"),
-            url, content_hash, etag,
+            # doc_id, meta.get("source_prefix", "external"),
+            doc_id, "external", url, content_hash, etag, content_lang,
             meta.get("lang"), meta.get("framework"), meta.get("version"),
             session_id,
         )
@@ -92,6 +113,18 @@ async def _fetch_meta(url: str) -> tuple[str | None, str]:
         try:
             head = await client.head(url)
             etag = head.headers.get("etag")
+            content_lang = head.headers.get("Content-Language", "").lower()
+            if etag:
+                # Weak ETag 접두사(W/) 제거 후 앞뒤 따옴표 정제
+                if etag.startswith('W/'):
+                    etag = etag[2:]
+                etag = etag.strip('"')
+                
+            # 헤더에 언어 설정이 있다면 1차 획득
+            if "en" in content_lang:
+                content_lang = "en"
+            else:
+                content_lang = "ko"  # 기본값은 한국어로 간주 
         except Exception:
             etag = None
         try:
@@ -99,7 +132,7 @@ async def _fetch_meta(url: str) -> tuple[str | None, str]:
             content = resp.content
         except Exception:
             content = url.encode()
-    return etag, hashlib.md5(content).hexdigest()[:8]
+    return etag, hashlib.md5(content).hexdigest()[:8], content_lang
 
 
 async def _match_framework(conn: asyncpg.Connection, url: str) -> dict:
@@ -123,7 +156,7 @@ def crawl_task(self, ctx: dict) -> dict:
         return ctx
     session_id = ctx["session_id"]
     try:
-        result = asyncio.run(_crawl_async(ctx))
+        result = _run_async(_crawl_async(ctx))
         _emit(session_id, {"type": "step_update", "agent": "Crawler", "status": "SUCCESS"})
         return result
     except Exception as exc:
@@ -185,7 +218,7 @@ def extract_task(self, ctx: dict) -> dict:
         return ctx
     session_id = ctx["session_id"]
     try:
-        result = asyncio.run(_extract_async(ctx))
+        result = _run_async(_extract_async(ctx))
         _emit(session_id, {"type": "step_update", "agent": "Extractor", "status": "SUCCESS"})
         _emit(session_id, {"type": "finished"})
         return result
@@ -208,7 +241,7 @@ async def _extract_async(ctx: dict) -> dict:
         extracted = await _llm_extract(chunk, ctx)
         concepts.extend(extracted)
 
-    _log(session_id, "Extractor", f"{len(concepts)}개 개념 추출 완료")
+    _log(session_id, "Extractor", f"{len(concepts)}개 개념 추출 완료({[concept['concept_name'] for concept in concepts]})")
 
     resolver = HybridResolver()
     conn = await asyncpg.connect(_PG_DSN)
@@ -307,7 +340,7 @@ async def _gemini_extract(chunk: str, ctx: dict) -> list[dict]:
 def write_graph_task(self, session_id: str) -> dict:
     """APPROVED staging_concepts -> Neo4j 쓰기 -> COMMITTED."""
     try:
-        result = asyncio.run(_write_graph_async(session_id))
+        result = _run_async(_write_graph_async(session_id))
         _emit(session_id, {"type": "step_update", "agent": "GraphWriter", "status": "SUCCESS"})
         _emit(session_id, {"type": "finished"})
         return result
@@ -317,10 +350,10 @@ def write_graph_task(self, session_id: str) -> dict:
 
 
 async def _write_graph_async(session_id: str) -> dict:
-    from app.core.neo4j_client import get_driver, get_database
     from app.adapters.db.neo4j_repo import Neo4jConceptRepo, merge_related_to
-    from app.infrastructure.graph.hybrid_resolver import HybridResolver
+    from app.core.neo4j_client import get_database, get_driver
     from app.domain.models import ConceptExtractionSchema
+    from app.infrastructure.graph.hybrid_resolver import HybridResolver
 
     _log(session_id, "GraphWriter", "승인된 개념 Neo4j 영속화 시작")
 
@@ -371,7 +404,7 @@ async def _write_graph_async(session_id: str) -> dict:
 
 def _set_failed_sync(session_id: str) -> None:
     try:
-        asyncio.run(_set_failed_async(session_id))
+        _run_async(_set_failed_async(session_id))
     except Exception:
         pass
 

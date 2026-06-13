@@ -42,20 +42,20 @@ async def stream(session_id: str) -> StreamingResponse:
         pubsub = r.pubsub()
         await pubsub.subscribe(f"pipeline:{session_id}")
         yield f"data: {json.dumps({'type': 'connected'})}\n\n"
-        heartbeat_counter = 0
         try:
-            async for msg in pubsub.listen():
-                if msg["type"] == "message":
-                    yield f"data: {msg['data']}\n\n"
-                    try:
-                        data = json.loads(msg["data"])
-                        if data.get("type") == "finished":
-                            break
-                    except (json.JSONDecodeError, TypeError):
-                        pass
-                heartbeat_counter += 1
-                if heartbeat_counter % 15 == 0:
+            while True:
+                # timeout=15.0 -> can_read() 기반 폴링, 메시지 없으면 None 반환 (TimeoutError 미발생)
+                msg = await pubsub.get_message(ignore_subscribe_messages=True, timeout=15.0)
+                if msg is None:
                     yield f"data: {json.dumps({'type': 'heartbeat'})}\n\n"
+                    continue
+                yield f"data: {msg['data']}\n\n"
+                try:
+                    data = json.loads(msg["data"])
+                    if data.get("type") == "finished":
+                        break
+                except (json.JSONDecodeError, TypeError):
+                    pass
         finally:
             await pubsub.unsubscribe(f"pipeline:{session_id}")
 
