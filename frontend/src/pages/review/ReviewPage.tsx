@@ -9,6 +9,9 @@ import { useQuery } from "@tanstack/react-query";
 import {
   AlertTriangle,
   CheckCircle2,
+  ChevronDown,
+  ChevronRight,
+  Circle,
   ExternalLink,
   GitPullRequest,
   Loader2,
@@ -37,6 +40,15 @@ interface ReviewIssue {
   message: string;
   rule_id: string | null;
   suggestion: string | null;
+  rag_context?: string | null;
+}
+
+interface TraceNode {
+  node: string;
+  label: string;
+  ms: number;
+  summary: string;
+  ok: boolean;
 }
 
 interface ReviewResult {
@@ -44,6 +56,7 @@ interface ReviewResult {
   verdict: Verdict | null;
   comment: string;
   issues: ReviewIssue[];
+  trace?: TraceNode[];
 }
 
 const VERDICT_STYLE: Record<
@@ -91,6 +104,134 @@ function VerdictBadge({ verdict }: { verdict: Verdict }) {
     </span>
   );
 }
+
+// ── RAG 파이프라인 trace 타임라인 ─────────────────────────────────────────────
+
+function TraceTimeline({ trace }: { trace: TraceNode[] }) {
+  if (!trace || trace.length === 0) return null;
+  return (
+    <div className="bg-white border border-notion-border rounded-lg overflow-hidden">
+      <div className="px-4 py-2.5 border-b border-notion-border">
+        <h3 className="text-sm font-medium text-notion-text">
+          RAG 파이프라인 실행 흐름
+        </h3>
+      </div>
+      <ol className="px-4 py-3 space-y-2">
+        {trace.map((step, i) => (
+          <li key={step.node} className="flex items-start gap-3">
+            {/* 인덱스 뱃지 */}
+            <span
+              className={`mt-0.5 flex-shrink-0 w-5 h-5 rounded-full flex items-center justify-center text-[10px] font-bold
+                ${step.ok
+                  ? "bg-green-100 text-green-700"
+                  : "bg-red-100 text-red-700"
+                }`}
+            >
+              {i}
+            </span>
+
+            {/* 라인 커넥터 */}
+            <div className="flex-1 min-w-0">
+              <div className="flex items-center justify-between gap-2 flex-wrap">
+                <span className="text-xs font-medium text-notion-text">
+                  {step.label}
+                </span>
+                <span className="text-[10px] text-notion-text-secondary whitespace-nowrap">
+                  {step.ms > 0 ? `${step.ms}ms` : "—"}
+                </span>
+              </div>
+              <p className="text-[11px] text-notion-text-secondary mt-0.5 truncate">
+                {step.summary}
+              </p>
+            </div>
+
+            {/* 성공/실패 아이콘 */}
+            {step.ok ? (
+              <CheckCircle2 size={14} className="mt-0.5 flex-shrink-0 text-green-500" />
+            ) : (
+              <Circle size={14} className="mt-0.5 flex-shrink-0 text-red-400" />
+            )}
+          </li>
+        ))}
+      </ol>
+    </div>
+  );
+}
+
+// ── issue 행 (펼침 가능) ──────────────────────────────────────────────────────
+
+function IssueRow({ issue, index }: { issue: ReviewIssue; index: number }) {
+  const [expanded, setExpanded] = useState(false);
+  const hasDetail = !!(issue.rag_context || issue.suggestion);
+
+  return (
+    <>
+      <tr
+        key={index}
+        data-testid={`issue-row-${index}`}
+        className={`align-top ${hasDetail ? "cursor-pointer hover:bg-notion-bg-secondary" : ""}`}
+        onClick={() => hasDetail && setExpanded((v) => !v)}
+      >
+        <td className="px-4 py-2.5 whitespace-nowrap">
+          <span
+            className={`inline-block text-xs font-medium px-2 py-0.5 rounded border ${SEVERITY_CLS[issue.severity]}`}
+          >
+            {issue.severity}
+          </span>
+        </td>
+        <td className="px-4 py-2.5 whitespace-nowrap font-mono text-xs text-notion-text-secondary">
+          {issue.file ?? "(전체)"}
+          {issue.line != null ? `:${issue.line}` : ""}
+        </td>
+        <td className="px-4 py-2.5 whitespace-nowrap text-xs text-notion-text-secondary">
+          {issue.rule_id ?? "-"}
+        </td>
+        <td className="px-4 py-2.5 text-notion-text">
+          <div className="flex items-start gap-1">
+            {hasDetail && (
+              <span className="mt-0.5 flex-shrink-0 text-notion-text-secondary">
+                {expanded ? <ChevronDown size={13} /> : <ChevronRight size={13} />}
+              </span>
+            )}
+            <p className="text-sm">{issue.message}</p>
+          </div>
+        </td>
+      </tr>
+
+      {/* 펼침 상세 — rule_quote(rag_context) + 수정 제안 */}
+      {expanded && hasDetail && (
+        <tr data-testid={`issue-detail-${index}`}>
+          <td colSpan={4} className="px-4 pb-3 bg-notion-bg-secondary">
+            <div className="space-y-2 pt-1">
+              {issue.rag_context && (
+                <div>
+                  <p className="text-[10px] font-semibold text-notion-text-secondary uppercase tracking-wide mb-1">
+                    📖 KMS 규칙 인용
+                  </p>
+                  <blockquote className="border-l-2 border-yellow-400 pl-3 text-xs text-notion-text leading-relaxed whitespace-pre-wrap">
+                    {issue.rag_context}
+                  </blockquote>
+                </div>
+              )}
+              {issue.suggestion && (
+                <div>
+                  <p className="text-[10px] font-semibold text-notion-text-secondary uppercase tracking-wide mb-1">
+                    💡 수정 제안
+                  </p>
+                  <p className="text-xs text-notion-text leading-relaxed">
+                    {issue.suggestion}
+                  </p>
+                </div>
+              )}
+            </div>
+          </td>
+        </tr>
+      )}
+    </>
+  );
+}
+
+// ── 우측 패널: 선택된 PR 상세 ─────────────────────────────────────────────────
 
 function ReviewDetail({
   pr,
@@ -165,7 +306,6 @@ function ReviewDetail({
     );
   }
 
-  // 저장된 결과 없음(found:false) — 가짜로 채우지 않고 정직하게 안내
   if (!review || !review.found) {
     return (
       <div data-testid="review-detail">
@@ -184,6 +324,7 @@ function ReviewDetail({
 
   return (
     <div data-testid="review-detail" className="space-y-5">
+      {/* verdict + GitHub 링크 */}
       <div className="flex items-center justify-between gap-3">
         <h2 className="text-base font-semibold text-notion-text">
           PR #{pr.github_pr_number}{" "}
@@ -208,7 +349,12 @@ function ReviewDetail({
         </div>
       </div>
 
-      {/* 이슈 테이블 */}
+      {/* RAG 파이프라인 타임라인 */}
+      {review.trace && review.trace.length > 0 && (
+        <TraceTimeline trace={review.trace} />
+      )}
+
+      {/* 이슈 테이블 (행 클릭 → rule_quote + 제안 펼침) */}
       <div className="bg-white border border-notion-border rounded-lg overflow-hidden">
         <div className="px-4 py-2.5 border-b border-notion-border">
           <h3 className="text-sm font-medium text-notion-text">
@@ -235,30 +381,7 @@ function ReviewDetail({
               </thead>
               <tbody className="divide-y divide-notion-border">
                 {review.issues.map((issue, i) => (
-                  <tr key={i} data-testid={`issue-row-${i}`} className="align-top">
-                    <td className="px-4 py-2.5 whitespace-nowrap">
-                      <span
-                        className={`inline-block text-xs font-medium px-2 py-0.5 rounded border ${SEVERITY_CLS[issue.severity]}`}
-                      >
-                        {issue.severity}
-                      </span>
-                    </td>
-                    <td className="px-4 py-2.5 whitespace-nowrap font-mono text-xs text-notion-text-secondary">
-                      {issue.file ?? "(전체)"}
-                      {issue.line != null ? `:${issue.line}` : ""}
-                    </td>
-                    <td className="px-4 py-2.5 whitespace-nowrap text-xs text-notion-text-secondary">
-                      {issue.rule_id ?? "-"}
-                    </td>
-                    <td className="px-4 py-2.5 text-notion-text">
-                      <p>{issue.message}</p>
-                      {issue.suggestion && (
-                        <p className="text-xs text-notion-text-secondary mt-1">
-                          💡 {issue.suggestion}
-                        </p>
-                      )}
-                    </td>
-                  </tr>
+                  <IssueRow key={i} issue={issue} index={i} />
                 ))}
               </tbody>
             </table>
@@ -266,7 +389,7 @@ function ReviewDetail({
         )}
       </div>
 
-      {/* LLM 코멘트 본문 (마크다운 원문을 보존해 표시) */}
+      {/* LLM 코멘트 본문 */}
       {review.comment && (
         <div className="bg-white border border-notion-border rounded-lg">
           <div className="px-4 py-2.5 border-b border-notion-border">
@@ -283,6 +406,8 @@ function ReviewDetail({
     </div>
   );
 }
+
+// ── 페이지 루트 ───────────────────────────────────────────────────────────────
 
 export default function ReviewPage() {
   const { currentTeamId, currentTeam, teamsLoading } = useTeamContext();
