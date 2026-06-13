@@ -318,3 +318,98 @@ class TestDocxTableEmptyRowFiltering:
         result = _table_rows_to_markdown(rows_data)
         assert result is not None
         assert "번호" in result, f"헤더 행이 제거됨: {result}"
+
+
+# ---------------------------------------------------------------------------
+# Bug 6: DOCX 텍스트 박스 내용 미추출
+# ---------------------------------------------------------------------------
+
+from app.pipeline.stage1_document_parser_agent import _extract_textbox_lines_from_para
+
+
+def _make_txbx_para_elem(textbox_texts: list[str], anchor_text: str = ""):
+    """w:txbxContent를 포함하는 최소 w:p lxml 요소를 생성한다.
+
+    실제 DOCX는 drawing > anchor > graphic > ... > wps:txbx > w:txbxContent
+    경로를 사용하지만, iter()는 깊이 무관하게 탐색하므로
+    w:p > w:txbxContent 단순 구조로도 동일하게 동작한다.
+    """
+    from lxml import etree
+    W = "http://schemas.openxmlformats.org/wordprocessingml/2006/main"
+
+    para = etree.Element(f"{{{W}}}p")
+
+    if anchor_text:
+        r = etree.SubElement(para, f"{{{W}}}r")
+        t = etree.SubElement(r, f"{{{W}}}t")
+        t.text = anchor_text
+
+    txbx_content = etree.SubElement(para, f"{{{W}}}txbxContent")
+    for text in textbox_texts:
+        p = etree.SubElement(txbx_content, f"{{{W}}}p")
+        r = etree.SubElement(p, f"{{{W}}}r")
+        t_elem = etree.SubElement(r, f"{{{W}}}t")
+        t_elem.text = text
+
+    return para
+
+
+class TestTextBoxExtraction:
+    def test_single_textbox_text_extracted(self):
+        """텍스트 박스 안의 단일 텍스트가 추출된다."""
+        elem = _make_txbx_para_elem(["🛒 Django 공식 문서 예시"])
+        result = _extract_textbox_lines_from_para(elem)
+        assert "Django 공식 문서 예시" in " ".join(result), (
+            f"텍스트 박스 내용 미추출: {result}"
+        )
+
+    def test_multiline_textbox_all_lines_extracted(self):
+        """텍스트 박스 안에 여러 단락이 있으면 모두 추출된다."""
+        lines = [
+            "온라인 쇼핑몰에 로그인된 사용자가",
+            "'지금 구매' 버튼을 클릭할 수 있는 페이지가 있습니다.",
+            "공격자는 자신의 사이트에 iframe을 올려서 버튼을 숨깁니다.",
+        ]
+        elem = _make_txbx_para_elem(lines)
+        result = _extract_textbox_lines_from_para(elem)
+        assert len(result) == 3, f"단락 수 불일치: {result}"
+        assert result[0] == lines[0]
+        assert result[2] == lines[2]
+
+    def test_no_textbox_returns_empty_list(self):
+        """텍스트 박스가 없는 일반 단락은 빈 리스트를 반환한다."""
+        from lxml import etree
+        W = "http://schemas.openxmlformats.org/wordprocessingml/2006/main"
+        para = etree.Element(f"{{{W}}}p")
+        r = etree.SubElement(para, f"{{{W}}}r")
+        t = etree.SubElement(r, f"{{{W}}}t")
+        t.text = "일반 단락 텍스트"
+        result = _extract_textbox_lines_from_para(para)
+        assert result == [], f"일반 단락에서 텍스트 박스 오탐: {result}"
+
+    def test_empty_textbox_lines_excluded(self):
+        """텍스트 박스 안의 완전 빈 단락은 결과에서 제외된다."""
+        elem = _make_txbx_para_elem(["내용 있음", "", "   "])
+        result = _extract_textbox_lines_from_para(elem)
+        assert len(result) == 1, f"빈 단락이 포함됨: {result}"
+        assert result[0] == "내용 있음"
+
+    def test_deeply_nested_textbox_extracted(self):
+        """실제 DOCX처럼 drawing > anchor > ... 깊이 중첩돼도 추출된다."""
+        from lxml import etree
+        W = "http://schemas.openxmlformats.org/wordprocessingml/2006/main"
+        WP = "http://schemas.openxmlformats.org/drawingml/2006/wordprocessingDrawing"
+
+        para = etree.Element(f"{{{W}}}p")
+        r = etree.SubElement(para, f"{{{W}}}r")
+        drawing = etree.SubElement(r, f"{{{W}}}drawing")
+        anchor = etree.SubElement(drawing, f"{{{WP}}}anchor")
+        # anchor 아래 여러 레이어 후 txbxContent
+        txbx_content = etree.SubElement(anchor, f"{{{W}}}txbxContent")
+        p = etree.SubElement(txbx_content, f"{{{W}}}p")
+        r2 = etree.SubElement(p, f"{{{W}}}r")
+        t = etree.SubElement(r2, f"{{{W}}}t")
+        t.text = "중첩 텍스트 박스"
+
+        result = _extract_textbox_lines_from_para(para)
+        assert "중첩 텍스트 박스" in result, f"깊은 중첩 텍스트 박스 미추출: {result}"
