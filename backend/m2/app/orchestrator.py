@@ -20,19 +20,60 @@ import logging
 
 from app import decision
 from app.analyzer import Agent, analyze
-from app.clients import m4_client
+from app.clients import kms_client, m4_client
 from app.contract import (
     AgentResult,
+    KmsSearchRequest,
     M2OrchestrateRequest,
     M2OrchestrateResponse,
     build_agent_result,
     make_timeout_result,
 )
 from app.db import insert_scan_execution, insert_scan_issues, insert_scan_summary
-from app.services import result_mapper, result_persist
+from app.services import llm_judge, result_mapper, result_persist
 from shared.contracts import M2AnalyzeRequest
 
 log = logging.getLogger(__name__)
+
+# KMS 질의 길이 상한 (변경 파일 경로/diff 요약)
+_KMS_QUERY_MAX = 512
+
+
+def _context_is_empty(req: M2OrchestrateRequest) -> bool:
+    """context 3필드가 모두 비어 있으면 True (KMS로 채울 대상)."""
+    ctx = req.context
+    return not (ctx.architecture_docs or ctx.coding_conventions or ctx.previous_pr_issues)
+
+
+def _build_kms_query(pr_diff: str) -> str:
+    """pr_diff에서 변경 파일 경로를 뽑아 KMS 검색 질의를 만든다.
+
+    경로가 없으면 diff 앞부분으로 폴백한다.
+    """
+    paths: list[str] = []
+    for line in pr_diff.splitlines():
+        if line.startswith("+++ b/"):
+            paths.append(line[len("+++ b/") :].strip())
+    query = " ".join(paths) if paths else pr_diff
+    return query[:_KMS_QUERY_MAX]
+
+
+async def _fill_context_from_kms(req: M2OrchestrateRequest) -> bool:
+    """context가 비어 있으면 KMS에서 채운다. 채웠으면 True(graceful).
+
+    검색 결과의 chunk content를 architecture_docs에 담는다(Part 2 LLM-judge 근거).
+    m0 /search 미설정·실패 시 빈 context 그대로 진행한다.
+    """
+    if not _context_is_empty(req):
+        return False
+    kms_req = KmsSearchRequest(
+        query=_build_kms_query(req.pr_diff), trace_id=req.trace_id
+    )
+    resp = await kms_client.search(kms_req)
+    if not resp or not resp.results:
+        return False
+    req.context.architecture_docs = [r.content for r in resp.results]
+    return True
 
 
 def _to_analyze_request(req: M2OrchestrateRequest) -> M2AnalyzeRequest:
@@ -58,6 +99,11 @@ async def run_single_agent(payload: M2AnalyzeRequest, agent: Agent) -> AgentResu
         )
     except Exception as exc:  # noqa: BLE001
         return make_timeout_result(payload, agent, 0, f"analyze_failed: {exc}")
+
+    # LLM-judge: context를 근거로 severity/suggestion 재판단 (graceful).
+    # USE_MOCK_LLM=true(기본)이면 원본 그대로. 재판단 시 summary 재계산.
+    issues = await llm_judge.judge_issues(issues, payload.context, payload.developer)
+    summary = llm_judge.summarize(issues)
 
     result = build_agent_result(payload, agent, issues, summary, execution_ms)
 
@@ -86,6 +132,9 @@ async def run_m2_orchestration(req: M2OrchestrateRequest) -> M2OrchestrateRespon
             skip_reason=plan.reason,
             trace_id=req.trace_id,
         )
+
+    # context가 비어 있으면 KMS에서 분석 보조 context를 채운다(graceful).
+    kms_used = await _fill_context_from_kms(req)
 
     payload = _to_analyze_request(req)
 
@@ -132,5 +181,6 @@ async def run_m2_orchestration(req: M2OrchestrateRequest) -> M2OrchestrateRespon
         verdict=m4_resp.verdict if m4_resp else None,
         comment_body=m4_resp.comment_body if m4_resp else None,
         persisted=persisted,
+        kms_used=kms_used,
         trace_id=req.trace_id,
     )

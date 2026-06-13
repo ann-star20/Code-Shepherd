@@ -33,8 +33,9 @@ orchestration: >
   m4가 comment_body 취합·판정·GitHub 코멘트 게시를 담당한다.
 
 uses_db:        false
-uses_llm:       false   # 도구 기반 결정적 분석 + 템플릿 코멘트
-uses_kms:       false   # context 필드는 받지만 현재 미사용
+uses_llm:       true    # mini-orchestrator에 LLM-judge 추가 — context 근거로 severity 재판단
+                        #   (USE_MOCK_LLM=true 기본 시 no-op, false일 때만 실제 호출)
+uses_kms:       true    # mini-orchestrator가 context 비면 m0 GET /kms/search로 채움(graceful)
 uses_langsmith: false   # 통합 주간 대상
 ```
 
@@ -59,8 +60,8 @@ M2AnalyzeRequest:
   task_id:   str              # 필수 — 트리거 단위 추적 키
   pr_id:     str              # 필수 — PR 번호 (문자열)
   pr_diff:   str              # 필수 — unified diff 본문 (m1이 diff_url fetch한 결과)
-  context:   AnalysisContext  # 선택 — 기본 빈 객체 (현재 미사용)
-  developer: DeveloperProfile | null   # 선택 — 현재 미사용
+  context:   AnalysisContext  # 선택 — 비면 mini-orchestrator가 m0 KMS로 채움. LLM-judge 근거
+  developer: DeveloperProfile | null   # 선택 — LLM-judge가 숙련도/스택을 판단에 사용
   trace_id:  str | null       # 선택
 
 AnalysisContext:
@@ -74,8 +75,9 @@ DeveloperProfile:
   tech_stack:  list[str]                 # 기본 []
 ```
 
-> `context`와 `developer`는 수신하지만 현재 분석에 미사용.
-> RAG/숙련도 기반 피드백은 통합 주간 대상.
+> `context`(비면 m0 `GET /kms/search`로 채움)와 `developer`는 mini-orchestrator의
+> LLM-judge가 severity 재판단 근거로 사용한다. `USE_MOCK_LLM=true`(기본)일 땐 judge가
+> no-op이라 도구 결과 그대로, `false`(통합/데모)일 때만 실제 LLM이 재판단한다(graceful).
 
 ### required_state_fields
 
@@ -294,7 +296,7 @@ Frontend  ── m4 결과로 최종 리뷰 화면 표시
 | status/error   | success/fail + make_timeout_result  | **구현 완료**                             |
 | 실행 모델      | asyncio.gather 병렬                 | 직렬 await — m1 구현 시 변경 예정         |
 | 다운스트림     | m4가 판정·코멘트                    | **안 A: m4가 취합** (m1 구현 후 전환)     |
-| KMS 사용       | uses_kms: true                      | context 수신하나 미사용 (통합 주간 대상)  |
+| KMS 사용       | uses_kms: true                      | m0 GET /kms/search로 context 채움(graceful) |
 | LangSmith      | uses_langsmith: true                | 미적용 (통합 주간 대상)                   |
 
 ---

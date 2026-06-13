@@ -6,12 +6,32 @@
 
 ## 0. 한 줄 요약
 
+✅ **Part 1(KMS context 채우기)·Part 2(LLM-judge) 둘 다 완료 (2026-06-13).**
 m2 mini-orchestrator(`app/orchestrator.py`)에
-**(1) KMS에서 `context` 채우기** + **(2) `context`를 쓰는 LLM-judge 레이어**를 추가한다.
+**(1) KMS에서 `context` 채우기** + **(2) `context`를 쓰는 LLM-judge 레이어**를 추가했다.
 둘 다 **graceful**(외부 실패가 분석을 막지 않음), **m2 쪽만** 구현(m0 무수정).
 
 - KMS 검색 범위: **m2만 구현 + graceful** (사용자 확정)
 - analyzer 활용 깊이: **본격 LLM-judge** (경량 결정적 태깅 아님, 사용자 확정)
+- m2 전체 테스트 **59 passed**.
+
+### ✅ Part 2 완료 요약 (LLM-judge)
+- `app/services/llm_judge.py` 신규 — dev2 청사진을 app/ 계약(`IssueItem`)에 맞춰 자립형 미러.
+  - 모델 라우팅 Critical→sonnet-4-6 / Major→haiku-4-5 / Minor→스킵.
+  - **mock = 무해 no-op** (중요): `USE_MOCK_LLM=true`(현재 운영 기본값)이면 원본 이슈 그대로 반환 → 라이브 SecurityPage 출력 무오염. 실제 재판단은 `false`일 때만.
+  - graceful: 타임아웃/파싱실패/개별 예외 시 원본 severity·suggestion 유지.
+  - `langchain_anthropic`·`langchain_core`는 **lazy import**(실제 호출 경로에서만) → 미설치 이미지에서도 모듈 로드·mock 경로 정상.
+- `app/orchestrator.py` `run_single_agent` — analyze 후 `judge_issues` 적용 → `summarize`로 summary 재계산 → persist/build_agent_result.
+- `build_judge_prompt` — context 3필드(coding_conventions/previous_pr_issues/architecture_docs) + developer(skill_level/tech_stack) 주입.
+- `pyproject.toml` optional 그룹 `llm` 추가(`langchain-anthropic`/`langchain-core`). 기본 이미지 무영향. **실제 LLM 켜려면 이미지에 `llm` extra 설치 + `USE_MOCK_LLM=false` + `ANTHROPIC_API_KEY` 필요(아직 미설치 — Week5 통합 대상).**
+- 테스트 `tests/test_llm_judge.py`(8) — mock no-op/Minor 스킵/재판단/빈결과·예외·타임아웃 fallback/summary/프롬프트 주입.
+- 문서: `MODULE_CONTRACT.md` `uses_llm:true`·`uses_kms:true`로 갱신.
+
+> 남은 일(선택): Week5 통합 시 이미지에 `llm` extra 설치 + 실제 LLM 키로 E2E. 코멘트 소유 모듈 합의(메모리 참조)는 별개 이슈.
+
+---
+
+## (이하 원본 작업 지시 — 완료됨, 참고용 보존)
 
 ---
 
@@ -27,11 +47,19 @@ m2 mini-orchestrator(`app/orchestrator.py`)에
   - **현재 app/ analyzer는 `pr_diff`만 사용**, context는 받기만 하고 무시.
 - **현재 app/ analyzer는 순수 도구 기반** (pylint/radon/bandit/semgrep/eslint subprocess). **LLM 없음** → context를 "활용"하려면 LLM-judge 레이어가 필요.
 
-### ⚠️ 블로커 (Part 1)
-- **m0(KMS)에는 검색 엔드포인트가 없다.** `backend/m0/app/main.py`는 `/health` + `/ingest`만 존재. `/search` 미구현.
-- m0는 내 모듈 아님 → **수정 금지.**
-- 해결책: m2 쪽에서 **합의된 계약**(`KmsSearchRequest/Response`)으로 POST `{M0_URL}/search` 호출하되, **404/연결 실패/미설정 시 graceful**하게 빈 context로 진행. m0 담당자가 `/search` 구현하면 그대로 동작(코드 변경 0).
+### ✅ 블로커 해소 (2026-06-13 정정) — Part 1 구현 완료
+- **블로커는 오판이었다.** m0엔 검색 엔드포인트가 **이미 존재**한다. `backend/m0/app/main.py`만 보면 `/health`+`/ingest`뿐이지만, m0는 router를 분리했고 `backend/m0/app/routes/kms_routes.py:443`에 **`GET /kms/search`**가 구현돼 있다(`router = APIRouter(prefix="/kms")`).
+- **실제 m0 계약**: `GET /kms/search?q=<쿼리>&limit=<1~20>&category=<opt>` → `SearchResponse{ query, results:[{chunk_id, content, score, metadata, doc_title, page_image_path}], total }`.
+- m0는 내 모듈 아님 → **수정 안 함.** m2 client가 실제 계약(GET/쿼리스트링/`/kms/search`)에 맞춰 호출하고, 미설정·실패·404 시 graceful None.
+- **구현 결과** (Part 1 DONE):
+  - 계약은 **공통 파일 대신 m2 내부** `app/contract.py`에 `KmsSearchRequest/Result/Response` 추가(팀 규칙: 공통 `_shared/shared/contracts.py` 무단 변경 금지). `query→q`, `top_k→limit` 매핑은 client가 수행.
+  - `app/clients/kms_client.py` 신규 — `GET {M0_URL}/kms/search`, timeout 10s, graceful.
+  - `app/orchestrator.py` — `_context_is_empty`/`_build_kms_query`(변경 파일 경로 추출)/`_fill_context_from_kms` 추가, 분석 전 호출. 결과 content를 `context.architecture_docs`에 주입.
+  - `M2OrchestrateResponse.kms_used: bool` 추가.
+  - 테스트 `tests/test_kms_client.py`(4) + 기존 회귀 — m2 전체 **51 passed**.
 - `M0_URL=http://m0:8002` 는 `backend/m2/.env.example`에 이미 존재.
+
+> 남은 작업 = **Part 2(LLM-judge)**. 아래 §3 참조. context는 이제 KMS가 채워주므로 judge가 바로 활용 가능.
 
 ---
 

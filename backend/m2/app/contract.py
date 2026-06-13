@@ -95,8 +95,40 @@ class M2OrchestrateResponse(BaseModel):
     # review_issue에 영속화된 이슈 수 (영속화 비활성·실패 시 0 — graceful)
     persisted: int = 0
 
+    # KMS context를 채웠는지 (m0 /search 미설정·실패 시 False — graceful)
+    kms_used: bool = False
+
     trace_id: str | None = None
     error_message: str | None = None
+
+
+# ---------------------------------------------------------------------------
+# m0 KMS 검색 계약 (m2 → m0)
+#
+# m2가 m0 KMS에서 분석 context(아키텍처 청크 등)를 가져올 때 쓰는 요청/응답 형태.
+# 실제 m0 엔드포인트는 GET /kms/search?q=&limit=&category= (kms_routes.py) 이며,
+# 응답 SearchResponse{query, results[chunk_id, content, score, ...], total}의
+# 부분집합(chunk_id/content/score)만 사용한다.
+# 계약은 m2 내부에 두고, 추후 m0 담당자와 합의 시 공통 계약으로 이관한다.
+# (query→q, top_k→limit 매핑은 kms_client에서 수행)
+# ---------------------------------------------------------------------------
+
+class KmsSearchRequest(BaseModel):
+    """m0 KMS 검색 요청 — pgVector 유사도 검색용 질의."""
+
+    query: str  # pr_diff 요약 또는 변경 파일 경로 기반 질의 (→ m0 q)
+    top_k: int = 3  # → m0 limit (1~20)
+    trace_id: str | None = None
+
+
+class KmsSearchResult(BaseModel):
+    chunk_id: str
+    content: str
+    score: float = 0.0
+
+
+class KmsSearchResponse(BaseModel):
+    results: list[KmsSearchResult] = Field(default_factory=list)
 
 
 def make_sub_trace_id(trace_id: str | None, agent: Agent) -> str:
