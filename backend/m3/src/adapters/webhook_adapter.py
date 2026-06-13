@@ -120,7 +120,7 @@ def webhook():
         return jsonify({"error": "invalid signature"}), 401
     event = request.headers.get("X-GitHub-Event", "")
     data = request.get_json(silent=True) or {}
-    if event == "pull_request" and data.get("action") in ("opened", "synchronize", "reopened"):
+    if event == "pull_request" and data.get("action") in ("opened", "synchronize"):
         full_name = data["repository"]["full_name"]
         pr_number = data["pull_request"]["number"]
         pr_author = data["pull_request"].get("user", {}).get("login")
