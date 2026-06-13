@@ -167,22 +167,75 @@ def _elements_to_markdown(elements: list) -> str:
     return "\n\n".join(lines)
 
 
+_CODE_FONTS = frozenset({
+    "Courier New", "Courier", "Consolas", "Monaco",
+    "Lucida Console", "Source Code Pro", "DejaVu Sans Mono",
+})
+
+
+def _para_text_from_runs(para) -> str:
+    """run 단위로 텍스트를 재조립한다. runs가 없으면 para.text로 폴백."""
+    runs = getattr(para, "runs", None)
+    if runs:
+        return "".join(r.text for r in runs if r.text)
+    return para.text or ""
+
+
+def _get_outline_level(para) -> int | None:
+    """단락 XML의 outlineLvl 값을 반환한다. 없으면 None."""
+    try:
+        pPr = para._element.pPr
+        if pPr is not None and pPr.outlineLvl is not None:
+            return int(pPr.outlineLvl.val)
+    except Exception:
+        pass
+    return None
+
+
+def _is_code_paragraph(para, style_name: str) -> bool:
+    """코드 블록으로 처리해야 할 단락인지 판별한다."""
+    style_lower = style_name.lower()
+    if "code" in style_lower or "preformat" in style_lower:
+        return True
+    runs = getattr(para, "runs", None)
+    if runs:
+        for run in runs:
+            font_name = getattr(getattr(run, "font", None), "name", None) or ""
+            if font_name in _CODE_FONTS:
+                return True
+    return False
+
+
 def _paragraph_to_markdown_line(para) -> str | None:
     """python-docx Paragraph → Markdown 라인. 빈 단락은 None 반환."""
-    text = para.text.strip() if para.text else ""
+    text = _para_text_from_runs(para).strip()
     if not text:
         return None
 
     style_name: str = (para.style.name if para.style else "") or ""
 
-    # "Heading 1"~N (영문) / "제목 1"~N (한글 Word) → #~####
-    if style_name.startswith(("Heading ", "제목 ")):
-        level_token = style_name.split()[-1]
+    # Bug 1 fix: 코드 블록 감지 (스타일명 "Code"/"Preformatted" 또는 모노스페이스 폰트)
+    if _is_code_paragraph(para, style_name):
+        return f"```\n{text}\n```"
+
+    # Bug 2 fix: 헤딩 감지 — 스타일명 대소문자 무관 + XML outline level 폴백
+    style_lower = style_name.lower()
+    heading_level: int | None = None
+
+    if style_lower.startswith(("heading", "제목")):
+        tokens = style_name.split()
         try:
-            level = min(int(level_token), 4)
-            return f"{'#' * level} {text}"
-        except ValueError:
+            heading_level = min(int(tokens[-1]), 4)
+        except (ValueError, IndexError):
             pass
+
+    if heading_level is None:
+        outline = _get_outline_level(para)
+        if outline is not None:
+            heading_level = min(outline + 1, 4)
+
+    if heading_level is not None:
+        return f"{'#' * heading_level} {text}"
 
     if style_name in ("Title", "제목"):
         return f"# {text}"
