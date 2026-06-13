@@ -231,3 +231,90 @@ class TestEmojiNotBrokenChar:
         md = "# 제목\n\n## 소제목\n\n본문 내용입니다. " * 30
         score = _calculate_quality_score(md, "docx")
         assert score >= 75, f"일반 문서 점수가 낮아짐 (regression): {score}"
+
+
+# ---------------------------------------------------------------------------
+# Bug 5: DOCX 표 빈 행 필터링
+# ---------------------------------------------------------------------------
+
+from unittest.mock import patch, MagicMock as MM
+
+from app.pipeline.stage1_document_parser_agent import _convert_docx_with_python_docx
+
+
+def _make_docx_table(rows_data: list[list[str]]):
+    """python-docx Document + Table 목업을 반환한다."""
+    doc = MM()
+    table = MM()
+
+    mock_rows = []
+    for row_data in rows_data:
+        row = MM()
+        cells = []
+        for cell_text in row_data:
+            cell = MM()
+            cell.text = cell_text
+            cell._tc = object()  # 고유 identity
+            cells.append(cell)
+        row.cells = cells
+        mock_rows.append(row)
+
+    table.rows = mock_rows
+
+    # body element: 표 하나만 포함
+    tbl_elem = MM()
+    tbl_elem.tag = "tbl"
+
+    doc.element = MM()
+    doc.element.body = [tbl_elem]
+
+    return doc, table, tbl_elem
+
+
+class TestDocxTableEmptyRowFiltering:
+    def test_all_empty_row_is_excluded(self):
+        """모든 셀이 빈 행은 Markdown 표에서 제외되어야 한다."""
+        rows_data = [
+            ["번호", "기법", "예시"],          # 헤더
+            ["1", "Query Parameterization", "cursor.execute(sql)"],
+            ["2", "", ""],                    # 빈 행
+            ["3", "Input Validation", "isdigit()"],
+            ["", "", ""],                     # 완전 빈 행
+        ]
+        from docx import Document
+        import io, struct
+
+        # 실제 python-docx 객체 없이 _convert_docx_with_python_docx를 직접 호출하기 어려우므로
+        # _build_table_markdown 헬퍼 함수를 별도 추출·테스트한다
+        from app.pipeline.stage1_document_parser_agent import _table_rows_to_markdown
+        result = _table_rows_to_markdown(rows_data)
+        assert result is not None
+
+        # 완전 빈 행("", "", "")은 결과에 포함되면 안 된다
+        lines = [l for l in result.split("\n") if l.strip()]
+        empty_data_lines = [l for l in lines if l.strip("| ").replace("|", "").strip() == ""]
+        assert len(empty_data_lines) == 0, (
+            f"완전 빈 행이 포함됨:\n{result}"
+        )
+
+    def test_partial_empty_row_is_kept(self):
+        """일부 셀만 비어있는 행은 유지되어야 한다."""
+        rows_data = [
+            ["번호", "기법", "예시"],
+            ["2", "", "QuerySet API"],   # 중간 셀만 비어있음
+        ]
+        from app.pipeline.stage1_document_parser_agent import _table_rows_to_markdown
+        result = _table_rows_to_markdown(rows_data)
+        assert result is not None
+        assert "QuerySet API" in result, f"부분 빈 행이 제거됨: {result}"
+
+    def test_header_row_never_excluded(self):
+        """헤더 행(첫 번째 행)은 비어있어도 제외하지 않는다."""
+        rows_data = [
+            ["번호", "기법", "예시"],
+            ["", "", ""],
+        ]
+        from app.pipeline.stage1_document_parser_agent import _table_rows_to_markdown
+        result = _table_rows_to_markdown(rows_data)
+        assert result is not None
+        assert "번호" in result, f"헤더 행이 제거됨: {result}"

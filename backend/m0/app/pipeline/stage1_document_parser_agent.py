@@ -246,6 +246,26 @@ def _paragraph_to_markdown_line(para) -> str | None:
     return text
 
 
+def _table_rows_to_markdown(rows_data: list[list[str]]) -> str:
+    """cell 텍스트 2D 배열 → Markdown 파이프 표 문자열.
+
+    - 헤더 행(index 0)은 항상 포함
+    - 이후 행 중 모든 셀이 비어있는 행은 제외 (이미지-셀로 인한 빈 행 노이즈 방지)
+    """
+    if not rows_data:
+        return ""
+    md_lines: list[str] = []
+    for i, row in enumerate(rows_data):
+        is_header = i == 0
+        all_empty = all(cell.strip() == "" for cell in row)
+        if not is_header and all_empty:
+            continue  # 완전 빈 데이터 행 제외
+        md_lines.append("| " + " | ".join(row) + " |")
+        if is_header:
+            md_lines.append("| " + " | ".join(["---"] * len(row)) + " |")
+    return "\n".join(md_lines)
+
+
 def _convert_docx_with_python_docx(file_path: str) -> str:
     """python-docx로 DOCX를 Markdown으로 변환. 단락과 표를 문서 순서대로 처리한다."""
     from docx import Document
@@ -266,8 +286,8 @@ def _convert_docx_with_python_docx(file_path: str) -> str:
 
         elif tag == "tbl":
             table = DocxTable(child, doc)
-            rows: list[str] = []
-            for i, row in enumerate(table.rows):
+            rows_data: list[list[str]] = []
+            for row in table.rows:
                 # row.cells는 병합 셀을 중복 반환한다 (_tc 기준 중복 제거)
                 seen: set[int] = set()
                 unique_cells: list[str] = []
@@ -276,11 +296,10 @@ def _convert_docx_with_python_docx(file_path: str) -> str:
                     if tc_id not in seen:
                         seen.add(tc_id)
                         unique_cells.append(cell.text.strip().replace("\n", " "))
-                rows.append("| " + " | ".join(unique_cells) + " |")
-                if i == 0:
-                    rows.append("| " + " | ".join(["---"] * len(unique_cells)) + " |")
-            if rows:
-                blocks.append("\n".join(rows))
+                rows_data.append(unique_cells)
+            tbl_md = _table_rows_to_markdown(rows_data)
+            if tbl_md:
+                blocks.append(tbl_md)
 
     return "\n\n".join(blocks)
 
@@ -834,20 +853,23 @@ PARSER_QUALITY_THRESHOLD = int(os.getenv("PARSER_QUALITY_THRESHOLD", "60"))
 # PDF 파서 시도 순서 (품질 낮을 때 자동 전환)
 _PDF_PARSER_SEQUENCE = ["pymupdf", "unstructured", "gemini_ocr"]
 
+# DOCX 파서 시도 순서 (python_docx 품질 미달 시 unstructured 폴백)
+_DOCX_PARSER_SEQUENCE = ["python_docx", "unstructured"]
+
 
 async def _parse_with_quality_loop(
     file_path: str,
     file_type: str,
 ) -> tuple[str, str, int]:
     """
-    PDF 품질 기반 파서 자율 전환 루프 (Stage 1 Agent 핵심).
+    품질 기반 파서 자율 전환 루프 (Stage 1 Agent 핵심).
 
-    pymupdf → unstructured → gemini_ocr 순서로 시도.
+    PDF: pymupdf → unstructured → gemini_ocr
+    DOCX: python_docx → unstructured
+
     각 결과를 _calculate_quality_score()로 관찰하고
     PARSER_QUALITY_THRESHOLD 달성 시 즉시 반환한다.
     전부 실패하면 ("", "hitl_required", 0)을 반환한다.
-
-    gemini_ocr는 GOOGLE_API_KEY 환경변수가 있을 때만 시도한다.
 
     Returns:
         (markdown, parser_used, quality_score)
@@ -855,7 +877,8 @@ async def _parse_with_quality_loop(
     threshold = int(os.getenv("PARSER_QUALITY_THRESHOLD", str(PARSER_QUALITY_THRESHOLD)))
     best_md, best_parser, best_score = "", "hitl_required", 0
 
-    for parser_name in _PDF_PARSER_SEQUENCE:
+    sequence = _DOCX_PARSER_SEQUENCE if file_type == "docx" else _PDF_PARSER_SEQUENCE
+    for parser_name in sequence:
         # gemini_ocr는 API 키가 있어야 시도
         if parser_name == "gemini_ocr" and not os.getenv("GOOGLE_API_KEY", ""):
             logger.info("GOOGLE_API_KEY 없음 — gemini_ocr 건너뜀")
@@ -864,6 +887,8 @@ async def _parse_with_quality_loop(
         try:
             if parser_name == "pymupdf":
                 md, _ = await asyncio.to_thread(_convert_pdf_with_pymupdf, file_path)
+            elif parser_name == "python_docx":
+                md = await asyncio.to_thread(_convert_docx_with_python_docx, file_path)
             elif parser_name == "unstructured":
                 md, _ = await asyncio.to_thread(_convert_with_unstructured, file_path, file_type)
             else:  # gemini_ocr
@@ -1155,6 +1180,18 @@ async def document_parser_agent(
             return _make_hitl_result(
                 "hitl_required", complexity, has_tables, has_images, page_count,
                 parsing_time_ms, ["모든 파서 품질 기준 미달"],
+            )
+
+    elif parser_name == "python_docx":
+        # DOCX Agent 루프: python_docx → unstructured 품질 자율 전환
+        markdown, parser_name, quality_loop_score = await _parse_with_quality_loop(
+            file_path, file_type
+        )
+        if parser_name == "hitl_required":
+            parsing_time_ms = int((time.monotonic() - t0) * 1000)
+            return _make_hitl_result(
+                "hitl_required", complexity, has_tables, has_images, page_count,
+                parsing_time_ms, ["DOCX 모든 파서 품질 기준 미달"],
             )
 
     else:
