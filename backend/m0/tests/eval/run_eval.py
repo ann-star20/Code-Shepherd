@@ -477,6 +477,24 @@ def compute_reliability_kpis(all_results: list[PipelineResult]) -> dict:
     return {"by_file_type": type_stats, "timing": timing_stats}
 
 
+def compute_neo4j_kpis(all_results: list[PipelineResult]) -> dict:
+    """Neo4j 동기화율 proxy KPI — file mode 전용.
+
+    stored 문서 중 entities dict가 비어 있지 않은 비율을 동기화율로 간주한다.
+    (실제 Neo4j DB 쿼리 없이 pipeline_output.json의 entities 필드 사용)
+    """
+    stored = [r for r in all_results if r.status == "stored"]
+    if not stored:
+        return {"neo4j_synced_rate": 0.0, "synced_count": 0, "stored_count": 0}
+
+    synced = [r for r in stored if any(r.entities.values())]
+    return {
+        "neo4j_synced_rate": len(synced) / len(stored),
+        "synced_count":      len(synced),
+        "stored_count":      len(stored),
+    }
+
+
 def compute_maturity_score(automation: dict, accuracy: dict) -> float:
     """
     L1: 파이프라인 성숙도 점수 (0 ~ 100).
