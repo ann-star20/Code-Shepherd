@@ -35,6 +35,14 @@ export function ActionBadge({ action, confidence, target }: ActionBadgeProps) {
   );
 }
 
+export function NewTagBadge() {
+  return (
+    <span className="inline-flex items-center rounded-full bg-orange-100 px-1.5 py-0.5 text-xs font-semibold text-orange-700">
+      NEW
+    </span>
+  );
+}
+
 interface GraphButtonProps {
   variant?: "primary" | "danger" | "ghost" | "outline";
   disabled?: boolean;

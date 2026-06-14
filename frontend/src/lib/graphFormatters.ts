@@ -20,6 +20,10 @@ export const ACTION_CLASS: Record<InferAction, string> = {
   RELATED_TO: "bg-amber-100 text-amber-800",
 };
 
+export const NEW_NODE_RING_COLOR = "#F97316";
+
+export const HITL_FOCUS_RING_COLOR = "#2563EB";
+
 export const SEVERITY_CLASS: Record<string, string> = {
   critical: "text-red-600 font-semibold",
   high:     "text-orange-500 font-semibold",

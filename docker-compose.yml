@@ -153,6 +153,24 @@ services:
       - code-shepherd
     restart: unless-stopped
 
+  neo4j_m6_seed:
+    build:
+      context: ./backend
+      dockerfile: m6/Dockerfile
+    env_file: .env
+    environment:
+      NEO4J_URI: bolt://neo4j_m6:7687
+      NEO4J_DATABASE: neo4j
+    volumes:
+      - ./backend/_shared:/app/_shared:ro
+      - ./backend/m6:/app/service
+    networks:
+      - code-shepherd
+    depends_on:
+      - neo4j_m6
+    restart: "no"
+    command: uv run python script/seed_neo4j.py
+
   redis:
     image: redis:7-alpine
     ports:
@@ -218,7 +236,7 @@ services:
       - neo4j_m6
       - redis
     restart: unless-stopped
-    command: uv run celery -A celery_app worker --loglevel=info -Q m6_graph
+    command: uv run celery -A celery_app worker --loglevel=debug -Q m6_graph
 
   frontend:
     build:

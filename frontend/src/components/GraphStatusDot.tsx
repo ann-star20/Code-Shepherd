@@ -10,6 +10,7 @@ const STATUS_CONFIG: Record<StepStatus, Config> = {
   RUNNING: { cls: "bg-blue-500 animate-pulse", icon: "·" },
   DONE:    { cls: "bg-green-500",              icon: "✓" },
   FAILED:  { cls: "bg-red-500",               icon: "✕" },
+  SKIPPED: { cls: "bg-amber-400",             icon: "⏭" },
 };
 
 interface GraphStatusDotProps {

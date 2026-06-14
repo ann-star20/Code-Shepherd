@@ -7,6 +7,7 @@ from fastapi import APIRouter
 from pydantic import BaseModel, HttpUrl
 
 from app.core.config import pg_dsn
+from app.worker.tasks import resume_pipeline
 
 router = APIRouter(prefix="/documents", tags=["documents"])
 
@@ -28,12 +29,12 @@ async def check_duplicate(payload: CheckDuplicateRequest) -> CheckDuplicateRespo
     conn = await asyncpg.connect(_PG_DSN)
     try:
         row = await conn.fetchrow(
-            "SELECT doc_id FROM knowledge_documents "
+            "SELECT doc_id, state FROM knowledge_documents "
             "WHERE original_url = $1 AND is_deprecated = false "
             "ORDER BY created_at DESC LIMIT 1",
             str(payload.url),
         )
-        if row is None:
+        if row is None or row["state"] != "COMMITTED":
             return CheckDuplicateResponse(is_duplicate=False)
         return CheckDuplicateResponse(is_duplicate=True, doc_id=row["doc_id"])
     finally:
@@ -69,3 +70,40 @@ async def learn_metadata(payload: MetadataLearnRequest) -> dict[str, str]:
         return {"framework": payload.framework, "status": "learned"}
     finally:
         await conn.close()
+
+
+class MetadataResumeRequest(BaseModel):
+    session_id: str
+    doc_id: str
+    url: str
+    framework: str | None = None
+    lang: str | None = None
+
+
+@router.post("/metadata/resume", status_code=202)
+async def resume_metadata(payload: MetadataResumeRequest) -> dict[str, str]:
+    """HITL 메타데이터 입력(또는 skip) 후 crawl -> extract 파이프라인 재개."""
+    source_prefix = payload.framework.lower() if payload.framework else "external"
+    if payload.framework:
+        conn = await asyncpg.connect(_PG_DSN)
+        try:
+            await conn.execute(
+                "UPDATE knowledge_documents "
+                "SET framework = $1, lang = $2, source_prefix = $3, updated_at = now() "
+                "WHERE doc_id = $4",
+                payload.framework, payload.lang, source_prefix, payload.doc_id,
+            )
+        finally:
+            await conn.close()
+
+    resume_pipeline({
+        "skip": False,
+        "session_id": payload.session_id,
+        "doc_id": payload.doc_id,
+        "url": payload.url,
+        "source_prefix": source_prefix,
+        "framework": payload.framework,
+        "lang": payload.lang,
+        "version": None,
+    })
+    return {"status": "resumed"}

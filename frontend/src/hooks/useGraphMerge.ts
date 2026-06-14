@@ -20,21 +20,27 @@ export function useGraphMerge(): UseGraphMergeResult {
 
       for (const item of items) {
         if (item.state === "REJECTED") continue;
+        const isApproved = item.state === "APPROVED";
 
         switch (item.infer_action) {
           case "MERGE": {
-            // Mark existing node as MERGE_PENDING, no new node
+            // 승인 전: 대상 노드를 MERGE_PENDING 링 + 병합 후보를 DRAFT 점선으로 표시, 승인 후: 정상 상태로 복귀(노드 추가 없음)
+            if (isApproved) break;
             const target = baseNodes.find(
               (n) => n.name === item.target_concept_name
             );
             if (target) {
               newNodes.push({ ...target, status: "MERGE_PENDING" });
+              newEdges.push({ source: item.id, target: target.id, type: "RELATED_TO" });
             }
+            newNodes.push({ ...item, status: "DRAFT", is_staging: true, is_new: true });
             break;
           }
           case "RELATED_TO": {
-            // New DRAFT node + RELATED_TO_CANDIDATE edge
-            const draftNode: GraphNode = { ...item, status: "DRAFT" };
+            // 승인 전: DRAFT 점선 + 주황 NEW 링, 승인 후: 실선 COMMITTED로 실시간 전환
+            const draftNode: GraphNode = isApproved
+              ? { ...item, status: "COMMITTED", is_staging: false, is_new: false }
+              : { ...item, status: "DRAFT", is_staging: true, is_new: true };
             newNodes.push(draftNode);
             if (item.target_concept_name) {
               const targetNode = baseNodes.find(
@@ -53,7 +59,11 @@ export function useGraphMerge(): UseGraphMergeResult {
           case "NEW":
           default:
             if (!existingIds.has(item.id)) {
-              newNodes.push({ ...item, status: "DRAFT" });
+              newNodes.push(
+                isApproved
+                  ? { ...item, status: "COMMITTED", is_staging: false, is_new: false }
+                  : { ...item, status: "DRAFT", is_staging: true, is_new: true }
+              );
             }
             break;
         }

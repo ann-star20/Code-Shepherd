@@ -69,7 +69,17 @@ async def main() -> None:
 
     driver = _driver()
     try:
-        await driver.verify_connectivity()
+        # docker compose 최초 기동 시 neo4j 컨테이너가 아직 준비되지 않았을 수 있으므로 재시도
+        for attempt in range(1, 31):
+            try:
+                await driver.verify_connectivity()
+                break
+            except Exception as exc:
+                print(f"[seed_neo4j] Neo4j 연결 대기 중... ({attempt}/30) {exc}")
+                await asyncio.sleep(2)
+        else:
+            raise RuntimeError("Neo4j 연결 실패 - 30회 재시도 초과")
+
         repo = Neo4jConceptRepo(driver)
 
         # 1. 스키마 초기화 — 8대 제약조건 + 인덱스

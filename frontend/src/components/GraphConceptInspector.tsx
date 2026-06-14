@@ -1,6 +1,6 @@
 ﻿import type { GraphEdge, GraphNode } from "@/types/graphPipeline";
 import { SEVERITY_CLASS } from "@/lib/graphFormatters";
-import { DomainBadge, ActionBadge, GraphButton } from "./GraphBadge";
+import { DomainBadge, ActionBadge, GraphButton, NewTagBadge } from "./GraphBadge";
 
 interface GraphConceptInspectorProps {
   node: GraphNode | null;
@@ -46,6 +46,7 @@ export function GraphConceptInspector({
       <div className="flex items-start justify-between gap-2">
         <div className="flex flex-wrap items-center gap-2">
           <span className="font-semibold text-gray-900">{node.name}</span>
+          {node.is_new && <NewTagBadge />}
           {node.domains?.map((d) => (
             <DomainBadge key={d} domain={d} size="sm" />
           ))}
@@ -121,11 +122,11 @@ export function GraphConceptInspector({
         )}
       </dl>
 
-      {node.mechanisms?.length === 0 && (
+      {node.node_type !== "Concept" && node.mechanisms?.length === 0 && (
         <p className="text-xs text-gray-400 italic">코드 예제 없음</p>
       )}
 
-      {node.mechanisms && node.mechanisms.length > 0 && (
+      {node.node_type !== "Concept" && node.mechanisms && node.mechanisms.length > 0 && (
         <div className="flex flex-col gap-2 border-t pt-3 text-sm">
           <span className="text-xs font-semibold uppercase tracking-wide text-gray-400">
             코드 예시
@@ -166,9 +167,7 @@ export function GraphConceptInspector({
             <span className="text-xs font-semibold uppercase tracking-wide text-gray-400">
               대응 메커니즘
             </span>
-            {mechanismNodes.length === 0 ? (
-              <p className="text-xs italic text-gray-400">등록된 메커니즘이 없습니다</p>
-            ) : (
+            {mechanismNodes.length > 0 ? (
               mechanismNodes.map((m) => (
                 <div key={m.id} className="rounded-md bg-gray-50 p-2">
                   <p className="font-medium text-gray-800">{m.name}</p>
@@ -192,6 +191,32 @@ export function GraphConceptInspector({
                   </div>
                 </div>
               ))
+            ) : node.mechanisms && node.mechanisms.length > 0 ? (
+              node.mechanisms.map((mech) => (
+                <div key={mech.mechanism_name} className="rounded-md bg-gray-50 p-2">
+                  <p className="font-medium text-gray-800">{mech.mechanism_name}</p>
+                  <div className="mt-1 flex flex-col gap-1.5">
+                    {mech.code_examples.map((ce, idx) => (
+                      <div key={`${mech.mechanism_name}-${idx}`} className="flex flex-col gap-1">
+                        <span className="self-start rounded bg-violet-100 px-1.5 py-0.5 text-xs text-violet-800">
+                          {ce.lang}
+                          {ce.framework ? `/${ce.framework}` : ""}
+                        </span>
+                        {ce.code && (
+                          <pre className="overflow-x-auto rounded bg-gray-900 p-2 text-xs text-gray-100">
+                            <code>{ce.code}</code>
+                          </pre>
+                        )}
+                        {ce.description && (
+                          <p className="text-xs text-gray-500">{ce.description}</p>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              ))
+            ) : (
+              <p className="text-xs italic text-gray-400">등록된 메커니즘이 없습니다</p>
             )}
           </div>
         </div>

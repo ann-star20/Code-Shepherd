@@ -113,4 +113,96 @@ describe("useGraphPipelineSSE", () => {
       expect(MockEventSource.instance.close).toHaveBeenCalled();
     });
   });
+
+  it("metadata_required 이벤트 수신 시 onMetadataRequired 콜백에 doc_id/url/suggestions 전달", async () => {
+    // Arrange
+    const onMetadataRequired = vi.fn();
+    renderHook(() =>
+      useGraphPipelineSSE({
+        sessionId: "sess-meta",
+        onLog: vi.fn(),
+        onFinished: vi.fn(),
+        onError: vi.fn(),
+        onMetadataRequired,
+      })
+    );
+    // Act
+    act(() => {
+      MockEventSource.instance.emit({
+        type: "metadata_required",
+        doc_id: "doc_new123",
+        url: "https://docs.astro.build/",
+        suggestions: ["Astro", "NestJS"],
+      });
+    });
+    // Assert
+    await waitFor(() => {
+      expect(onMetadataRequired).toHaveBeenCalledWith({
+        doc_id: "doc_new123",
+        url: "https://docs.astro.build/",
+        suggestions: ["Astro", "NestJS"],
+      });
+    });
+  });
+
+  it("step_update SKIPPED 이벤트 수신 시 onSkipped 콜백에 reason 전달", async () => {
+    // Arrange
+    const onSkipped = vi.fn();
+    const { result } = renderHook(() =>
+      useGraphPipelineSSE({
+        sessionId: "sess-skip",
+        onLog: vi.fn(),
+        onFinished: vi.fn(),
+        onError: vi.fn(),
+        onSkipped,
+      })
+    );
+    // Act
+    act(() => {
+      MockEventSource.instance.emit({
+        type: "step_update",
+        agent: "Prescan",
+        status: "SKIPPED",
+        reason: "이미 처리된 문서입니다 (doc_id=doc_dup123, state=COMMITTED) - 파이프라인을 건너뜁니다.",
+      });
+    });
+    // Assert
+    await waitFor(() => {
+      expect(result.current.stepStatuses.Input).toBe("PENDING");
+      expect(onSkipped).toHaveBeenCalledWith(
+        "이미 처리된 문서입니다 (doc_id=doc_dup123, state=COMMITTED) - 파이프라인을 건너뜁니다."
+      );
+    });
+  });
+
+  it("step_update FAILED 이벤트 수신 시 stepStatuses를 FAILED로 갱신하고 onStepFailed에 step/reason 전달", async () => {
+    // Arrange
+    const onStepFailed = vi.fn();
+    const { result } = renderHook(() =>
+      useGraphPipelineSSE({
+        sessionId: "sess-noconcepts",
+        onLog: vi.fn(),
+        onFinished: vi.fn(),
+        onError: vi.fn(),
+        onStepFailed,
+      })
+    );
+    // Act
+    act(() => {
+      MockEventSource.instance.emit({
+        type: "step_update",
+        step: "Extractor",
+        status: "FAILED",
+        reason: "해당 페이지의 본문에서 분석 가능한 핵심 개념(안티패턴/약점)을 찾지 못했습니다.",
+      });
+    });
+    // Assert
+    await waitFor(() => {
+      expect(result.current.stepStatuses.Extractor).toBe("FAILED");
+      expect(onStepFailed).toHaveBeenCalledWith(
+        "Extractor",
+        "해당 페이지의 본문에서 분석 가능한 핵심 개념(안티패턴/약점)을 찾지 못했습니다."
+      );
+    });
+  });
 });

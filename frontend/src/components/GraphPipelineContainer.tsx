@@ -1,5 +1,5 @@
-﻿import { useState, useCallback, useEffect } from "react";
-import type { Domain, GraphNode, GraphEdge, PipelineState, ToastKind, PrescanResult } from "@/types/graphPipeline";
+﻿import { useState, useCallback, useEffect, useRef } from "react";
+import type { Domain, GraphNode, GraphEdge, PipelineState, ToastKind, PrescanResult, StepName } from "@/types/graphPipeline";
 import { graphPipelineApi } from "@/lib/graphPipelineApi";
 import { useGraphPipelineSSE } from "@/hooks/useGraphPipelineSSE";
 import { useGraphStagingApproval } from "@/hooks/useGraphStagingApproval";
@@ -36,24 +36,6 @@ export function GraphPipelineContainer({ onToast }: GraphPipelineContainerProps)
     setLogs((prev) => [...prev, line]);
   }, []);
 
-  const handleFinished = useCallback(() => {
-    setPipelineState("WAITING_APPROVAL");
-    onToast("success", "파이프라인 완료 — HITL 승인을 진행해 주세요.");
-    fetchStaging();
-  }, []); // eslint-disable-line react-hooks/exhaustive-deps
-
-  const handleSSEError = useCallback((msg: string) => {
-    setPipelineState("ERROR");
-    onToast("error", msg);
-  }, [onToast]);
-
-  const { stepStatuses, isConnected, reset: resetSSE } = useGraphPipelineSSE({
-    sessionId,
-    onLog: addLog,
-    onFinished: handleFinished,
-    onError: handleSSEError,
-  });
-
   const {
     stagingItems,
     diff,
@@ -61,8 +43,67 @@ export function GraphPipelineContainer({ onToast }: GraphPipelineContainerProps)
     fetchStaging,
     approveAll,
     rejectAll,
+    approveSingle,
+    rejectSingle,
     commit,
   } = useGraphStagingApproval({ sessionId, onToast });
+
+  const fetchStagingRef = useRef(fetchStaging);
+  useEffect(() => {
+    fetchStagingRef.current = fetchStaging;
+  }, [fetchStaging]);
+
+  const skippedRef = useRef(false);
+
+  const handleFinished = useCallback(() => {
+    if (skippedRef.current) {
+      skippedRef.current = false;
+      setPipelineState("IDLE");
+      return;
+    }
+    setPipelineState("WAITING_APPROVAL");
+    onToast("success", "파이프라인 완료 — HITL 승인을 진행해 주세요.");
+    fetchStagingRef.current();
+  }, [onToast]);
+
+  const handleSSEError = useCallback((msg: string) => {
+    setPipelineState("ERROR");
+    onToast("error", msg);
+  }, [onToast]);
+
+  const handleSkipped = useCallback((reason: string) => {
+    skippedRef.current = true;
+    onToast("warning", reason);
+  }, [onToast]);
+
+  const handleStepFailed = useCallback((step: StepName, reason: string) => {
+    if (step === "Extractor") {
+      skippedRef.current = true;
+    }
+    onToast("error", reason);
+  }, [onToast]);
+
+  const handleMetadataRequired = useCallback(
+    (payload: { doc_id: string; url: string; suggestions: string[] }) => {
+      setPrescanResult({
+        original_url: payload.url,
+        doc_id: payload.doc_id,
+        suggestions: payload.suggestions,
+      });
+      onToast("warning", "프레임워크를 자동으로 인식하지 못했습니다. 메타데이터를 입력해 주세요.");
+    },
+    [onToast]
+  );
+
+  const { stepStatuses, isConnected, reset: resetSSE, setStepStatus } = useGraphPipelineSSE({
+    sessionId,
+    onLog: addLog,
+    onFinished: handleFinished,
+    onError: handleSSEError,
+    onSkipped: handleSkipped,
+    onMetadataRequired: handleMetadataRequired,
+    onStepFailed: handleStepFailed,
+  });
 
   const { draftNodes, draftEdges, applyDraftNodes, clearDraft } = useGraphMerge();
 
@@ -73,6 +114,7 @@ export function GraphPipelineContainer({ onToast }: GraphPipelineContainerProps)
   }, [stagingItems, baseNodes, applyDraftNodes]);
 
   const handlePipelineStarted = useCallback((sid: string) => {
+    skippedRef.current = false;
     setSessionId(sid);
     setLogs([]);
     resetSSE();
@@ -102,12 +144,31 @@ export function GraphPipelineContainer({ onToast }: GraphPipelineContainerProps)
 
   const handleCommit = useCallback(async () => {
     setPipelineState("COMMITTING");
-    await commit();
+    setStepStatus("Writer", "RUNNING");
+    const success = await commit();
+    if (success) {
+      setStepStatus("Writer", "DONE");
+      await fetchStagingRef.current();
+      clearDraft();
+      await loadTopology();
+      setPipelineState("FINISHED");
+    } else {
+      setStepStatus("Writer", "FAILED");
+      setPipelineState("ERROR");
+    }
+  }, [commit, clearDraft, loadTopology, setStepStatus]);
+
+  const handleRejectAll = useCallback(async () => {
+    await rejectAll();
     clearDraft();
-    await loadTopology();
-    setPipelineState("FINISHED");
-    onToast("success", "지식 그래프 적재 완료");
-  }, [commit, clearDraft, loadTopology, onToast]);
+    setStepStatus("Writer", "FAILED");
+    setPipelineState("ERROR");
+  }, [rejectAll, clearDraft, setStepStatus]);
+
+  const handleApproveAll = useCallback(async () => {
+    await approveAll();
+    await handleCommit();
+  }, [approveAll, handleCommit]);
 
   const allNodes = [
     ...baseNodes,
@@ -116,7 +177,8 @@ export function GraphPipelineContainer({ onToast }: GraphPipelineContainerProps)
   const allEdges = [...baseEdges, ...draftEdges];
 
   const isDraftSelected = Boolean(
-    selectedNode && stagingItems.find((s) => s.id === selectedNode.id)
+    selectedNode &&
+      stagingItems.find((s) => s.id === selectedNode.id && s.state === "DRAFT")
   );
 
   const handleNodeClick = useCallback((node: GraphNode) => {
@@ -191,21 +253,14 @@ export function GraphPipelineContainer({ onToast }: GraphPipelineContainerProps)
         {/* Right: 도메인/개념 선택 + HITL 승인 + 인스펙터 */}
         <div className="flex flex-col gap-4 overflow-auto">
           {pipelineState === "WAITING_APPROVAL" && (
-            <div className="flex flex-col gap-2">
-              <GraphApprovalPanel
-                diff={diff}
-                isLoading={isApprovalLoading}
-                onApproveAll={() => void approveAll()}
-                onRejectAll={() => void rejectAll()}
-              />
-              <GraphButton
-                variant="outline"
-                onClick={() => void handleCommit()}
-                disabled={isApprovalLoading || pipelineState !== "WAITING_APPROVAL"}
-              >
-                그래프에 반영 (Commit)
-              </GraphButton>
-            </div>
+            <GraphApprovalPanel
+              diff={diff}
+              isLoading={isApprovalLoading}
+              stagingItems={stagingItems}
+              onApproveAll={() => void handleApproveAll()}
+              onRejectAll={() => void handleRejectAll()}
+              onSelectItem={handleNodeClick}
+            />
           )}
           <div className="rounded-lg border bg-white p-3 shadow-sm">
             <h2 className="mb-2 text-xs font-semibold uppercase tracking-wide text-gray-400">
@@ -233,11 +288,11 @@ export function GraphPipelineContainer({ onToast }: GraphPipelineContainerProps)
             isDraft={isDraftSelected}
             onApprove={(id) => {
               const item = stagingItems.find((s) => s.id === id);
-              if (item) void graphPipelineApi.approveSingle(item.staging_id);
+              if (item) void approveSingle(item.staging_id);
             }}
             onReject={(id) => {
               const item = stagingItems.find((s) => s.id === id);
-              if (item) void graphPipelineApi.rejectSingle(item.staging_id);
+              if (item) void rejectSingle(item.staging_id);
             }}
             onClose={() => {
               setSelectedNode(null);
@@ -254,16 +309,35 @@ export function GraphPipelineContainer({ onToast }: GraphPipelineContainerProps)
           onClose={() => setDuplicateUrl(null)}
         />
       )}
-      {prescanResult && (prescanResult.infer_confidence ?? 1) < 0.8 && (
+      {prescanResult && (
         <GraphMetadataLearnModal
           prescanResult={prescanResult}
           suggestions={prescanResult.suggestions ?? []}
           onSubmit={async (payload) => {
             await graphPipelineApi.learnMetadata(payload);
+            if (sessionId && prescanResult.doc_id) {
+              await graphPipelineApi.resumeMetadata({
+                session_id: sessionId,
+                doc_id: prescanResult.doc_id,
+                url: prescanResult.original_url,
+                framework: payload.framework,
+                lang: payload.default_lang ?? payload.supported_langs[0],
+              });
+            }
             setPrescanResult(null);
-            onToast("success", "메타데이터 학습 완료");
+            onToast("success", "메타데이터 학습 완료 — 파이프라인을 재개합니다.");
           }}
-          onCancel={() => setPrescanResult(null)}
+          onCancel={() => {
+            if (sessionId && prescanResult.doc_id) {
+              void graphPipelineApi.resumeMetadata({
+                session_id: sessionId,
+                doc_id: prescanResult.doc_id,
+                url: prescanResult.original_url,
+              });
+            }
+            setPrescanResult(null);
+            onToast("info", "빈 값으로 파이프라인을 진행합니다.");
+          }}
         />
       )}
     </div>

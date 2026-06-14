@@ -1,7 +1,7 @@
 [
   {
     "concept_name": "N+1Query",
-    "concept_type": "performance_antipattern",
+    "concept_type": "antipattern",
     "cwe_id": "CWE-1048",
     "owasp_id": null,
     "severity": "medium",
@@ -50,7 +50,7 @@
   },
   {
     "concept_name": "MissingIndex",
-    "concept_type": "performance_antipattern",
+    "concept_type": "antipattern",
     "cwe_id": "CWE-1089",
     "owasp_id": null,
     "severity": "medium",
@@ -99,7 +99,7 @@
   },
   {
     "concept_name": "ConnPoolExhaustion",
-    "concept_type": "performance_antipattern",
+    "concept_type": "antipattern",
     "cwe_id": "CWE-400",
     "owasp_id": null,
     "severity": "high",
@@ -144,7 +144,7 @@
   },
   {
     "concept_name": "MemoryLeak",
-    "concept_type": "performance_antipattern",
+    "concept_type": "antipattern",
     "cwe_id": "CWE-401",
     "owasp_id": null,
     "severity": "high",

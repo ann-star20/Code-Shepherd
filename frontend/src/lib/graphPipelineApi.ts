@@ -2,6 +2,7 @@
 import type {
   DiffSummary,
   MetadataLearnPayload,
+  MetadataResumePayload,
   StagingConcept,
 } from "@/types/graphPipeline";
 
@@ -63,4 +64,7 @@ export const graphPipelineApi = {
 
   learnMetadata: (payload: MetadataLearnPayload) =>
     m6Client.post("/documents/metadata/learn", payload),
+
+  resumeMetadata: (payload: MetadataResumePayload) =>
+    m6Client.post("/documents/metadata/resume", payload),
 };

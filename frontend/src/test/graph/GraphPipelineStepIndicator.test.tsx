@@ -39,4 +39,19 @@ describe("GraphPipelineStepIndicator", () => {
     // Crawler dot should be gray (PENDING)
     expect(dots[1]).toHaveClass("bg-gray-300");
   });
+
+  it("Resolver가 Writer보다 먼저 표시됨 (Resolver는 HITL 승인 전 Extract 단계에서 완료되고, Writer는 HITL 승인 후에만 실행됨)", () => {
+    // Arrange
+    const statuses: Partial<StepStatuses> = {};
+    // Act
+    render(<GraphPipelineStepIndicator statuses={statuses} />);
+    // Assert
+    const items = screen.getAllByRole("listitem");
+    const labels = items.map((li) => li.querySelector("p")?.textContent);
+    const resolverIndex = labels.indexOf("Resolver");
+    const writerIndex = labels.indexOf("Writer");
+    expect(resolverIndex).toBeGreaterThanOrEqual(0);
+    expect(writerIndex).toBeGreaterThanOrEqual(0);
+    expect(resolverIndex).toBeLessThan(writerIndex);
+  });
 });

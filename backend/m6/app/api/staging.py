@@ -123,6 +123,10 @@ async def reject(id: str) -> dict[str, Any]:
             ") SELECT count(*) FROM updated",
             item_id,
         )
+        await conn.execute(
+            "UPDATE knowledge_documents SET state = 'FAILED', updated_at = now() WHERE session_id = $1",
+            id,
+        )
         return {"session_id": id, "rejected": rejected}
     finally:
         await conn.close()

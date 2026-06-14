@@ -1,7 +1,7 @@
 [
   {
     "concept_name": "XSS",
-    "concept_type": "vulnerability_root_cause",
+    "concept_type": "antipattern",
     "cwe_id": "CWE-79",
     "owasp_id": "A03:2025",
     "severity": "high",
@@ -45,7 +45,7 @@
   },
   {
     "concept_name": "SQLi",
-    "concept_type": "vulnerability_root_cause",
+    "concept_type": "antipattern",
     "cwe_id": "CWE-89",
     "owasp_id": "A03:2025",
     "severity": "critical",
@@ -86,7 +86,7 @@
   },
   {
     "concept_name": "CSRF",
-    "concept_type": "vulnerability_root_cause",
+    "concept_type": "antipattern",
     "cwe_id": "CWE-352",
     "owasp_id": "A01:2025",
     "severity": "high",
@@ -130,7 +130,7 @@
   },
   {
     "concept_name": "SSRF",
-    "concept_type": "vulnerability_root_cause",
+    "concept_type": "antipattern",
     "cwe_id": "CWE-918",
     "owasp_id": "A10:2025",
     "severity": "high",
@@ -158,7 +158,7 @@
   },
   {
     "concept_name": "PathTraversal",
-    "concept_type": "vulnerability_root_cause",
+    "concept_type": "antipattern",
     "cwe_id": "CWE-22",
     "owasp_id": "A01:2025",
     "severity": "high",
@@ -186,7 +186,7 @@
   },
   {
     "concept_name": "CommandInjection",
-    "concept_type": "vulnerability_root_cause",
+    "concept_type": "antipattern",
     "cwe_id": "CWE-78",
     "owasp_id": "A03:2025",
     "severity": "critical",
@@ -214,7 +214,7 @@
   },
   {
     "concept_name": "InsecureDeserialization",
-    "concept_type": "vulnerability_root_cause",
+    "concept_type": "antipattern",
     "cwe_id": "CWE-502",
     "owasp_id": "A08:2025",
     "severity": "critical",
@@ -242,7 +242,7 @@
   },
   {
     "concept_name": "HardcodedSecret",
-    "concept_type": "vulnerability_root_cause",
+    "concept_type": "antipattern",
     "cwe_id": "CWE-798",
     "owasp_id": "A02:2025",
     "severity": "critical",
@@ -272,7 +272,7 @@
   },
   {
     "concept_name": "BrokenAuthentication",
-    "concept_type": "vulnerability_root_cause",
+    "concept_type": "antipattern",
     "cwe_id": "CWE-287",
     "owasp_id": "A07:2025",
     "severity": "critical",
@@ -303,7 +303,7 @@
   },
   {
     "concept_name": "XXE",
-    "concept_type": "vulnerability_root_cause",
+    "concept_type": "antipattern",
     "cwe_id": "CWE-611",
     "owasp_id": "A05:2025",
     "severity": "high",
@@ -331,7 +331,7 @@
   },
   {
     "concept_name": "BrokenAccessControl",
-    "concept_type": "vulnerability_root_cause",
+    "concept_type": "antipattern",
     "cwe_id": "CWE-284",
     "owasp_id": "A01:2025",
     "severity": "critical",
@@ -387,7 +387,7 @@
   },
   {
     "concept_name": "Clickjacking",
-    "concept_type": "vulnerability_root_cause",
+    "concept_type": "antipattern",
     "cwe_id": "CWE-451",
     "owasp_id": "A05:2025",
     "severity": "medium",
@@ -430,7 +430,7 @@
   }, 
   {
     "concept_name": "N+1Query",
-    "concept_type": "performance_antipattern",
+    "concept_type": "antipattern",
     "cwe_id": "CWE-1048",
     "owasp_id": null,
     "severity": "medium",
@@ -479,7 +479,7 @@
   },
   {
     "concept_name": "MissingIndex",
-    "concept_type": "performance_antipattern",
+    "concept_type": "antipattern",
     "cwe_id": "CWE-1089",
     "owasp_id": null,
     "severity": "medium",
@@ -528,7 +528,7 @@
   },
   {
     "concept_name": "ConnPoolExhaustion",
-    "concept_type": "performance_antipattern",
+    "concept_type": "antipattern",
     "cwe_id": "CWE-400",
     "owasp_id": null,
     "severity": "high",
@@ -573,7 +573,7 @@
   },
   {
     "concept_name": "MemoryLeak",
-    "concept_type": "performance_antipattern",
+    "concept_type": "antipattern",
     "cwe_id": "CWE-401",
     "owasp_id": null,
     "severity": "high",

@@ -125,7 +125,7 @@ export function GraphMetadataLearnModal({
           )}
 
           <div className="flex justify-end gap-2 pt-1">
-            <GraphButton variant="outline" onClick={onCancel}>취소</GraphButton>
+            <GraphButton variant="outline" onClick={onCancel}>건너뛰기 (빈 값으로 진행)</GraphButton>
             <GraphButton
               variant="primary"
               type="submit"

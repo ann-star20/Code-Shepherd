@@ -266,6 +266,36 @@ describe("GraphConceptInspector", () => {
     expect(screen.getByText("사용자 입력을 이스케이프 처리")).toBeInTheDocument();
   });
 
+  it("node.is_new=true이면 'NEW' 배지 렌더링", () => {
+    // Arrange / Act
+    render(
+      <GraphConceptInspector
+        node={{ ...mockNode, is_new: true }}
+        isDraft={false}
+        onApprove={vi.fn()}
+        onReject={vi.fn()}
+        onClose={vi.fn()}
+      />
+    );
+    // Assert
+    expect(screen.getByText("NEW")).toBeInTheDocument();
+  });
+
+  it("node.is_new=false/undefined이면 'NEW' 배지 미표시", () => {
+    // Arrange / Act
+    render(
+      <GraphConceptInspector
+        node={mockNode}
+        isDraft={false}
+        onApprove={vi.fn()}
+        onReject={vi.fn()}
+        onClose={vi.fn()}
+      />
+    );
+    // Assert
+    expect(screen.queryByText("NEW")).not.toBeInTheDocument();
+  });
+
   it("Concept 노드에 MITIGATED_BY 엣지가 없으면 안내 문구 표시", () => {
     // Arrange
     const conceptNode: GraphNode = {

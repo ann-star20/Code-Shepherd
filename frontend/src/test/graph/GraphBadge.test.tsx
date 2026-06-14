@@ -1,6 +1,6 @@
 ﻿import { render, screen } from "@testing-library/react";
 import { describe, it, expect } from "vitest";
-import { DomainBadge, ActionBadge } from "@/components/GraphBadge";
+import { DomainBadge, ActionBadge, NewTagBadge } from "@/components/GraphBadge";
 
 describe("DomainBadge", () => {
   it("security 도메인에 teal 배지 클래스 적용", () => {
@@ -48,5 +48,15 @@ describe("ActionBadge", () => {
     render(<ActionBadge action="RELATED_TO" target="XSS" />);
     // Assert
     expect(screen.getByText("RELATED_TO XSS")).toBeInTheDocument();
+  });
+});
+
+describe("NewTagBadge", () => {
+  it("'NEW' 텍스트와 orange 배지 클래스 렌더링", () => {
+    // Arrange / Act
+    render(<NewTagBadge />);
+    // Assert
+    const badge = screen.getByText("NEW");
+    expect(badge).toHaveClass("bg-orange-100", "text-orange-700");
   });
 });

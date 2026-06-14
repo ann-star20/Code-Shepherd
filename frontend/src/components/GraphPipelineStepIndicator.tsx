@@ -5,8 +5,8 @@ const STEPS: { agent: StepName; desc: string }[] = [
   { agent: "Input",     desc: "링크 유효성 및 ETag 캐싱 분석" },
   { agent: "Crawler",   desc: "DOM 파싱 및 텍스트 블록 정제" },
   { agent: "Extractor", desc: "Gemini 구조화 의미 스키마 추출" },
-  { agent: "Writer",    desc: "PostgreSQL / Neo4j 스테이징 적재" },
   { agent: "Resolver",  desc: "하이브리드 유사도 판정 및 동의어 수렴" },
+  { agent: "Writer",    desc: "HITL 승인 후 Neo4j 그래프 반영" },
 ];
 
 interface GraphPipelineStepIndicatorProps {

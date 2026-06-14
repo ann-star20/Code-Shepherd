@@ -6,7 +6,7 @@
   | "FINISHED"
   | "ERROR";
 
-export type StepStatus = "PENDING" | "RUNNING" | "DONE" | "FAILED";
+export type StepStatus = "PENDING" | "RUNNING" | "DONE" | "FAILED" | "SKIPPED";
 export type StepName = "Input" | "Crawler" | "Extractor" | "Writer" | "Resolver";
 export type StepStatuses = Record<StepName, StepStatus>;
 
@@ -61,6 +61,8 @@ export interface GraphNode {
   framework_version?: string;
   code?: string;
   description?: string;
+  is_staging?: boolean;
+  is_new?: boolean;
   x?: number;
   y?: number;
 }
@@ -89,12 +91,16 @@ export interface ToastItem {
 }
 
 export interface SSEPayload {
-  type: "connected" | "log" | "step_update" | "heartbeat" | "finished";
+  type: "connected" | "log" | "step_update" | "heartbeat" | "finished" | "metadata_required";
   step?: StepName;
   status?: StepStatus;
   agent?: string;
   message?: string;
+  reason?: string;
   ts?: string;
+  doc_id?: string;
+  url?: string;
+  suggestions?: string[];
 }
 
 export interface PrescanResult {
@@ -102,6 +108,7 @@ export interface PrescanResult {
   framework?: string;
   infer_confidence?: number;
   suggestions?: string[];
+  doc_id?: string;
 }
 
 export interface MetadataLearnPayload {
@@ -109,6 +116,14 @@ export interface MetadataLearnPayload {
   pattern: string;
   supported_langs: string[];
   default_lang?: string;
+}
+
+export interface MetadataResumePayload {
+  session_id: string;
+  doc_id: string;
+  url: string;
+  framework?: string;
+  lang?: string;
 }
 
 export interface NodeStyle {

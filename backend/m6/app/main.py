@@ -4,12 +4,12 @@ from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from shared.logging import TraceIDMiddleware, configure_logging
 
 from app.api.documents import router as documents_router
-from app.api.routes import router as graph_router
 from app.api.pipeline import router as pipeline_router
+from app.api.routes import router as graph_router
 from app.api.staging import router as staging_router
-from shared.logging import TraceIDMiddleware, configure_logging
 
 
 @asynccontextmanager

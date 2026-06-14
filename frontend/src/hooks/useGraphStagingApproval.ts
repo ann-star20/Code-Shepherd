@@ -8,6 +8,9 @@ interface UseGraphStagingApprovalOptions {
   onToast: (kind: ToastKind, message: string) => void;
 }
 
+const COMMIT_POLL_INTERVAL_MS = 1000;
+const COMMIT_POLL_MAX_ATTEMPTS = 30;
+
 export function useGraphStagingApproval({ sessionId, onToast }: UseGraphStagingApprovalOptions) {
   const [stagingItems, setStagingItems] = useState<StagingConcept[]>([]);
   const [diff, setDiff]                 = useState<DiffSummary | null>(null);
@@ -67,18 +70,79 @@ export function useGraphStagingApproval({ sessionId, onToast }: UseGraphStagingA
     }
   }, [sessionId, stagingItems, onToast]);
 
-  const commit = useCallback(async () => {
-    if (!sessionId) return;
+  const approveSingle = useCallback(async (stagingId: number) => {
+    const snapshot = stagingItems;
+    setStagingItems((prev) =>
+      prev.map((item) =>
+        item.staging_id === stagingId ? { ...item, state: "APPROVED" as const } : item
+      )
+    );
+    try {
+      await graphPipelineApi.approveSingle(stagingId);
+      onToast("success", "개념을 승인했습니다.");
+    } catch (err) {
+      setStagingItems(snapshot);
+      if (axios.isAxiosError(err) && err.response?.status === 409) {
+        onToast("warning", "다른 사용자가 처리 중입니다. 잠시 후 다시 시도해 주세요.");
+      } else {
+        onToast("error", "승인 처리에 실패했습니다.");
+      }
+    }
+  }, [stagingItems, onToast]);
+
+  const rejectSingle = useCallback(async (stagingId: number) => {
+    const snapshot = stagingItems;
+    setStagingItems((prev) =>
+      prev.map((item) =>
+        item.staging_id === stagingId ? { ...item, state: "REJECTED" as const } : item
+      )
+    );
+    try {
+      await graphPipelineApi.rejectSingle(stagingId);
+      onToast("info", "개념을 거부했습니다.");
+    } catch (err) {
+      setStagingItems(snapshot);
+      if (axios.isAxiosError(err) && err.response?.status === 409) {
+        onToast("warning", "다른 사용자가 처리 중입니다. 잠시 후 다시 시도해 주세요.");
+      } else {
+        onToast("error", "거부 처리에 실패했습니다.");
+      }
+    }
+  }, [stagingItems, onToast]);
+
+  const commit = useCallback(async (): Promise<boolean> => {
+    if (!sessionId) return false;
     setIsLoading(true);
     try {
       await graphPipelineApi.commit(sessionId);
-      onToast("success", "그래프 적재가 시작되었습니다.");
+      for (let attempt = 0; attempt < COMMIT_POLL_MAX_ATTEMPTS; attempt += 1) {
+        await new Promise((resolve) => setTimeout(resolve, COMMIT_POLL_INTERVAL_MS));
+        const diffRes = await graphPipelineApi.getDiff(sessionId);
+        setDiff(diffRes.data);
+        if (diffRes.data.approved === 0) {
+          onToast("success", "그래프 적재가 완료되었습니다.");
+          return true;
+        }
+      }
+      onToast("error", "최종 적재 확인이 시간 초과되었습니다.");
+      return false;
     } catch {
       onToast("error", "최종 적재에 실패했습니다.");
+      return false;
     } finally {
       setIsLoading(false);
     }
   }, [sessionId, onToast]);
 
-  return { stagingItems, diff, isLoading, fetchStaging, approveAll, rejectAll, commit };
+  return {
+    stagingItems,
+    diff,
+    isLoading,
+    fetchStaging,
+    approveAll,
+    rejectAll,
+    approveSingle,
+    rejectSingle,
+    commit,
+  };
 }

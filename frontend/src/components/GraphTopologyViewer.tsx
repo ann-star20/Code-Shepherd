@@ -1,7 +1,9 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useMemo, useRef, useState } from "react";
 import ForceGraph2D, { type ForceGraphMethods } from "react-force-graph-2d";
-import type { GraphEdge, GraphEdgeType, GraphNode } from "@/types/graphPipeline";
-import { DOMAIN_COLOR, EDGE_STYLE, LAYER_RADIUS, getNodeStyle } from "@/lib/graphFormatters";
+import type { GraphEdge, GraphNode } from "@/types/graphPipeline";
+import { DOMAIN_COLOR, EDGE_STYLE, HITL_FOCUS_RING_COLOR, LAYER_RADIUS, NEW_NODE_RING_COLOR, getNodeStyle } from "@/lib/graphFormatters";
+import { computeHierarchicalLayout, type LayoutPosition } from "@/lib/graphLayout";
+import { GraphButton } from "./GraphBadge";
 
 interface GraphTopologyViewerProps {
   nodes: GraphNode[];
@@ -10,29 +12,17 @@ interface GraphTopologyViewerProps {
   focusNodeId?: string | null;
 }
 
-const DAG_LEVEL_DISTANCE = 160;
-const CHARGE_STRENGTH = -180;
-const CHARGE_DISTANCE_MAX = 600;
-const FORCE_X_STRENGTH = 0.02;
 const DIMMED_OPACITY = 0.2;
 const HOVER_DIMMED_OPACITY = 0.1;
 const LABEL_GAP = 5;
-
-const LINK_DISTANCE: Partial<Record<GraphEdgeType, number>> = {
-  BELONGS_TO: 50,
-  MITIGATED_BY: 90,
-  CAUSED_BY: 90,
-  AFFECTS: 90,
-  HAS_EXAMPLE: 110,
-  RELATED_TO: 70,
-};
-const DEFAULT_LINK_DISTANCE = 60;
 
 const LEGEND_DOMAINS = [
   { label: "security",     color: DOMAIN_COLOR.security },
   { label: "performance",  color: DOMAIN_COLOR.performance },
   { label: "both",         color: DOMAIN_COLOR.both },
   { label: "draft (점선)", color: DOMAIN_COLOR.default },
+  { label: "new (주황 링)", color: NEW_NODE_RING_COLOR },
+  { label: "HITL 대상 (파란 점선)", color: HITL_FOCUS_RING_COLOR },
 ];
 
 const LEGEND_EDGES = [
@@ -88,36 +78,11 @@ function buildFocusSet(
   return visited;
 }
 
-/**
- * charge 힘만으로는 노드가 원형으로 뭉치는 경향이 있어,
- * x=0 방향으로 약하게 끌어당기는 보조 힘을 추가해 가로로 넓게 퍼지도록 한다.
- */
-interface SimNode {
-  x?: number;
-  vx?: number;
-  [key: string]: unknown;
-}
-
-type XForce = ((alpha: number) => void) & {
-  initialize: (nodes: SimNode[], ...args: unknown[]) => void;
-};
-
-function createForceX(strength: number): XForce {
-  let simNodes: SimNode[] = [];
-  const force = ((alpha: number) => {
-    for (const n of simNodes) {
-      n.vx = (n.vx ?? 0) - (n.x ?? 0) * strength * alpha;
-    }
-  }) as XForce;
-  force.initialize = (nodes) => {
-    simNodes = nodes;
-  };
-  return force;
-}
-
 export function GraphTopologyViewer({ nodes, edges, onNodeClick, focusNodeId }: GraphTopologyViewerProps) {
   const fgRef = useRef<ForceGraphMethods>();
   const [hoverNodeId, setHoverNodeId] = useState<string | null>(null);
+  const positionsRef = useRef<Map<string, LayoutPosition>>(new Map());
+  const [layoutVersion, setLayoutVersion] = useState(0);
 
   const graphData = useMemo(() => {
     const visibleNodes = nodes.filter((n) => n.layer !== "L4");
@@ -125,11 +90,30 @@ export function GraphTopologyViewer({ nodes, edges, onNodeClick, focusNodeId }: 
     const visibleEdges = edges.filter(
       (e) => visibleIds.has(e.source) && visibleIds.has(e.target)
     );
+
+    const computed = computeHierarchicalLayout(visibleNodes, visibleEdges);
+    const positionedNodes = visibleNodes.map((n) => {
+      const pos = positionsRef.current.get(n.id) ?? computed.get(n.id) ?? { x: 0, y: 0 };
+      positionsRef.current.set(n.id, pos);
+      return { ...n, x: pos.x, y: pos.y, fx: pos.x, fy: pos.y };
+    });
+
     return {
-      nodes: visibleNodes.map((n) => ({ ...n })),
+      nodes: positionedNodes,
       links: visibleEdges.map((e) => ({ source: e.source, target: e.target, type: e.type })),
     };
-  }, [nodes, edges]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [nodes, edges, layoutVersion]);
+
+  const handleNodeDragEnd = useCallback((node: object) => {
+    const n = node as GraphNode & { x: number; y: number };
+    positionsRef.current.set(n.id, { x: n.x, y: n.y });
+  }, []);
+
+  const handleRelayout = useCallback(() => {
+    positionsRef.current.clear();
+    setLayoutVersion((v) => v + 1);
+  }, []);
 
   const nodesById = useMemo(() => new Map(nodes.map((n) => [n.id, n])), [nodes]);
 
@@ -143,26 +127,19 @@ export function GraphTopologyViewer({ nodes, edges, onNodeClick, focusNodeId }: 
     [hoverNodeId, edges, nodesById]
   );
 
-  const activeFocusIds = hoverFocusedIds ?? focusedIds;
+  const hitlFocusIds = useMemo(
+    () =>
+      new Set(
+        nodes
+          .filter((n) => n.status === "DRAFT" || n.status === "MERGE_PENDING")
+          .map((n) => n.id)
+      ),
+    [nodes]
+  );
+
+  const activeFocusIds =
+    hoverFocusedIds ?? focusedIds ?? (hitlFocusIds.size > 0 ? hitlFocusIds : null);
   const activeDimOpacity = hoverFocusedIds ? HOVER_DIMMED_OPACITY : DIMMED_OPACITY;
-
-  useEffect(() => {
-    const fg = fgRef.current;
-    if (!fg) return;
-
-    const charge = fg.d3Force("charge");
-    if (charge) {
-      charge.strength(CHARGE_STRENGTH);
-      charge.distanceMax(CHARGE_DISTANCE_MAX);
-    }
-
-    const link = fg.d3Force("link");
-    if (link) {
-      link.distance((l: GraphEdge) => LINK_DISTANCE[l.type] ?? DEFAULT_LINK_DISTANCE);
-    }
-
-    fg.d3Force("x", createForceX(FORCE_X_STRENGTH));
-  }, [graphData]);
 
   const paintNode = useCallback(
     (node: object, ctx: CanvasRenderingContext2D) => {
@@ -199,12 +176,32 @@ export function GraphTopologyViewer({ nodes, edges, onNodeClick, focusNodeId }: 
         ctx.stroke();
       }
 
+      if (n.is_new) {
+        ctx.setLineDash([2, 2]);
+        ctx.strokeStyle = NEW_NODE_RING_COLOR;
+        ctx.lineWidth = 1.5;
+        ctx.beginPath();
+        ctx.arc(n.x, n.y, radius + 3, 0, 2 * Math.PI);
+        ctx.stroke();
+        ctx.setLineDash([]);
+      }
+
       if (n.id === focusNodeId) {
         ctx.strokeStyle = "#2563EB";
         ctx.lineWidth = 1.5;
         ctx.beginPath();
         ctx.arc(n.x, n.y, radius + 4, 0, 2 * Math.PI);
         ctx.stroke();
+      }
+
+      if (hitlFocusIds.has(n.id)) {
+        ctx.setLineDash([3, 2]);
+        ctx.strokeStyle = HITL_FOCUS_RING_COLOR;
+        ctx.lineWidth = 1.5;
+        ctx.beginPath();
+        ctx.arc(n.x, n.y, radius + 5, 0, 2 * Math.PI);
+        ctx.stroke();
+        ctx.setLineDash([]);
       }
 
       ctx.globalAlpha = 1;
@@ -235,7 +232,7 @@ export function GraphTopologyViewer({ nodes, edges, onNodeClick, focusNodeId }: 
         ctx.globalAlpha = 1;
       }
     },
-    [focusNodeId, hoverNodeId, hoverFocusedIds, focusedIds, activeFocusIds, activeDimOpacity]
+    [focusNodeId, hoverNodeId, hoverFocusedIds, focusedIds, activeFocusIds, activeDimOpacity, hitlFocusIds]
   );
 
   const paintLink = useCallback(
@@ -274,19 +271,24 @@ export function GraphTopologyViewer({ nodes, edges, onNodeClick, focusNodeId }: 
       <ForceGraph2D
         ref={fgRef}
         graphData={graphData}
-        dagMode="td"
-        dagLevelDistance={DAG_LEVEL_DISTANCE}
+        cooldownTicks={0}
         nodeCanvasObject={paintNode}
         nodeCanvasObjectMode={() => "replace"}
         linkCanvasObject={paintLink}
         linkCanvasObjectMode={() => "replace"}
-        enableNodeDrag={false}
+        enableNodeDrag={true}
+        onNodeDragEnd={handleNodeDragEnd}
         onNodeClick={(node) => onNodeClick?.(node as unknown as GraphNode)}
         onNodeHover={(node) => setHoverNodeId(node ? (node as unknown as GraphNode).id : null)}
         backgroundColor="#f9fafb"
         width={undefined}
         height={undefined}
       />
+      <div className="absolute top-3 right-3 z-10">
+        <GraphButton variant="outline" onClick={handleRelayout} className="bg-white/90 shadow">
+          배치 정렬
+        </GraphButton>
+      </div>
       <div className="absolute bottom-3 left-3 z-10 flex flex-col gap-1
                       rounded bg-white/80 px-2 py-1 text-xs shadow">
         <div className="flex gap-3">

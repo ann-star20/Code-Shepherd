@@ -10,11 +10,20 @@ const DEFAULT_STATUSES: StepStatuses = {
   Resolver:  "PENDING",
 };
 
+interface MetadataRequiredPayload {
+  doc_id: string;
+  url: string;
+  suggestions: string[];
+}
+
 interface UseGraphPipelineSSEOptions {
   sessionId: string | null;
   onLog: (line: string) => void;
   onFinished: () => void;
   onError: (msg: string) => void;
+  onSkipped?: (reason: string) => void;
+  onMetadataRequired?: (payload: MetadataRequiredPayload) => void;
+  onStepFailed?: (step: StepName, reason: string) => void;
 }
 
 export function useGraphPipelineSSE({
@@ -22,6 +31,9 @@ export function useGraphPipelineSSE({
   onLog,
   onFinished,
   onError,
+  onSkipped,
+  onMetadataRequired,
+  onStepFailed,
 }: UseGraphPipelineSSEOptions) {
   const [stepStatuses, setStepStatuses] = useState<StepStatuses>(DEFAULT_STATUSES);
   const [isConnected, setIsConnected]   = useState(false);
@@ -30,6 +42,10 @@ export function useGraphPipelineSSE({
   const reset = useCallback(() => {
     setStepStatuses({ ...DEFAULT_STATUSES });
     setIsConnected(false);
+  }, []);
+
+  const setStepStatus = useCallback((step: StepName, status: StepStatus) => {
+    setStepStatuses((prev) => ({ ...prev, [step]: status }));
   }, []);
 
   useEffect(() => {
@@ -56,6 +72,12 @@ export function useGraphPipelineSSE({
               [payload.step as StepName]: payload.status as StepStatus,
             }));
           }
+          if (payload.status === "SKIPPED") {
+            onSkipped?.(payload.reason ?? "이미 처리된 문서로 파이프라인을 건너뜁니다.");
+          }
+          if (payload.status === "FAILED" && payload.step && payload.reason) {
+            onStepFailed?.(payload.step as StepName, payload.reason);
+          }
           break;
         case "log":
           if (payload.message) {
@@ -70,6 +92,15 @@ export function useGraphPipelineSSE({
           es.close();
           break;
         case "heartbeat":
+          break;
+        case "metadata_required":
+          if (payload.doc_id && payload.url) {
+            onMetadataRequired?.({
+              doc_id: payload.doc_id,
+              url: payload.url,
+              suggestions: payload.suggestions ?? [],
+            });
+          }
           break;
         default:
           break;
@@ -86,7 +117,7 @@ export function useGraphPipelineSSE({
       es.close();
       esRef.current = null;
     };
-  }, [sessionId, onLog, onFinished, onError]);
+  }, [sessionId, onLog, onFinished, onError, onSkipped, onMetadataRequired, onStepFailed]);
 
-  return { stepStatuses, isConnected, reset };
+  return { stepStatuses, isConnected, reset, setStepStatus };
 }
