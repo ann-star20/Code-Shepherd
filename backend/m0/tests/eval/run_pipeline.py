@@ -154,6 +154,9 @@ async def fetch_metadata(
 
         quality_score: float = 0.0
         child_chunk_count: int | None = None
+        parent_chunk_count: int | None = None
+        avg_child_per_parent: float | None = None
+        avg_chunk_tokens: float | None = None
         parsing_time_ms: int | None = None
         parser_used: str | None = None
         stage5_latency_ms: int | None = None
@@ -165,8 +168,16 @@ async def fetch_metadata(
                 det_data = det_resp.json()
                 quality_score = float(det_data.get("quality_score") or 0.0)
                 chunks = det_data.get("chunks") or []
-                child_chunk_count = sum(
-                    1 for c in chunks if c.get("chunk_type") == "child"
+                child_count = sum(1 for c in chunks if c.get("chunk_type") == "child")
+                parent_count = sum(1 for c in chunks if c.get("chunk_type") == "parent")
+                child_chunk_count = child_count if chunks else None
+                parent_chunk_count = parent_count if chunks else None
+                avg_child_per_parent = (
+                    round(child_count / parent_count, 2) if parent_count > 0 else None
+                )
+                tokens = [c.get("token_count") or 0 for c in chunks]
+                avg_chunk_tokens = (
+                    round(sum(tokens) / len(tokens), 2) if tokens else None
                 )
                 raw_pt = det_data.get("parsing_time_ms")
                 parsing_time_ms = int(raw_pt) if raw_pt is not None else None
@@ -191,6 +202,9 @@ async def fetch_metadata(
         "entities": entities_by_type,
         "quality_score": quality_score,
         "child_chunk_count": child_chunk_count,
+        "parent_chunk_count": parent_chunk_count,
+        "avg_child_per_parent": avg_child_per_parent,
+        "avg_chunk_tokens": avg_chunk_tokens,
         "parsing_time_ms": parsing_time_ms,
         "parser_used": parser_used,
         "stage5_latency_ms": stage5_latency_ms,
@@ -216,23 +230,29 @@ def build_output_entry(
     stage5_latency_ms: int | None = None,
     parsing_time_ms: int | None = None,
     parser_used: str | None = None,
+    parent_chunk_count: int | None = None,
+    avg_child_per_parent: float | None = None,
+    avg_chunk_tokens: float | None = None,
 ) -> dict:
     """run_eval.py의 load_results_from_file()이 읽을 수 있는 형식으로 반환한다."""
     return {
-        "golden_id":           golden_id,
-        "doc_id":              doc_id,
-        "file_type":           file_type,
-        "title":               title,
-        "category":            category,
-        "tags":                tags,
-        "entities":            entities,
-        "quality_score":       quality_score,
-        "status":              status,
-        "processing_time_ms":  processing_time_ms,
-        "child_chunk_count":   child_chunk_count,
-        "stage5_latency_ms":   stage5_latency_ms,
-        "parsing_time_ms":     parsing_time_ms,
-        "parser_used":         parser_used,
+        "golden_id":            golden_id,
+        "doc_id":               doc_id,
+        "file_type":            file_type,
+        "title":                title,
+        "category":             category,
+        "tags":                 tags,
+        "entities":             entities,
+        "quality_score":        quality_score,
+        "status":               status,
+        "processing_time_ms":   processing_time_ms,
+        "child_chunk_count":    child_chunk_count,
+        "parent_chunk_count":   parent_chunk_count,
+        "avg_child_per_parent": avg_child_per_parent,
+        "avg_chunk_tokens":     avg_chunk_tokens,
+        "stage5_latency_ms":    stage5_latency_ms,
+        "parsing_time_ms":      parsing_time_ms,
+        "parser_used":          parser_used,
     }
 
 
@@ -314,6 +334,9 @@ async def run(
                 status=status,
                 processing_time_ms=processing_time_ms,
                 child_chunk_count=meta.get("child_chunk_count"),
+                parent_chunk_count=meta.get("parent_chunk_count"),
+                avg_child_per_parent=meta.get("avg_child_per_parent"),
+                avg_chunk_tokens=meta.get("avg_chunk_tokens"),
                 stage5_latency_ms=meta.get("stage5_latency_ms"),
                 parsing_time_ms=meta.get("parsing_time_ms"),
                 parser_used=meta.get("parser_used"),
