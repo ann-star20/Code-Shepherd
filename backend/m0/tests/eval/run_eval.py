@@ -785,6 +785,7 @@ def save_json_report(
 def print_summary(
     automation: dict,
     accuracy: dict,
+    neo4j: dict,
     maturity_score: float,
     ci_result: dict,
 ) -> None:
@@ -815,6 +816,11 @@ def print_summary(
         icon = "[OK]" if ok else "[!!]"
         op_sym = ">=" if op == ">=" else "<="
         print(f"  {icon} {label}: {val:.1%}  (목표 {op_sym}{target:.0%})")
+
+    neo4j_rate = neo4j.get("neo4j_synced_rate", 0.0)
+    neo4j_icon = "[OK]" if neo4j_rate >= 0.80 else "[!!]"
+    print(f"\n[Neo4j]  stored {neo4j.get('stored_count', 0)}개 기준 (proxy: entities 비어있지 않음)")
+    print(f"  {neo4j_icon} neo4j_synced_rate: {neo4j_rate:.1%}  (목표 ≥80%)")
 
     print(f"\n[CI Gate]  {ci_result['overall']}")
     for key, v in ci_result["details"].items():
@@ -868,11 +874,12 @@ def main() -> None:
     automation  = compute_automation_kpis(all_results)
     accuracy    = compute_accuracy_kpis(eval_results)
     reliability = compute_reliability_kpis(all_results)
+    neo4j       = compute_neo4j_kpis(all_results)
     maturity    = compute_maturity_score(automation, accuracy)
     ci_result   = _evaluate_ci_gate(automation, accuracy)
 
     # 출력
-    print_summary(automation, accuracy, maturity, ci_result)
+    print_summary(automation, accuracy, neo4j, maturity, ci_result)
     render_markdown_report(eval_results, automation, accuracy, reliability, maturity, args.output)
     save_json_report(automation, accuracy, reliability, maturity, ci_result, args.json_output)
 
