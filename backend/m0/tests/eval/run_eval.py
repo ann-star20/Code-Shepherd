@@ -180,6 +180,8 @@ _KO_EN_SYNONYMS: dict[str, str] = {
     "임베딩":           "embedding",
     "벡터db":           "vectordatabase",
     "벡터데이터베이스": "vectordatabase",
+    # pgVector / pgvector → vectordatabase (벡터DB golden과 매칭)
+    "pgvector":         "vectordatabase",
     "지식관리":         "knowledgemanagement",
     "아키텍처":         "architecture",
     "파이프라인":       "pipeline",
@@ -199,6 +201,12 @@ _KO_EN_SYNONYMS: dict[str, str] = {
     "환경설정":         "개발환경설정",
     # HNSW 인덱스 변형
     "hnsw인덱스":       "hnsw",
+    # KMS / 지식관리시스템 변형
+    "kms":              "knowledgemanagement",
+    "지식관리시스템":   "knowledgemanagement",
+    # 그래프DB 계열
+    "그래프db":         "graphdatabase",
+    "그래프데이터베이스": "graphdatabase",
 }
 
 
