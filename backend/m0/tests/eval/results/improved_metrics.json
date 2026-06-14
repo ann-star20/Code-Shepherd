@@ -1,89 +1,96 @@
 {
-  "timestamp": "2026-06-14T19:32:09.244630",
-  "maturity_score": 83.2,
+  "timestamp": "2026-06-14T19:50:05.226142",
+  "maturity_score": 83.3,
   "ci_gate": {
     "overall": "PASS",
     "details": {
       "completion_rate": {
         "status": "PASS",
-        "value": 0.8889,
+        "value": 0.8947,
         "threshold": 0.8
       },
       "category_accuracy": {
         "status": "PASS",
-        "value": 0.875,
+        "value": 0.8824,
         "threshold": 0.85
       },
       "avg_tags_f1": {
         "status": "PASS",
-        "value": 0.6278,
+        "value": 0.6224,
         "threshold": 0.6
       },
       "avg_entity_name_recall": {
         "status": "PASS",
-        "value": 0.7771,
+        "value": 0.7759,
         "threshold": 0.6
       },
       "avg_quality_score": {
         "status": "PASS",
-        "value": 0.8956,
+        "value": 0.8835,
         "threshold": 0.85
       }
     }
   },
   "automation": {
-    "total_documents": 18,
-    "stored": 16,
+    "total_documents": 19,
+    "stored": 17,
     "stored_partial": 0,
     "hitl_pending": 2,
     "error_or_timeout": 0,
-    "completion_rate": 0.8888888888888888,
-    "hitl_rate": 0.1111111111111111,
+    "completion_rate": 0.8947368421052632,
+    "hitl_rate": 0.10526315789473684,
     "error_rate": 0.0,
     "status_breakdown": {
-      "stored": 16,
+      "stored": 17,
       "hitl_pending": 2
     }
   },
   "accuracy": {
-    "evaluated_documents": 16,
-    "documents_with_golden": 16,
-    "avg_quality_score": 0.895625,
-    "title_accuracy": 0.875,
-    "category_accuracy": 0.875,
-    "avg_tags_recall": 0.6837549603174603,
-    "avg_tags_precision": 0.5926339285714286,
-    "avg_tags_f1": 0.627806719359749,
-    "avg_entity_name_recall": 0.7770520050125314,
-    "avg_entity_partial_score": 0.6835173872180451,
+    "evaluated_documents": 17,
+    "documents_with_golden": 17,
+    "avg_quality_score": 0.8835294117647059,
+    "title_accuracy": 0.8823529411764706,
+    "category_accuracy": 0.8823529411764706,
+    "avg_tags_recall": 0.6639589169000933,
+    "avg_tags_precision": 0.5966386554621849,
+    "avg_tags_f1": 0.6224028023494832,
+    "avg_entity_name_recall": 0.7758661359280554,
+    "avg_entity_partial_score": 0.6819512015332448,
     "by_file_type": {
       "md": {
         "count": 11,
         "title_accuracy": 1.0,
         "category_accuracy": 0.9090909090909091,
-        "avg_tags_f1": 0.6628499668175614,
-        "avg_entity_name_recall": 0.8454545454545456
+        "avg_tags_f1": 0.6381748427448469,
+        "avg_entity_name_recall": 0.8337662337662337
       },
       "pdf": {
         "count": 3,
         "title_accuracy": 0.6666666666666666,
         "category_accuracy": 0.6666666666666666,
-        "avg_tags_f1": 0.5067204301075269,
-        "avg_entity_name_recall": 0.6791979949874687
+        "avg_tags_f1": 0.623249299719888,
+        "avg_entity_name_recall": 0.6616541353383458
       },
       "docx": {
         "count": 1,
         "title_accuracy": 1.0,
         "category_accuracy": 1.0,
-        "avg_tags_f1": 0.5882352941176471,
-        "avg_entity_name_recall": 0.42857142857142855
+        "avg_tags_f1": 0.35294117647058826,
+        "avg_entity_name_recall": 0.5
       },
       "pptx": {
         "count": 1,
         "title_accuracy": 0.0,
         "category_accuracy": 1.0,
-        "avg_tags_f1": 0.6451612903225806,
-        "avg_entity_name_recall": 0.6666666666666666
+        "avg_tags_f1": 0.5882352941176471,
+        "avg_entity_name_recall": 0.5333333333333333
+      },
+      "txt": {
+        "count": 1,
+        "title_accuracy": 1.0,
+        "category_accuracy": 1.0,
+        "avg_tags_f1": 0.75,
+        "avg_entity_name_recall": 1.0
       }
     }
   },
@@ -116,13 +123,20 @@
         "hitl_pending": 0,
         "error": 0,
         "success_rate": 1.0
+      },
+      "txt": {
+        "total": 1,
+        "stored": 1,
+        "hitl_pending": 0,
+        "error": 0,
+        "success_rate": 1.0
       }
     },
     "timing": {
-      "count": 18,
-      "avg_ms": 29033,
-      "max_ms": 45922,
-      "min_ms": 10313
+      "count": 19,
+      "avg_ms": 27545,
+      "max_ms": 41921,
+      "min_ms": 10297
     }
   },
   "hitl_quality_safety_net": {
@@ -141,59 +155,73 @@
   "stage_latency": {
     "stage1": {
       "agent_name": "DocumentParserAgent",
-      "avg_ms": null,
-      "n": 0
+      "avg_ms": 3336,
+      "max_ms": 22274,
+      "min_ms": 46,
+      "n": 19
     },
     "stage2": {
       "agent_name": "MarkdownValidateAgent",
-      "avg_ms": null,
-      "n": 0
+      "avg_ms": 1718,
+      "max_ms": 6622,
+      "min_ms": 929,
+      "n": 19
     },
     "stage3": {
       "agent_name": "ChunkingAgent",
-      "avg_ms": null,
-      "n": 0
+      "avg_ms": 74,
+      "max_ms": 422,
+      "min_ms": 46,
+      "n": 18
     },
     "stage4": {
       "agent_name": "ChunkValidateAgent",
-      "avg_ms": null,
-      "n": 0
+      "avg_ms": 49,
+      "max_ms": 66,
+      "min_ms": 41,
+      "n": 18
     },
     "stage5": {
       "agent_name": "MetadataExtractAgent",
-      "avg_ms": null,
-      "n": 0
+      "avg_ms": 11266,
+      "max_ms": 16152,
+      "min_ms": 6613,
+      "n": 18
     },
     "stage5b": {
       "agent_name": "MetadataValidateAgent",
-      "avg_ms": null,
-      "n": 0
+      "avg_ms": 1390,
+      "max_ms": 2603,
+      "min_ms": 1000,
+      "n": 18
     },
     "stage6": {
       "agent_name": "StoreRouteAgent",
-      "avg_ms": null,
-      "n": 0
+      "avg_ms": 8844,
+      "max_ms": 18103,
+      "min_ms": 2317,
+      "n": 17
     }
   },
   "chunk_compliance": {
-    "chunk_size_compliance_rate": null,
-    "parent_child_integrity_rate": null,
-    "evaluated_documents": 16,
-    "compliance_measured": 0,
-    "integrity_measured": 0
+    "chunk_size_compliance_rate": 0.9303,
+    "parent_child_integrity_rate": 1.0,
+    "evaluated_documents": 17,
+    "compliance_measured": 17,
+    "integrity_measured": 17
   },
   "storage_sync": {
-    "neo4j_synced_rate": null,
-    "storage_synced_rate": null,
-    "neo4j_known_count": 0,
-    "storage_known_count": 0,
-    "stored_count": 16,
-    "source": "unavailable"
+    "neo4j_synced_rate": 1.0,
+    "storage_synced_rate": 1.0,
+    "neo4j_known_count": 17,
+    "storage_known_count": 17,
+    "stored_count": 17,
+    "source": "db_flag"
   },
   "quality_score_details": {
-    "avg_parser_quality_score": 0.8956,
-    "avg_metadata_score": null,
-    "parser_quality_measured": 16,
-    "metadata_score_measured": 0
+    "avg_parser_quality_score": 0.8835,
+    "avg_metadata_score": 0.9471,
+    "parser_quality_measured": 17,
+    "metadata_score_measured": 17
   }
 }

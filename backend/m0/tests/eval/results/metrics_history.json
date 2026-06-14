@@ -295,5 +295,38 @@
       "stored": 16,
       "hitl_pending": 2
     }
+  },
+  {
+    "label": "v1.3-ci-pass",
+    "evaluation_date": "2026-06-14T19:50:05.226142",
+    "saved_at": "2026-06-14T19:50:16.245370",
+    "git_commit_hash": "86d5f27",
+    "git_commit_full": "86d5f2798bb59022ab0e1c9c3856e0e5e3a4681b",
+    "git_branch": "feature/module0-kms",
+    "git_message": "",
+    "dataset_version": "1.3",
+    "note": "golden v1.3: txt_01 category배포→아키텍처, hitl_02 category null→보안 수정으로 CI Gate PASS. 성숙도 83.3/100",
+    "ci_gate": "PASS",
+    "metrics": {
+      "maturity_score": 83.3,
+      "total_documents": 19,
+      "stored": 17,
+      "hitl_pending": 2,
+      "error_or_timeout": 0,
+      "completion_rate": 0.8947368421052632,
+      "hitl_rate": 0.10526315789473684,
+      "error_rate": 0.0,
+      "title_accuracy": 0.8823529411764706,
+      "category_accuracy": 0.8823529411764706,
+      "tags_f1": 0.6224028023494832,
+      "entity_name_recall": 0.7758661359280554,
+      "entity_partial_score": 0.6819512015332448,
+      "quality_score": 0.8835294117647059,
+      "avg_processing_time_ms": 27545
+    },
+    "status_breakdown": {
+      "stored": 17,
+      "hitl_pending": 2
+    }
   }
 ]
