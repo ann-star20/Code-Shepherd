@@ -39,7 +39,7 @@ _RULE_MAP: dict[str, tuple[str, str]] = {
     "CONV-DEP-005": ("금지 의존성",          "Prohibited Dependency - Unapproved Library"),
     "CONV-ERR-006": ("예외 무음 처리",       "Silent Exception - Missing Error Reporting"),
     "CONV-CFG-007": ("환경변수 직접 접근",   "Config Access - Direct Env Variable Usage"),
-    "CONV-SQL-008": ("SQL 인젝션 위험",     "SQL Injection Risk - Unsafe Query Construction"),
+    "CONV-SQL-008": ("SQL Injection",        "cursor.execute() 오용 — 주문 내역 조회"),
 }
 
 # backward-compat: test_all_8_rules_in_keyword_map

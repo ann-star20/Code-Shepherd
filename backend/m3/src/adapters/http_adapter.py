@@ -45,7 +45,7 @@ _KEYWORD_MAP: dict[str, str] = {
     "CONV-DEP-005": "금지 의존성",
     "CONV-ERR-006": "예외 무음 처리",
     "CONV-CFG-007": "환경변수 직접 접근",
-    "CONV-SQL-008": "SQL 인젝션 위험",
+    "CONV-SQL-008": "SQL Injection",
 }
 
 
@@ -174,6 +174,28 @@ def _store_result(owner: str, repo: str, pr_number: int, output: ReviewOutput,
     }
 
 
+async def _fetch_pr_author(owner: str, repo: str, pr_number: int) -> str | None:
+    """PR 작성자 GitHub 로그인 조회. 토큰 없거나 API 실패 시 None (파이프라인 중단 없음)."""
+    token = os.getenv("GITHUB_TOKEN", "")
+    if not token:
+        return None
+    headers: dict[str, str] = {
+        "Accept": "application/vnd.github+json",
+        "Authorization": f"Bearer {token}",
+        "User-Agent": "dev3-code-review-agent",
+    }
+    try:
+        async with httpx.AsyncClient(timeout=10) as client:
+            r = await client.get(
+                f"https://api.github.com/repos/{owner}/{repo}/pulls/{pr_number}",
+                headers=headers,
+            )
+            r.raise_for_status()
+            return r.json()["user"]["login"]
+    except Exception:
+        return None
+
+
 async def _fetch_pr_diff(owner: str, repo: str, pr_number: int) -> str:
     token = os.getenv("GITHUB_TOKEN", "")
     headers: dict[str, str] = {
@@ -224,6 +246,8 @@ async def post_review(payload: M3ReviewRequest) -> M3ReviewResponse:
         log.warning("http_adapter: diff fetch failed: %s", exc)
         diff = ""
 
+    author = await _fetch_pr_author(owner, repo, payload.pr_number)
+
     inp = ReviewInput(
         diff=diff,
         file_paths=[],
@@ -233,7 +257,8 @@ async def post_review(payload: M3ReviewRequest) -> M3ReviewResponse:
 
     posted, comment_url = await _post_github_comment(owner, repo, payload.pr_number, output.comment_md)
     _store_result(owner, repo, payload.pr_number, output, trace)
-    insert_review_issues(output.findings or [], payload.pr_number, payload.repository)
+    insert_review_issues(output.findings or [], payload.pr_number, payload.repository,
+                         github_id=author, diff=diff)
 
     log.info(
         "http_adapter: review done task_id=%s verdict=%s posted=%s",

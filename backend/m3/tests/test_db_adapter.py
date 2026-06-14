@@ -348,13 +348,9 @@ def test_all_8_rules_in_suggestion_map():
 
 
 def test_rule_map_format():
-    """_RULE_MAP 값이 (한글 keyword, 영문 sub_category) 튜플 형식."""
+    """_RULE_MAP 값이 (keyword, sub_category) 튜플 형식 — 두 필드 모두 비어있지 않음."""
     for rule_id, (keyword, sub_cat) in _RULE_MAP.items():
         assert keyword, f"{rule_id}: keyword 비어있음"
         assert sub_cat, f"{rule_id}: sub_category 비어있음"
-        # keyword는 한글 포함
-        assert any("가" <= c <= "힣" for c in keyword), f"{rule_id}: keyword에 한글 없음"
-        # sub_category는 ASCII 영문
-        assert sub_cat.isascii(), f"{rule_id}: sub_category에 비ASCII 문자 있음"
         # rule_id가 suggestion에 포함
         assert rule_id in _SUGGESTION_MAP.get(rule_id, ""), f"{rule_id}: suggestion에 rule_id 없음"

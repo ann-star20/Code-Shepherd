@@ -10,6 +10,7 @@ from contracts import Finding, GapReport, ReviewOutput
 from src.adapters.http_adapter import (
     M3ReviewRequest,
     _map_verdict,
+    _fetch_pr_author,
     _findings_to_issues,
     _findings_to_rich,
     _store_result,
@@ -237,6 +238,101 @@ def test_get_review_found(monkeypatch):
     assert body["verdict"] == "rework"
     assert len(body["issues"]) == 1
     assert len(body["rich_issues"]) == 1
+
+
+# ── _fetch_pr_author ──────────────────────────────────────────────────────────
+
+def test_fetch_pr_author_no_token(monkeypatch):
+    """GITHUB_TOKEN 없으면 HTTP 호출 없이 즉시 None 반환."""
+    import asyncio
+    monkeypatch.delenv("GITHUB_TOKEN", raising=False)
+    result = asyncio.run(_fetch_pr_author("owner", "repo", 1))
+    assert result is None
+
+
+def test_fetch_pr_author_api_error(monkeypatch):
+    """API 오류 시 None 반환 — 파이프라인 중단 없음."""
+    import asyncio
+    monkeypatch.setenv("GITHUB_TOKEN", "fake-token")
+
+    class _MockClient:
+        def __init__(self, **_kw): pass
+        async def __aenter__(self): return self
+        async def __aexit__(self, *_): pass
+        async def get(self, *_a, **_kw):
+            raise Exception("connection error")
+
+    monkeypatch.setattr("src.adapters.http_adapter.httpx.AsyncClient", _MockClient)
+    result = asyncio.run(_fetch_pr_author("owner", "repo", 1))
+    assert result is None
+
+
+# ── POST /review: github_id + diff 전달 검증 ─────────────────────────────────
+
+def test_post_review_passes_github_id_to_db(monkeypatch):
+    """author fetch 결과가 insert_review_issues에 github_id·diff로 전달된다."""
+    violation_output = ReviewOutput(
+        findings=[_make_violation()],
+        comment_md="## 위반",
+        gap_report=None,
+    )
+
+    async def mock_fetch_diff(*_a, **_kw):
+        return "diff content here"
+
+    async def mock_post_comment(*_a, **_kw):
+        return False, None
+
+    async def mock_fetch_author(*_a, **_kw):
+        return "demo-github-user"
+
+    insert_calls: list[dict] = []
+
+    def mock_insert(findings, pr_number, repository, github_id=None, diff="", **_kw):
+        insert_calls.append({"github_id": github_id, "diff": diff})
+
+    monkeypatch.setattr("src.adapters.http_adapter._fetch_pr_diff", mock_fetch_diff)
+    monkeypatch.setattr("src.adapters.http_adapter._post_github_comment", mock_post_comment)
+    monkeypatch.setattr("src.adapters.http_adapter._fetch_pr_author", mock_fetch_author)
+    monkeypatch.setattr("src.adapters.http_adapter.run_review_traced",
+                        lambda _: (violation_output, []))
+    monkeypatch.setattr("src.adapters.http_adapter.insert_review_issues", mock_insert)
+
+    r = client.post("/review", json=_make_payload(pr_number=50))
+    assert r.status_code == 200
+    assert len(insert_calls) == 1
+    assert insert_calls[0]["github_id"] == "demo-github-user"
+    assert insert_calls[0]["diff"] == "diff content here"
+
+
+def test_post_review_author_none_on_fetch_failure(monkeypatch):
+    """author fetch 실패(None) 시 github_id=None으로 계속 진행."""
+    clean_output = ReviewOutput(findings=[], comment_md="통과", gap_report=None)
+
+    async def mock_fetch_diff(*_a, **_kw):
+        return "diff"
+
+    async def mock_post_comment(*_a, **_kw):
+        return False, None
+
+    async def mock_fetch_author(*_a, **_kw):
+        return None
+
+    insert_calls: list[dict] = []
+
+    def mock_insert(findings, pr_number, repository, github_id=None, diff="", **_kw):
+        insert_calls.append({"github_id": github_id})
+
+    monkeypatch.setattr("src.adapters.http_adapter._fetch_pr_diff", mock_fetch_diff)
+    monkeypatch.setattr("src.adapters.http_adapter._post_github_comment", mock_post_comment)
+    monkeypatch.setattr("src.adapters.http_adapter._fetch_pr_author", mock_fetch_author)
+    monkeypatch.setattr("src.adapters.http_adapter.run_review_traced",
+                        lambda _: (clean_output, []))
+    monkeypatch.setattr("src.adapters.http_adapter.insert_review_issues", mock_insert)
+
+    r = client.post("/review", json=_make_payload(pr_number=51))
+    assert r.status_code == 200
+    assert insert_calls[0]["github_id"] is None
 
 
 # ── /health ───────────────────────────────────────────────────────────────────
