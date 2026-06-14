@@ -266,6 +266,17 @@ def _fallback_metadata() -> "DocumentMetadata":
     }
 
 
+_TITLE_SUFFIX_PATTERNS = re.compile(
+    r"\s+(샘플\s*문서|초안|개정판|임시|테스트\s*문서|draft|temp|sample\s*doc)$",
+    re.IGNORECASE,
+)
+
+
+def _clean_document_title(title: str) -> str:
+    """제목 끝의 문서 상태 접미사(샘플 문서, 초안, 개정판 등)를 제거한다."""
+    return _TITLE_SUFFIX_PATTERNS.sub("", title).strip()
+
+
 def _extract_h1_title(markdown: str, max_lines: int = 10) -> str | None:
     """markdown에서 첫 번째 H1(# 제목)을 추출한다.
 
@@ -277,7 +288,7 @@ def _extract_h1_title(markdown: str, max_lines: int = 10) -> str | None:
         stripped = line.strip()
         if stripped.startswith("# ") or stripped == "#":
             title = stripped.lstrip("#").strip()
-            return title if title else None
+            return _clean_document_title(title) if title else None
     return None
 
 
