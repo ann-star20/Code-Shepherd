@@ -441,3 +441,143 @@ def test_build_output_entry_includes_parser_used():
 
     assert "parser_used" in entry
     assert entry["parser_used"] == "gemini"
+
+
+# ---------------------------------------------------------------------------
+# T3: fetch_metadata → chunk distribution
+#     parent_chunk_count, avg_child_per_parent, avg_chunk_tokens
+# ---------------------------------------------------------------------------
+
+def _make_chunk_dist_mock(chunks: list[dict]):
+    """T3 전용 URL-aware mock: /details에 원하는 chunks 배열을 주입한다."""
+    async def mock_get(*args, **kwargs):
+        url = args[0] if args else ""
+        resp = MagicMock()
+        resp.status_code = 200
+        if "/metadata" in url:
+            resp.json.return_value = {
+                "doc_id": "test-id",
+                "title": "테스트", "category": "AI_ML", "tags": [], "source": "upload",
+            }
+        elif "/entities" in url:
+            resp.json.return_value = {"entities": []}
+        elif "/details" in url:
+            resp.json.return_value = {"quality_score": 0.9, "chunks": chunks}
+        else:
+            resp.json.return_value = {}
+        return resp
+    return mock_get
+
+
+@pytest.mark.asyncio
+async def test_fetch_metadata_returns_parent_chunk_count():
+    """/details chunks에서 parent 타입 개수를 parent_chunk_count로 반환해야 한다 (T3)."""
+    from tests.eval.run_pipeline import fetch_metadata
+
+    chunks = [
+        {"chunk_type": "parent", "token_count": 200},
+        {"chunk_type": "child",  "token_count": 80},
+        {"chunk_type": "child",  "token_count": 90},
+        {"chunk_type": "parent", "token_count": 180},
+        {"chunk_type": "child",  "token_count": 70},
+    ]
+
+    with patch("httpx.AsyncClient.get", side_effect=_make_chunk_dist_mock(chunks)):
+        meta = await fetch_metadata(base_url="http://localhost:8000", doc_id="test-id")
+
+    assert "parent_chunk_count" in meta, (
+        f"parent_chunk_count 없음. 키: {sorted(meta.keys())}"
+    )
+    assert meta["parent_chunk_count"] == 2
+
+
+@pytest.mark.asyncio
+async def test_fetch_metadata_returns_avg_child_per_parent():
+    """avg_child_per_parent = child_count / parent_count (T3)."""
+    from tests.eval.run_pipeline import fetch_metadata
+
+    # parent 2개, child 5개 → 5/2 = 2.5
+    chunks = [
+        {"chunk_type": "parent", "token_count": 200},
+        {"chunk_type": "child",  "token_count": 80},
+        {"chunk_type": "child",  "token_count": 90},
+        {"chunk_type": "child",  "token_count": 75},
+        {"chunk_type": "parent", "token_count": 180},
+        {"chunk_type": "child",  "token_count": 70},
+        {"chunk_type": "child",  "token_count": 85},
+    ]
+
+    with patch("httpx.AsyncClient.get", side_effect=_make_chunk_dist_mock(chunks)):
+        meta = await fetch_metadata(base_url="http://localhost:8000", doc_id="test-id")
+
+    assert "avg_child_per_parent" in meta, (
+        f"avg_child_per_parent 없음. 키: {sorted(meta.keys())}"
+    )
+    assert meta["avg_child_per_parent"] == pytest.approx(2.5, abs=0.01)
+
+
+@pytest.mark.asyncio
+async def test_fetch_metadata_returns_avg_chunk_tokens():
+    """avg_chunk_tokens = sum(token_count) / total_chunks (T3)."""
+    from tests.eval.run_pipeline import fetch_metadata
+
+    # (200 + 100 + 100) / 3 = 133.33
+    chunks = [
+        {"chunk_type": "parent", "token_count": 200},
+        {"chunk_type": "child",  "token_count": 100},
+        {"chunk_type": "child",  "token_count": 100},
+    ]
+
+    with patch("httpx.AsyncClient.get", side_effect=_make_chunk_dist_mock(chunks)):
+        meta = await fetch_metadata(base_url="http://localhost:8000", doc_id="test-id")
+
+    assert "avg_chunk_tokens" in meta, (
+        f"avg_chunk_tokens 없음. 키: {sorted(meta.keys())}"
+    )
+    assert meta["avg_chunk_tokens"] == pytest.approx(133.33, abs=0.01)
+
+
+@pytest.mark.asyncio
+async def test_fetch_metadata_avg_child_per_parent_none_when_no_parents():
+    """부모 청크가 없으면 avg_child_per_parent는 None이어야 한다 (zero-division 방지)."""
+    from tests.eval.run_pipeline import fetch_metadata
+
+    chunks = [{"chunk_type": "child", "token_count": 80}]
+
+    with patch("httpx.AsyncClient.get", side_effect=_make_chunk_dist_mock(chunks)):
+        meta = await fetch_metadata(base_url="http://localhost:8000", doc_id="test-id")
+
+    assert meta.get("avg_child_per_parent") is None, (
+        f"parent 없을 때 avg_child_per_parent가 None이 아님: {meta.get('avg_child_per_parent')}"
+    )
+
+
+@pytest.mark.asyncio
+async def test_fetch_metadata_chunk_stats_none_when_chunks_empty():
+    """chunks 배열이 비어있으면 분포 지표 모두 None이어야 한다."""
+    from tests.eval.run_pipeline import fetch_metadata
+
+    with patch("httpx.AsyncClient.get", side_effect=_make_chunk_dist_mock([])):
+        meta = await fetch_metadata(base_url="http://localhost:8000", doc_id="test-id")
+
+    assert meta.get("parent_chunk_count") is None
+    assert meta.get("avg_child_per_parent") is None
+    assert meta.get("avg_chunk_tokens") is None
+
+
+def test_build_output_entry_includes_chunk_distribution():
+    """build_output_entry()는 T3 chunk 분포 지표를 포함해야 한다."""
+    from tests.eval.run_pipeline import build_output_entry
+
+    entry = build_output_entry(
+        golden_id="md_01", doc_id="test-id", file_type="md",
+        title="테스트", category="AI_ML", tags=[], entities={},
+        quality_score=0.9, status="stored",
+        parent_chunk_count=3,
+        avg_child_per_parent=4.0,
+        avg_chunk_tokens=120.5,
+    )
+
+    assert entry.get("parent_chunk_count") == 3
+    assert entry.get("avg_child_per_parent") == 4.0
+    assert entry.get("avg_chunk_tokens") == 120.5
