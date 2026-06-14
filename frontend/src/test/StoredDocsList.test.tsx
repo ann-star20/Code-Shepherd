@@ -3,7 +3,7 @@
  * RED: neo4j_synced, category, doc_complexity 컬럼 추가 전 실패해야 하는 테스트들
  */
 
-import { render, screen, fireEvent } from "@testing-library/react";
+import { render, screen, fireEvent, waitFor } from "@testing-library/react";
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import KmsManagePage from "../pages/kms/KmsManagePage";
 import { listDocuments } from "../lib/kmsApi";
@@ -101,7 +101,7 @@ describe("StoredDocsList — 페이지네이션 (stored + stored_partial 통합)
   const PARTIAL_2 = [makeDoc("p1", "stored_partial"), makeDoc("p2", "stored_partial")];
 
   beforeEach(() => {
-    vi.mocked(listDocuments).mockImplementation((status: string) => {
+    vi.mocked(listDocuments).mockImplementation((status?: string) => {
       if (status === "stored") {
         return Promise.resolve({ docs: STORED_21, total: 21, limit: 20, offset: 0 });
       }
@@ -147,5 +147,35 @@ describe("DocListItem 타입 — 메타데이터 필드", () => {
     expect(item.neo4j_synced).toBe(true);
     expect(item.category).toBe("test");
     expect(item.doc_complexity).toBe("LOW");
+  });
+});
+
+describe("StoredDocsList — API 호출 파라미터 검증", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    vi.mocked(listDocuments).mockResolvedValue({ docs: [], total: 0, limit: 20, offset: 0 });
+  });
+
+  it("stored 탭 클릭 시 listDocuments를 limit=10000으로 호출한다", async () => {
+    render(<KmsManagePage />);
+    fireEvent.click(screen.getByText(/적재 완료 문서/));
+    await waitFor(() => {
+      expect(vi.mocked(listDocuments)).toHaveBeenCalledWith("stored", 10000, 0);
+    });
+  });
+
+  it("stored_partial도 limit=10000으로 호출한다", async () => {
+    render(<KmsManagePage />);
+    fireEvent.click(screen.getByText(/적재 완료 문서/));
+    await waitFor(() => {
+      expect(vi.mocked(listDocuments)).toHaveBeenCalledWith("stored_partial", 10000, 0);
+    });
+  });
+
+  it("API 에러 시 에러 배너가 표시된다", async () => {
+    vi.mocked(listDocuments).mockRejectedValue(new Error("limit은 1~10000 사이여야 합니다: 99999"));
+    render(<KmsManagePage />);
+    fireEvent.click(screen.getByText(/적재 완료 문서/));
+    await screen.findByText(/limit은 1~10000/);
   });
 });

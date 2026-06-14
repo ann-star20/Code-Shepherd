@@ -10,9 +10,10 @@ export const TERMINAL_STATUSES = new Set([
   "reprocess_failed",
 ]);
 
-const POLL_INTERVAL_MS      = 1000;
-const POLL_INTERVAL_HITL_MS = 10_000; // hitl_pending은 사람이 승인할 때까지 변하지 않으므로 10초
-const MAX_POLL_MS           = 10 * 60 * 1000; // 10분
+const POLL_INTERVAL_INITIAL_MS = 2_000;  // 첫 번째 폴링은 2초
+const POLL_INTERVAL_MAX_MS     = 15_000; // 최대 15초 (지수 백오프 상한)
+const POLL_INTERVAL_HITL_MS    = 10_000; // hitl_pending은 사람이 승인할 때까지 변하지 않으므로 10초
+const MAX_POLL_MS              = 10 * 60 * 1000; // 10분
 
 export function useUploadStatus(docId: string | null, pollKey: number = 0) {
   const [status, setStatus] = useState<StatusResponse | null>(null);
@@ -34,7 +35,15 @@ export function useUploadStatus(docId: string | null, pollKey: number = 0) {
 
     let cancelled = false;
     let consecutiveErrors = 0;
+    let pollCount = 0;
     const startedAt = Date.now();
+
+    const nextInterval = () => {
+      // 2s → 4s → 8s → 15s (상한) 지수 백오프
+      const ms = Math.min(POLL_INTERVAL_INITIAL_MS * 2 ** pollCount, POLL_INTERVAL_MAX_MS);
+      pollCount++;
+      return ms;
+    };
 
     const poll = async () => {
       if (Date.now() - startedAt >= MAX_POLL_MS) {
@@ -51,7 +60,7 @@ export function useUploadStatus(docId: string | null, pollKey: number = 0) {
         if (!TERMINAL_STATUSES.has(result.status)) {
           const interval = result.status === "hitl_pending"
             ? POLL_INTERVAL_HITL_MS
-            : POLL_INTERVAL_MS;
+            : nextInterval();
           timerRef.current = setTimeout(poll, interval);
         }
       } catch (e) {
@@ -60,7 +69,7 @@ export function useUploadStatus(docId: string | null, pollKey: number = 0) {
           if (consecutiveErrors >= 3) {
             setError(e instanceof Error ? e.message : "상태 조회 실패");
           } else {
-            timerRef.current = setTimeout(poll, POLL_INTERVAL_MS * 2);
+            timerRef.current = setTimeout(poll, nextInterval());
           }
         }
       }

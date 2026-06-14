@@ -1,12 +1,14 @@
 import { useCallback, useEffect, useState } from "react";
 import { DocumentUpload } from "../../components/DocumentUpload";
 import { HitlQueue } from "../../components/HitlQueue";
+import { PipelineFlow } from "../../components/PipelineFlow";
+import { DocumentAnalyzer } from "../../components/DocumentAnalyzer";
 import { DocStatusPanel } from "../../components/DocStatusPanel";
 import { DocUsagePanel } from "../../components/DocUsagePanel";
 import { getDocDetails, listDocuments } from "../../lib/kmsApi";
 import type { DocDetailsResponse, DocListItem } from "../../types/kms";
 
-type Tab = "upload" | "hitl" | "stored";
+type Tab = "upload" | "pipeline" | "analyzer" | "hitl" | "stored";
 type DetailTab = "status" | "usage";
 
 const STATUS_LABEL: Record<string, string> = {
@@ -341,6 +343,186 @@ function StoredDocsList() {
   );
 }
 
+// ── PipelineStatusPanel (처리 현황) ───────────────────────────────────────────
+const PIPELINE_STATUSES = ["processing", "failed", "hitl_pending"] as const;
+
+function PipelineStatusPanel() {
+  const [docs, setDocs]         = useState<DocListItem[]>([]);
+  const [loading, setLoading]   = useState(true);
+  const [selected, setSelected] = useState<DocListItem | null>(null);
+  const [details, setDetails]   = useState<DocDetailsResponse | null>(null);
+  const [detailLoading, setDetailLoading] = useState(false);
+
+  useEffect(() => {
+    void (async () => {
+      setLoading(true);
+      try {
+        const results = await Promise.allSettled(
+          PIPELINE_STATUSES.map(s => listDocuments(s, 100, 0)),
+        );
+        const allDocs = results
+          .flatMap(r => r.status === "fulfilled" ? r.value.docs : [])
+          .sort((a, b) => (b.created_at ?? "").localeCompare(a.created_at ?? ""));
+        setDocs(allDocs);
+      } finally {
+        setLoading(false);
+      }
+    })();
+  }, []);
+
+  const handleSelect = useCallback(async (doc: DocListItem) => {
+    setSelected(doc);
+    if (details?.doc_id === doc.doc_id) return;
+    setDetails(null);
+    setDetailLoading(true);
+    try {
+      setDetails(await getDocDetails(doc.doc_id));
+    } catch {
+      setDetails(null);
+    } finally {
+      setDetailLoading(false);
+    }
+  }, [details]);
+
+  return (
+    <div style={{ display: "flex", gap: 16, alignItems: "flex-start" }}>
+      <div style={{ width: 280, flexShrink: 0, background: "#fff", borderRadius: 12, border: "1px solid #e2e8f0", overflow: "hidden" }}>
+        <div style={{ padding: "12px 16px", borderBottom: "1px solid #f1f5f9", fontSize: 14, fontWeight: 700 }}>
+          처리 중 / 실패 {!loading && `(${docs.length}건)`}
+        </div>
+        {loading ? (
+          <div style={{ padding: 24, textAlign: "center", color: "#94a3b8", fontSize: 13 }}>불러오는 중...</div>
+        ) : docs.length === 0 ? (
+          <div style={{ padding: 24, textAlign: "center", color: "#94a3b8", fontSize: 13 }}>처리 중인 문서가 없습니다.</div>
+        ) : docs.map(doc => (
+          <div
+            key={doc.doc_id}
+            onClick={() => void handleSelect(doc)}
+            style={{
+              padding: "10px 16px", borderBottom: "1px solid #f8fafc", cursor: "pointer",
+              background: selected?.doc_id === doc.doc_id ? "#eff6ff" : "transparent",
+            }}
+          >
+            <div style={{ fontSize: 13, fontWeight: 500, color: "#1e293b", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+              {doc.title ?? doc.doc_id.slice(0, 18) + "…"}
+            </div>
+            <div style={{ fontSize: 11, color: "#94a3b8", marginTop: 2 }}>{doc.status}</div>
+          </div>
+        ))}
+      </div>
+
+      <div style={{ flex: 1, minWidth: 0 }}>
+        {selected ? (
+          detailLoading ? (
+            <div style={{ padding: 48, textAlign: "center", color: "#94a3b8" }}>불러오는 중...</div>
+          ) : details ? (
+            <PipelineFlow traces={details.agent_traces} isProcessing={selected.status === "processing"} />
+          ) : (
+            <div style={{ padding: 48, textAlign: "center", color: "#94a3b8" }}>조회 실패</div>
+          )
+        ) : (
+          <div style={{ padding: 48, textAlign: "center", color: "#94a3b8", fontSize: 13 }}>
+            왼쪽에서 문서를 선택하면 파이프라인 현황이 표시됩니다.
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+// ── ParsePreviewPanel (파싱 미리보기) ─────────────────────────────────────────
+function ParsePreviewPanel() {
+  const [docs, setDocs]         = useState<DocListItem[]>([]);
+  const [loading, setLoading]   = useState(true);
+  const [selected, setSelected] = useState<DocListItem | null>(null);
+  const [details, setDetails]   = useState<DocDetailsResponse | null>(null);
+  const [detailLoading, setDetailLoading] = useState(false);
+
+  useEffect(() => {
+    void (async () => {
+      setLoading(true);
+      try {
+        const [storedRes, partialRes] = await Promise.all([
+          listDocuments("stored", 100, 0),
+          listDocuments("stored_partial", 100, 0),
+        ]);
+        const allDocs = [...storedRes.docs, ...partialRes.docs]
+          .sort((a, b) => (b.created_at ?? "").localeCompare(a.created_at ?? ""));
+        setDocs(allDocs);
+      } finally {
+        setLoading(false);
+      }
+    })();
+  }, []);
+
+  const handleSelect = useCallback(async (doc: DocListItem) => {
+    setSelected(doc);
+    if (details?.doc_id === doc.doc_id) return;
+    setDetails(null);
+    setDetailLoading(true);
+    try {
+      setDetails(await getDocDetails(doc.doc_id));
+    } catch {
+      setDetails(null);
+    } finally {
+      setDetailLoading(false);
+    }
+  }, [details]);
+
+  return (
+    <div style={{ display: "flex", gap: 16, alignItems: "flex-start" }}>
+      <div style={{ width: 260, flexShrink: 0, background: "#fff", borderRadius: 12, border: "1px solid #e2e8f0", overflow: "hidden" }}>
+        <div style={{ padding: "12px 16px", borderBottom: "1px solid #f1f5f9", fontSize: 14, fontWeight: 700 }}>
+          문서 선택 {!loading && `(${docs.length}건)`}
+        </div>
+        {loading ? (
+          <div style={{ padding: 24, textAlign: "center", color: "#94a3b8", fontSize: 13 }}>불러오는 중...</div>
+        ) : docs.length === 0 ? (
+          <div style={{ padding: 24, textAlign: "center", color: "#94a3b8", fontSize: 13 }}>적재 완료 문서가 없습니다.</div>
+        ) : (
+          <div style={{ maxHeight: "70vh", overflowY: "auto" }}>
+            {docs.map(doc => (
+              <div
+                key={doc.doc_id}
+                onClick={() => void handleSelect(doc)}
+                style={{
+                  padding: "10px 16px", borderBottom: "1px solid #f8fafc", cursor: "pointer",
+                  background: selected?.doc_id === doc.doc_id ? "#eff6ff" : "transparent",
+                }}
+              >
+                <div style={{ fontSize: 13, fontWeight: 500, color: "#1e293b", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                  {doc.title ?? doc.doc_id.slice(0, 18) + "…"}
+                </div>
+                <div style={{ fontSize: 11, color: "#94a3b8", marginTop: 2 }}>
+                  {doc.file_type?.toUpperCase()} · {doc.created_at ? new Date(doc.created_at).toLocaleDateString("ko-KR") : "-"}
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+
+      <div style={{ flex: 1, minWidth: 0 }}>
+        {selected ? (
+          detailLoading ? (
+            <div style={{ padding: 48, textAlign: "center", color: "#94a3b8" }}>청크 로딩 중...</div>
+          ) : details && details.chunks.length > 0 ? (
+            <DocumentAnalyzer chunks={details.chunks} docId={selected.doc_id} />
+          ) : details ? (
+            <div style={{ padding: 48, textAlign: "center", color: "#94a3b8", fontSize: 13 }}>청크 데이터가 없습니다.</div>
+          ) : (
+            <div style={{ padding: 48, textAlign: "center", color: "#94a3b8" }}>조회 실패</div>
+          )
+        ) : (
+          <div style={{ padding: 48, textAlign: "center", color: "#94a3b8", fontSize: 13 }}>
+            왼쪽에서 문서를 선택하면 청크 분석이 표시됩니다.
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
 // ── Button styles ──────────────────────────────────────────────────────────────
 const btnSt = {
   refresh: {
@@ -368,17 +550,22 @@ export default function KmsManagePage() {
         background: "#fff",
         padding: "0 24px",
         position: "sticky", top: 0, zIndex: 10,
+        overflowX: "auto",
       }}>
-        <TabBtn active={tab === "upload"} onClick={() => setTab("upload")}>📄 문서 업로드</TabBtn>
-        <TabBtn active={tab === "hitl"}   onClick={() => setTab("hitl")}>🔍 HITL 검토</TabBtn>
-        <TabBtn active={tab === "stored"} onClick={() => setTab("stored")}>✅ 적재 완료 문서</TabBtn>
+        <TabBtn active={tab === "upload"}   onClick={() => setTab("upload")}>📄 문서 업로드</TabBtn>
+        <TabBtn active={tab === "pipeline"} onClick={() => setTab("pipeline")}>⚙️ 처리 현황</TabBtn>
+        <TabBtn active={tab === "analyzer"} onClick={() => setTab("analyzer")}>🔬 파싱 미리보기</TabBtn>
+        <TabBtn active={tab === "hitl"}     onClick={() => setTab("hitl")}>🔍 HITL 검토</TabBtn>
+        <TabBtn active={tab === "stored"}   onClick={() => setTab("stored")}>✅ 적재 완료 문서</TabBtn>
       </div>
 
       {/* Content */}
       <div style={{ padding: "20px 24px" }}>
-        {tab === "upload" && <DocumentUpload isVisible={tab === "upload"} />}
-        {tab === "hitl"   && <HitlQueue />}
-        {tab === "stored" && <StoredDocsList />}
+        {tab === "upload"   && <DocumentUpload isVisible={tab === "upload"} />}
+        {tab === "pipeline" && <PipelineStatusPanel />}
+        {tab === "analyzer" && <ParsePreviewPanel />}
+        {tab === "hitl"     && <HitlQueue />}
+        {tab === "stored"   && <StoredDocsList />}
       </div>
     </div>
   );
