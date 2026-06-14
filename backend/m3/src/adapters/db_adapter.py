@@ -35,11 +35,11 @@ _RULE_MAP: dict[str, tuple[str, str]] = {
     "CONV-API-001": ("동기 HTTP 호출",       "Async Sync HTTP Call - Event Loop Blocking"),
     "CONV-TIME-002": ("타임존 불일치",        "Timezone Mismatch - Non-Standard Datetime"),
     "CONV-LOG-003": ("비구조적 로깅",        "Unstructured Logging - Missing Structured Logger"),
-    "CONV-DB-004": ("N+1 쿼리",             "N+1 Query - Database Loop Call"),
+    "CONV-DB-004": ("performance",            "N+1 query"),
     "CONV-DEP-005": ("금지 의존성",          "Prohibited Dependency - Unapproved Library"),
     "CONV-ERR-006": ("예외 무음 처리",       "Silent Exception - Missing Error Reporting"),
     "CONV-CFG-007": ("환경변수 직접 접근",   "Config Access - Direct Env Variable Usage"),
-    "CONV-SQL-008": ("SQL Injection",        "cursor.execute() 오용 — 주문 내역 조회"),
+    "CONV-SQL-008": ("security",              "SQL Injection"),
 }
 
 # backward-compat: test_all_8_rules_in_keyword_map
