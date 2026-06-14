@@ -43,7 +43,7 @@ MAX_UPLOAD_BYTES = 50 * 1024 * 1024  # 50 MB
 
 ALLOWED_DOC_STATUSES = {
     "processing", "stored", "stored_partial", "failed",
-    "hitl_pending", "rejected", "reprocess_failed", "reprocessing",
+    "hitl_pending", "approved", "rejected", "reprocess_failed", "reprocessing",
 }
 
 
@@ -418,7 +418,7 @@ async def _run_pipeline_background(initial_state: DocPipelineState) -> None:
         await _update_document_status(doc_id, final_status, result)
     except Exception as e:
         logger.error(f"파이프라인 실행 실패: {e}", extra={"doc_id": doc_id})
-        await _update_document_status(doc_id, "failed")
+        await _update_document_status(doc_id, "failed", error_message=str(e))
     finally:
         try:
             Path(tmp_path).unlink(missing_ok=True)
@@ -430,6 +430,7 @@ async def _update_document_status(
     doc_id: str,
     status: str,
     state: dict | None = None,
+    error_message: str | None = None,
 ) -> None:
     session_factory = _get_session_factory()
     async with session_factory() as session:
@@ -441,7 +442,8 @@ async def _update_document_status(
                         parser_used     = COALESCE(:parser_used, parser_used),
                         doc_complexity  = COALESCE(:doc_complexity, doc_complexity),
                         parsing_time_ms = COALESCE(:parsing_time_ms, parsing_time_ms),
-                        quality_score   = COALESCE(:quality_score, quality_score)
+                        quality_score   = COALESCE(:quality_score, quality_score),
+                        error_message   = COALESCE(:error_message, error_message)
                     WHERE doc_id = :doc_id
                 """),
                 {
@@ -450,13 +452,19 @@ async def _update_document_status(
                     "doc_complexity": state.get("doc_complexity"),
                     "parsing_time_ms": state.get("parsing_time_ms"),
                     "quality_score": state.get("quality_score"),
+                    "error_message": error_message,
                     "doc_id": doc_id,
                 },
             )
         else:
             await session.execute(
-                text("UPDATE documents SET upload_status = :status WHERE doc_id = :doc_id"),
-                {"status": status, "doc_id": doc_id},
+                text("""
+                    UPDATE documents
+                    SET upload_status = :status,
+                        error_message = COALESCE(:error_message, error_message)
+                    WHERE doc_id = :doc_id
+                """),
+                {"status": status, "error_message": error_message, "doc_id": doc_id},
             )
         await session.commit()
 
@@ -475,7 +483,7 @@ async def get_document_status(
     session_factory = _get_session_factory()
     async with session_factory() as session:
         doc_result = await session.execute(
-            text("SELECT upload_status FROM documents WHERE doc_id = :doc_id"),
+            text("SELECT upload_status, error_message FROM documents WHERE doc_id = :doc_id"),
             {"doc_id": doc_id},
         )
         row = doc_result.mappings().fetchone()
@@ -509,8 +517,9 @@ async def get_document_status(
     ]
 
     upload_status = row["upload_status"]
-    error_msg: str | None = None
-    if upload_status == "failed":
+    # documents.error_message 우선, 없으면 agent_traces에서 역추적
+    error_msg: str | None = row["error_message"] if row["error_message"] else None
+    if upload_status == "failed" and not error_msg:
         fail_row = next(
             (r for r in trace_rows if r["status"] == "fail" and r["error_message"]), None
         )
@@ -608,8 +617,8 @@ async def list_documents(
     current_user: dict = Depends(get_current_kms_user),
 ) -> DocListResponse:
     """문서 목록을 조회한다. status 필터와 페이지네이션을 지원한다."""
-    if limit <= 0 or limit > 100:
-        raise HTTPException(status_code=422, detail=f"limit은 1~100 사이여야 합니다: {limit}")
+    if limit <= 0 or limit > 10000:
+        raise HTTPException(status_code=422, detail=f"limit은 1~10000 사이여야 합니다: {limit}")
     if offset < 0:
         raise HTTPException(status_code=422, detail=f"offset은 0 이상이어야 합니다: {offset}")
     if status is not None and status not in ALLOWED_DOC_STATUSES:
