@@ -153,12 +153,18 @@ async def fetch_metadata(
             logger.warning("entities 조회 실패 doc_id=%s: %s", doc_id, e)
 
         quality_score: float = 0.0
+        child_chunk_count: int | None = None
         try:
             det_resp = await client.get(
                 f"{base_url}/kms/docs/{doc_id}/details", headers=headers
             )
             if det_resp.status_code == 200:
-                quality_score = float(det_resp.json().get("quality_score") or 0.0)
+                det_data = det_resp.json()
+                quality_score = float(det_data.get("quality_score") or 0.0)
+                chunks = det_data.get("chunks") or []
+                child_chunk_count = sum(
+                    1 for c in chunks if c.get("chunk_type") == "child"
+                )
         except Exception as e:
             logger.warning("details 조회 실패 doc_id=%s: %s", doc_id, e)
 
@@ -176,6 +182,7 @@ async def fetch_metadata(
         "tags": data.get("tags") or [],
         "entities": entities_by_type,
         "quality_score": quality_score,
+        "child_chunk_count": child_chunk_count,
     }
 
 
@@ -194,6 +201,7 @@ def build_output_entry(
     quality_score: float,
     status: str,
     processing_time_ms: float | None = None,
+    child_chunk_count: int | None = None,
 ) -> dict:
     """run_eval.py의 load_results_from_file()이 읽을 수 있는 형식으로 반환한다."""
     return {
@@ -207,6 +215,7 @@ def build_output_entry(
         "quality_score":       quality_score,
         "status":              status,
         "processing_time_ms":  processing_time_ms,
+        "child_chunk_count":   child_chunk_count,
     }
 
 
@@ -287,6 +296,7 @@ async def run(
                 quality_score=quality_score,
                 status=status,
                 processing_time_ms=processing_time_ms,
+                child_chunk_count=meta.get("child_chunk_count"),
             ))
 
         except TimeoutError as e:
