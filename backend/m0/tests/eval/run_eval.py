@@ -79,8 +79,18 @@ ACCURACY_TARGETS: dict[str, float] = {
 
 AUTOMATION_TARGETS: dict[str, float] = {
     "completion_rate": 0.90,   # ≥ 90%
-    "hitl_rate":       0.15,   # ≤ 15% (상한)
     "error_rate":      0.05,   # ≤  5% (상한)
+    # hitl_rate는 CI Gate 제외 — KMS에서 HITL은 최소화 대상이 아니라 품질 안전망
+    # 낮은 hitl_rate가 좋은 것이 아니라, 문제 문서를 정확히 탐지하는 것이 목표
+    # → compute_hitl_quality_kpis()의 Recall / False Pass Rate로 측정
+    "hitl_rate":       0.15,   # 참고 지표만 (상한값 아님)
+}
+
+# HITL 품질 안전망 목표 (expected_hitl=True 항목이 있을 때만 활성화)
+HITL_QUALITY_TARGETS: dict[str, float] = {
+    "hitl_recall":      0.80,  # 문제 문서 중 80% 이상 탐지
+    "false_pass_rate":  0.20,  # 문제 문서 중 20% 이하만 자동 통과
+    "hitl_precision":   0.50,  # HITL로 간 것 중 50% 이상 진짜 문제
 }
 
 # CI 게이트: (operator, threshold)
@@ -115,6 +125,10 @@ class GoldenEntry:
     expected_tags: list[str]
     expected_entities: dict[str, list[str]]
     note: str = ""
+    # HITL 품질 안전망 검증용: 이 문서가 반드시 hitl_pending으로 분기되어야 하면 True
+    expected_hitl: bool = False
+    hitl_expected_stage: str = ""
+    hitl_expected_reason: str = ""
 
     @property
     def expected_entities_mapped(self) -> dict[str, list[str]]:
@@ -497,6 +511,72 @@ def compute_neo4j_kpis(all_results: list[PipelineResult]) -> dict:
     }
 
 
+def compute_hitl_quality_kpis(
+    golden_entries: list["GoldenEntry"],
+    pipeline_results: dict[str, "PipelineResult"],
+) -> dict:
+    """HITL 품질 안전망 KPI.
+
+    KMS에서 HITL rate(발생률)는 최소화 목표가 아니다.
+    중요한 것은 '문제 문서를 얼마나 정확히 HITL로 보냈는가'다.
+
+    - hitl_precision   : HITL로 간 문서 중 실제 문제가 있었던 비율 (FP 방지)
+    - hitl_recall      : 문제가 있는 문서 중 HITL로 보낸 비율 (FN 방지)
+    - false_pass_rate  : 문제 있는 문서가 HITL 없이 저장된 비율 = 1 - Recall
+    - false_hitl_rate  : 정상 문서가 HITL로 간 비율
+
+    golden_dataset에 expected_hitl=True 항목이 없으면 Recall/False Pass = None.
+    """
+    expected_problem = [g for g in golden_entries if g.expected_hitl]
+    expected_normal  = [g for g in golden_entries if not g.expected_hitl]
+
+    def _is_hitl(gid: str) -> bool:
+        r = pipeline_results.get(gid)
+        return r is not None and r.status == "hitl_pending"
+
+    # TP: 문제 문서 → HITL (탐지 성공)
+    tp = sum(1 for g in expected_problem if _is_hitl(g.id))
+    # FN: 문제 문서 → stored/stored_partial (탐지 실패 = False Pass)
+    fn = len(expected_problem) - tp
+    # FP: 정상 문서 → HITL (과도한 HITL = False HITL)
+    fp = sum(1 for g in expected_normal if _is_hitl(g.id))
+    # TN: 정상 문서 → stored (정상 자동 처리)
+    tn = len(expected_normal) - fp
+
+    total_hitl_triggered = tp + fp
+
+    hitl_precision: float | None = (
+        tp / total_hitl_triggered if total_hitl_triggered > 0 else None
+    )
+    hitl_recall: float | None = (
+        tp / len(expected_problem) if expected_problem else None
+    )
+    false_pass_rate: float | None = (
+        fn / len(expected_problem) if expected_problem else None
+    )
+    false_hitl_rate: float | None = (
+        fp / len(expected_normal) if expected_normal else None
+    )
+
+    return {
+        "hitl_precision":      hitl_precision,
+        "hitl_recall":         hitl_recall,
+        "false_pass_rate":     false_pass_rate,
+        "false_hitl_rate":     false_hitl_rate,
+        "tp":                  tp,
+        "fp":                  fp,
+        "fn":                  fn,
+        "tn":                  tn,
+        "problem_doc_count":   len(expected_problem),
+        "normal_doc_count":    len(expected_normal),
+        "note": (
+            "expected_hitl=True 항목 없음 — golden_dataset에 HITL 검증 문서 추가 필요"
+            if not expected_problem else
+            f"문제 문서 {len(expected_problem)}개 / 정상 문서 {len(expected_normal)}개 기준"
+        ),
+    }
+
+
 def compute_chunk_embedding_kpis(all_results: list[PipelineResult]) -> dict:
     """pgVector 임베딩 적재율 proxy KPI — file mode 전용.
 
@@ -595,6 +675,9 @@ def load_golden_dataset() -> list[GoldenEntry]:
             expected_tags=doc.get("expected", {}).get("tags", []),
             expected_entities=doc.get("expected", {}).get("entities", {}),
             note=doc.get("expected", {}).get("note", ""),
+            expected_hitl=bool(doc.get("expected_hitl", False)),
+            hitl_expected_stage=doc.get("hitl_expected_stage", ""),
+            hitl_expected_reason=doc.get("hitl_expected_reason", ""),
         )
         for doc in data["documents"]
     ]
@@ -633,6 +716,7 @@ def render_markdown_report(
     reliability: dict,
     maturity_score: float,
     output_path: Path,
+    hitl_quality: dict | None = None,
 ) -> None:
     import datetime
     now = datetime.datetime.now().strftime("%Y-%m-%d %H:%M")
@@ -698,19 +782,22 @@ def render_markdown_report(
         "", "---", "",
         "## L2B. 자동화율 (Automation)",
         "",
+        "> ⚠️ **KMS 설계 원칙**: HITL 발생률(hitl_rate)은 최소화 목표가 아닙니다.",
+        "> KMS의 목표는 *잘못된 지식이 저장되지 않도록* 품질 안전망을 운영하는 것입니다.",
+        "> HITL이 0%인 것은 테스트셋이 깨끗한 경우일 뿐, 임계값 완화의 신호일 수 있습니다.",
+        "> 실제 품질 안전망 성능은 아래 'HITL 품질 안전망' 섹션에서 확인합니다.",
+        "",
         "| KPI | 값 | 목표 | 달성 |",
         "|----|-----|------|------|",
     ]
-    auto_labels = {
-        "completion_rate": ("자동 완료율 (stored / total)", ">="),
-        "hitl_rate":       ("HITL 발생률",                  "<="),
-        "error_rate":      ("오류율",                       "<="),
-    }
-    for key, (label, op) in auto_labels.items():
-        val = automation.get(key, 0)
-        target = AUTOMATION_TARGETS[key]
-        ok = "✅" if (val >= target if op == ">=" else val <= target) else "❌"
-        lines.append(f"| {label} | {val:.1%} | {target:.0%} | {ok} |")
+    comp_val = automation.get("completion_rate", 0)
+    comp_ok = "✅" if comp_val >= AUTOMATION_TARGETS["completion_rate"] else "❌"
+    lines.append(f"| 자동 완료율 (stored / total) | {comp_val:.1%} | ≥{AUTOMATION_TARGETS['completion_rate']:.0%} | {comp_ok} |")
+    err_val = automation.get("error_rate", 0)
+    err_ok = "✅" if err_val <= AUTOMATION_TARGETS["error_rate"] else "❌"
+    lines.append(f"| 오류율 | {err_val:.1%} | ≤{AUTOMATION_TARGETS['error_rate']:.0%} | {err_ok} |")
+    hitl_rate_val = automation.get("hitl_rate", 0)
+    lines.append(f"| HITL 발생률 *(참고 지표)* | {hitl_rate_val:.1%} | — | 참고 |")
 
     breakdown = automation.get("status_breakdown", {})
     if breakdown:
@@ -718,6 +805,44 @@ def render_markdown_report(
         for s, cnt in sorted(breakdown.items()):
             pct = cnt / total * 100 if total else 0
             lines.append(f"- `{s}`: {cnt}개 ({pct:.0f}%)")
+
+    # HITL 품질 안전망
+    if hitl_quality is not None:
+        problem_n = hitl_quality.get("problem_doc_count", 0)
+        lines += ["", "---", "", "## HITL 품질 안전망 (잘못된 지식 저장 방지)", ""]
+        if problem_n == 0:
+            lines += [
+                "> expected_hitl=True 항목이 없습니다.",
+                "> `golden_dataset.json`에 HITL 검증 문서를 추가하고 파이프라인을 재실행하면 아래 지표가 활성화됩니다.",
+                "",
+            ]
+        else:
+            lines += [
+                f"문제 문서 {problem_n}개 / 정상 문서 {hitl_quality.get('normal_doc_count', 0)}개 기준",
+                "",
+                "| 지표 | 값 | 목표 | 의미 |",
+                "|----|------|------|------|",
+            ]
+            def _fmt(v): return f"{v:.1%}" if v is not None else "N/A"
+            recall     = hitl_quality.get("hitl_recall")
+            false_pass = hitl_quality.get("false_pass_rate")
+            precision  = hitl_quality.get("hitl_precision")
+            false_hitl = hitl_quality.get("false_hitl_rate")
+
+            r_ok  = "✅" if (recall     is not None and recall     >= HITL_QUALITY_TARGETS["hitl_recall"])     else "❌"
+            fp_ok = "✅" if (false_pass is not None and false_pass <= HITL_QUALITY_TARGETS["false_pass_rate"]) else "❌"
+            pr_ok = "✅" if (precision  is not None and precision  >= HITL_QUALITY_TARGETS["hitl_precision"])  else "❌"
+
+            lines += [
+                f"| HITL Recall (탐지율) | {_fmt(recall)} | ≥{HITL_QUALITY_TARGETS['hitl_recall']:.0%} | {r_ok} 문제 문서를 놓치지 않는가 |",
+                f"| False Pass Rate (누락률) | {_fmt(false_pass)} | ≤{HITL_QUALITY_TARGETS['false_pass_rate']:.0%} | {fp_ok} 문제 문서가 HITL 없이 저장되는 비율 |",
+                f"| HITL Precision (정확도) | {_fmt(precision)} | ≥{HITL_QUALITY_TARGETS['hitl_precision']:.0%} | {pr_ok} HITL 중 진짜 문제인 비율 |",
+                f"| False HITL Rate | {_fmt(false_hitl)} | — | 정상 문서가 HITL로 간 비율 |",
+                "",
+                f"**TP={hitl_quality.get('tp', 0)} FP={hitl_quality.get('fp', 0)} FN={hitl_quality.get('fn', 0)} TN={hitl_quality.get('tn', 0)}**",
+                f"> FN={hitl_quality.get('fn', 0)} = 문제 문서가 HITL 없이 저장된 건수 — 이 숫자가 0이어야 합니다.",
+                "",
+            ]
 
     # L2C Reliability
     lines += ["", "---", "", "## L2C. 안정성 (Reliability)", ""]
@@ -777,6 +902,7 @@ def render_markdown_report(
         lines += [f"### ➖ {r.golden_id} — `{r.status}` (Accuracy 평가 제외)", ""]
 
     for r in failures:
+        is_pptx = r.file_type.lower() == "pptx"
         lines += [
             f"### ❌ {r.golden_id}",
             f"- **기대 제목**: {r.details.get('expected_title', 'N/A')}",
@@ -785,8 +911,19 @@ def render_markdown_report(
             f"- **실제 카테고리**: {r.details.get('actual_category', 'N/A')}",
             f"- **기대 태그**: {', '.join(r.details.get('expected_tags', []))}",
             f"- **실제 태그**: {', '.join(r.details.get('actual_tags', []))}",
-            "",
         ]
+        if is_pptx and not r.title_match:
+            lines += [
+                "",
+                "> ⚠️ **HITL 미탐지 구조적 갭 (PPTX)**",
+                "> Stage 5b는 `title='제목 없음'` 또는 빈 문자열만 체크합니다.",
+                "> PPTX에서 잘못된 제목이 추출되어도 그 값이 '제목 없음'이 아니면 HITL로 가지 않습니다.",
+                "> — 예: `'AI Agentic 조직 지식 플랫폼'`이 추출됐지만 golden과 미일치해도 Stage 5b 통과.",
+                "> **근본 원인**: Stage 5b는 제목의 품질을 LLM으로 평가하지만, golden 정답과 비교하지 않습니다.",
+                "> **개선 방향**: PPTX 파일은 LibreOffice 변환 후 H1 헤딩이 없어 제목 추출이 불안정합니다.",
+                ">  Stage 1에서 PPTX 슬라이드 제목을 별도 추출하거나, Stage 5b에서 PPTX 타입 시 임계값을 높이는 방안 검토.",
+            ]
+        lines.append("")
 
     output_path.write_text("\n".join(lines), encoding="utf-8")
     logger.info("보고서 저장: %s", output_path)
@@ -799,16 +936,18 @@ def save_json_report(
     maturity_score: float,
     ci_result: dict,
     output_path: Path,
+    hitl_quality: dict | None = None,
 ) -> None:
     """CI/CD 연동용 구조화 JSON 리포트."""
     import datetime
     report = {
-        "timestamp":     datetime.datetime.now().isoformat(),
+        "timestamp":      datetime.datetime.now().isoformat(),
         "maturity_score": maturity_score,
-        "ci_gate":       ci_result,
-        "automation":    automation,
-        "accuracy":      accuracy,
-        "reliability":   reliability,
+        "ci_gate":        ci_result,
+        "automation":     automation,
+        "accuracy":       accuracy,
+        "reliability":    reliability,
+        "hitl_quality_safety_net": hitl_quality or {},
     }
     output_path.write_text(json.dumps(report, ensure_ascii=False, indent=2), encoding="utf-8")
     logger.info("JSON 리포트 저장: %s", output_path)
@@ -825,6 +964,7 @@ def print_summary(
     chunk_emb: dict,
     maturity_score: float,
     ci_result: dict,
+    hitl_quality: dict | None = None,
 ) -> None:
     total = automation.get("total_documents", 0)
     evaluated = accuracy.get("evaluated_documents", 0)
@@ -842,17 +982,41 @@ def print_summary(
         print(f"  {icon} {key}: {val:.3f}  (목표 {target:.2f})")
 
     print(f"\n[L2B Automation]  전체 {total}개 기준")
-    for key, (label, op) in {
-        "completion_rate": ("완료율",  ">="),
-        "hitl_rate":       ("HITL율", "<="),
-        "error_rate":      ("오류율", "<="),
-    }.items():
-        val = automation.get(key, 0)
-        target = AUTOMATION_TARGETS[key]
-        ok = val >= target if op == ">=" else val <= target
-        icon = "[OK]" if ok else "[!!]"
-        op_sym = ">=" if op == ">=" else "<="
-        print(f"  {icon} {label}: {val:.1%}  (목표 {op_sym}{target:.0%})")
+    comp_val = automation.get("completion_rate", 0)
+    comp_ok = comp_val >= AUTOMATION_TARGETS["completion_rate"]
+    print(f"  {'[OK]' if comp_ok else '[!!]'} 완료율: {comp_val:.1%}  (목표 ≥{AUTOMATION_TARGETS['completion_rate']:.0%})")
+    err_val = automation.get("error_rate", 0)
+    err_ok = err_val <= AUTOMATION_TARGETS["error_rate"]
+    print(f"  {'[OK]' if err_ok else '[!!]'} 오류율: {err_val:.1%}  (목표 ≤{AUTOMATION_TARGETS['error_rate']:.0%})")
+    # HITL rate는 참고 지표 — 낮다고 좋은 게 아님
+    hitl_rate = automation.get("hitl_rate", 0)
+    print(f"  [참고] HITL 발생률: {hitl_rate:.1%}  (최소화 목표 아님 — 아래 품질 안전망 지표 참조)")
+
+    # HITL 품질 안전망 지표 (KMS 핵심)
+    if hitl_quality:
+        problem_n = hitl_quality.get("problem_doc_count", 0)
+        print(f"\n[HITL 품질 안전망]  문제 문서 {problem_n}개 기준")
+        if problem_n == 0:
+            print("  [ ] expected_hitl=True 항목 없음 — golden_dataset에 HITL 검증 문서 추가 후 측정 가능")
+        else:
+            recall     = hitl_quality.get("hitl_recall")
+            false_pass = hitl_quality.get("false_pass_rate")
+            precision  = hitl_quality.get("hitl_precision")
+            false_hitl = hitl_quality.get("false_hitl_rate")
+
+            if recall is not None:
+                ok = recall >= HITL_QUALITY_TARGETS["hitl_recall"]
+                print(f"  {'[OK]' if ok else '[!!]'} HITL Recall (탐지율): {recall:.1%}  (목표 ≥{HITL_QUALITY_TARGETS['hitl_recall']:.0%})")
+            if false_pass is not None:
+                ok = false_pass <= HITL_QUALITY_TARGETS["false_pass_rate"]
+                print(f"  {'[OK]' if ok else '[!!]'} False Pass Rate (놓친 문제): {false_pass:.1%}  (목표 ≤{HITL_QUALITY_TARGETS['false_pass_rate']:.0%})")
+            if precision is not None:
+                ok = precision >= HITL_QUALITY_TARGETS["hitl_precision"]
+                print(f"  {'[OK]' if ok else '[!!]'} HITL Precision (정확도): {precision:.1%}  (목표 ≥{HITL_QUALITY_TARGETS['hitl_precision']:.0%})")
+            if false_hitl is not None:
+                print(f"  [참고] False HITL Rate (과도한 HITL): {false_hitl:.1%}")
+            tp, fp, fn = hitl_quality.get("tp", 0), hitl_quality.get("fp", 0), hitl_quality.get("fn", 0)
+            print(f"  [상세] TP={tp} FP={fp} FN={fn} (FN=놓친 문제 문서)")
 
     neo4j_rate = neo4j.get("neo4j_synced_rate", 0.0)
     neo4j_icon = "[OK]" if neo4j_rate >= 0.80 else "[!!]"
@@ -916,18 +1080,19 @@ def main() -> None:
     ]
 
     # KPI 계산
-    automation  = compute_automation_kpis(all_results)
-    accuracy    = compute_accuracy_kpis(eval_results)
-    reliability = compute_reliability_kpis(all_results)
-    neo4j       = compute_neo4j_kpis(all_results)
-    chunk_emb   = compute_chunk_embedding_kpis(all_results)
-    maturity    = compute_maturity_score(automation, accuracy)
-    ci_result   = _evaluate_ci_gate(automation, accuracy)
+    automation   = compute_automation_kpis(all_results)
+    accuracy     = compute_accuracy_kpis(eval_results)
+    reliability  = compute_reliability_kpis(all_results)
+    neo4j        = compute_neo4j_kpis(all_results)
+    chunk_emb    = compute_chunk_embedding_kpis(all_results)
+    hitl_quality = compute_hitl_quality_kpis(golden_entries, pipeline_results)
+    maturity     = compute_maturity_score(automation, accuracy)
+    ci_result    = _evaluate_ci_gate(automation, accuracy)
 
     # 출력
-    print_summary(automation, accuracy, neo4j, chunk_emb, maturity, ci_result)
-    render_markdown_report(eval_results, automation, accuracy, reliability, maturity, args.output)
-    save_json_report(automation, accuracy, reliability, maturity, ci_result, args.json_output)
+    print_summary(automation, accuracy, neo4j, chunk_emb, maturity, ci_result, hitl_quality)
+    render_markdown_report(eval_results, automation, accuracy, reliability, maturity, args.output, hitl_quality)
+    save_json_report(automation, accuracy, reliability, maturity, ci_result, args.json_output, hitl_quality)
 
     if ci_result["overall"] == "FAIL":
         failed = [k for k, v in ci_result["details"].items() if v["status"] == "FAIL"]
