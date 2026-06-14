@@ -315,3 +315,128 @@ def test_build_output_entry_has_required_fields():
     assert entry["entities"] == {}
     assert entry["quality_score"] == 0.9
     assert entry["status"] == "stored"
+
+
+# ---------------------------------------------------------------------------
+# T1: fetch_metadata → parsing_time_ms, parser_used (Stage 1 성능)
+# ---------------------------------------------------------------------------
+
+def _make_url_aware_mock(details_extra: dict | None = None):
+    """URL 패턴별로 다른 응답을 반환하는 mock GET 함수."""
+    async def mock_get(*args, **kwargs):
+        url = args[0] if args else ""
+        resp = MagicMock()
+        resp.status_code = 200
+        if "/metadata" in url:
+            resp.json.return_value = {
+                "doc_id": "test-id",
+                "title": "테스트", "category": "AI_ML", "tags": [], "source": "upload",
+            }
+        elif "/entities" in url:
+            resp.json.return_value = {"entities": []}
+        elif "/details" in url:
+            details = {
+                "quality_score": 0.9,
+                "chunks": [{"chunk_type": "child"}],
+                "parsing_time_ms": 5200,
+                "parser_used": "pymupdf",
+                "stage5_latency_ms": 8100,
+            }
+            if details_extra:
+                details.update(details_extra)
+            resp.json.return_value = details
+        else:
+            resp.json.return_value = {}
+        return resp
+    return mock_get
+
+
+@pytest.mark.asyncio
+async def test_fetch_metadata_returns_parsing_time_ms():
+    """/details 응답에서 parsing_time_ms를 수집해야 한다 (T1)."""
+    from tests.eval.run_pipeline import fetch_metadata
+
+    with patch("httpx.AsyncClient.get", side_effect=_make_url_aware_mock()):
+        meta = await fetch_metadata(base_url="http://localhost:8000", doc_id="test-id")
+
+    assert "parsing_time_ms" in meta, (
+        f"fetch_metadata()에 parsing_time_ms 없음. 키: {sorted(meta.keys())}"
+    )
+    assert meta["parsing_time_ms"] == 5200
+
+
+@pytest.mark.asyncio
+async def test_fetch_metadata_returns_parser_used():
+    """/details 응답에서 parser_used를 수집해야 한다 (T1)."""
+    from tests.eval.run_pipeline import fetch_metadata
+
+    with patch("httpx.AsyncClient.get", side_effect=_make_url_aware_mock()):
+        meta = await fetch_metadata(base_url="http://localhost:8000", doc_id="test-id")
+
+    assert "parser_used" in meta, (
+        f"fetch_metadata()에 parser_used 없음. 키: {sorted(meta.keys())}"
+    )
+    assert meta["parser_used"] == "pymupdf"
+
+
+# ---------------------------------------------------------------------------
+# T5: fetch_metadata → stage5_latency_ms (Stage 5 LLM latency)
+# ---------------------------------------------------------------------------
+
+@pytest.mark.asyncio
+async def test_fetch_metadata_returns_stage5_latency_ms():
+    """/details 응답에서 stage5_latency_ms를 수집해야 한다 (T5)."""
+    from tests.eval.run_pipeline import fetch_metadata
+
+    with patch("httpx.AsyncClient.get", side_effect=_make_url_aware_mock()):
+        meta = await fetch_metadata(base_url="http://localhost:8000", doc_id="test-id")
+
+    assert "stage5_latency_ms" in meta, (
+        f"fetch_metadata()에 stage5_latency_ms 없음. 키: {sorted(meta.keys())}"
+    )
+    assert meta["stage5_latency_ms"] == 8100
+
+
+@pytest.mark.asyncio
+async def test_fetch_metadata_stage5_latency_ms_none_when_absent():
+    """/details에 stage5_latency_ms 없을 때 None 반환해야 한다."""
+    from tests.eval.run_pipeline import fetch_metadata
+
+    with patch("httpx.AsyncClient.get", side_effect=_make_url_aware_mock({"stage5_latency_ms": None})):
+        meta = await fetch_metadata(base_url="http://localhost:8000", doc_id="test-id")
+
+    assert meta.get("stage5_latency_ms") is None
+
+
+# ---------------------------------------------------------------------------
+# T1: build_output_entry → parsing_time_ms, parser_used
+# ---------------------------------------------------------------------------
+
+def test_build_output_entry_includes_parsing_time_ms():
+    """build_output_entry()는 parsing_time_ms를 output에 포함해야 한다 (T1)."""
+    from tests.eval.run_pipeline import build_output_entry
+
+    entry = build_output_entry(
+        golden_id="md_01", doc_id="test-id", file_type="md",
+        title="테스트", category="AI_ML", tags=[], entities={},
+        quality_score=0.9, status="stored",
+        parsing_time_ms=5200,
+    )
+
+    assert "parsing_time_ms" in entry
+    assert entry["parsing_time_ms"] == 5200
+
+
+def test_build_output_entry_includes_parser_used():
+    """build_output_entry()는 parser_used를 output에 포함해야 한다 (T1)."""
+    from tests.eval.run_pipeline import build_output_entry
+
+    entry = build_output_entry(
+        golden_id="md_01", doc_id="test-id", file_type="md",
+        title="테스트", category="AI_ML", tags=[], entities={},
+        quality_score=0.9, status="stored",
+        parser_used="gemini",
+    )
+
+    assert "parser_used" in entry
+    assert entry["parser_used"] == "gemini"
