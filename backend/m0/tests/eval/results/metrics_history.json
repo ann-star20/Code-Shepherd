@@ -230,5 +230,37 @@
     "status_breakdown": {
       "stored": 15
     }
+  },
+  {
+    "label": "phase3_rerun",
+    "evaluation_date": "2026-06-14T16:05:13.208080",
+    "saved_at": "2026-06-14T16:05:32.776914",
+    "git_commit_hash": "ecc3dd5",
+    "git_commit_full": "ecc3dd59a3cb744322c352040f5c1141c3d276d0",
+    "git_branch": "feature/module0-kms",
+    "git_message": "fix: fetch_metadata returns child_chunk_count from /details chunks; build_output_entry passes it through",
+    "dataset_version": "v1",
+    "note": "",
+    "ci_gate": "PASS",
+    "metrics": {
+      "maturity_score": 87.7,
+      "total_documents": 15,
+      "stored": 15,
+      "hitl_pending": 0,
+      "error_or_timeout": 0,
+      "completion_rate": 1.0,
+      "hitl_rate": 0.0,
+      "error_rate": 0.0,
+      "title_accuracy": 0.8666666666666667,
+      "category_accuracy": 0.9333333333333333,
+      "tags_f1": 0.6209585441349492,
+      "entity_name_recall": 0.7263157894736842,
+      "entity_partial_score": 0.6355764411027569,
+      "quality_score": 0.8993333333333333,
+      "avg_processing_time_ms": 33690
+    },
+    "status_breakdown": {
+      "stored": 15
+    }
   }
 ]
