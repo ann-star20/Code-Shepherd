@@ -11,10 +11,10 @@ from enum import Enum
 from typing import Optional
 
 import asyncpg
-import httpx
 import jellyfish
 
-from app.core.config import OLLAMA_BASE_URL, EMBEDDING_MODEL, USE_REAL_LLM, pg_dsn
+from app.core.config import USE_REAL_LLM, pg_dsn
+from app.infrastructure.embeddings import get_client
 
 MERGE_THRESHOLD = 0.88
 RELATED_THRESHOLD = 0.72
@@ -281,7 +281,7 @@ EMBEDDING_DIM = 1024
 
 
 def _mock_embed_vector(text: str) -> list[float]:
-    """USE_MOCK_LLM=true일 때 Ollama 호출 없이 결정적 임베딩 생성."""
+    """USE_MOCK_LLM=true일 때 결정적 mock 벡터 반환."""
     seed = int(hashlib.sha256(text.encode("utf-8")).hexdigest(), 16) % (2**32)
     rng = random.Random(seed)
     vec = [rng.uniform(-1.0, 1.0) for _ in range(EMBEDDING_DIM)]
@@ -290,17 +290,7 @@ def _mock_embed_vector(text: str) -> list[float]:
 
 
 async def _embed_async(text: str) -> Optional[list[float]]:
-    """Ollama embedding API 비동기 호출. USE_MOCK_LLM=true이면 결정적 mock 벡터 반환."""
+    """로컬 bge-m3로 임베딩. USE_MOCK_LLM=true이면 결정적 mock 벡터 반환."""
     if not USE_REAL_LLM:
         return _mock_embed_vector(text)
-    try:
-        async with httpx.AsyncClient(timeout=60) as client:
-            resp = await client.post(
-                f"{OLLAMA_BASE_URL}/api/embeddings",
-                json={"model": EMBEDDING_MODEL, "prompt": text},
-            )
-            resp.raise_for_status()
-            vec: list[float] = resp.json()["embedding"]
-            return vec if len(vec) == 1024 else None
-    except Exception:
-        return None
+    return get_client().embed(text)

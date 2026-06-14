@@ -169,7 +169,7 @@ services:
     depends_on:
       - neo4j_m6
     restart: "no"
-    command: uv run python script/seed_neo4j.py
+    command: python script/seed_neo4j.py &&  python script/seed_postgres.py
 
   redis:
     image: redis:7-alpine
@@ -216,7 +216,7 @@ services:
       - neo4j_m6
       - redis
     restart: unless-stopped
-    command: uv run uvicorn app.main:app --host 0.0.0.0 --port 8007 --reload
+    command: uvicorn app.main:app --host 0.0.0.0 --port 8007 --reload --reload-dir app
 
   celery_worker_m6:
     build:
@@ -236,7 +236,7 @@ services:
       - neo4j_m6
       - redis
     restart: unless-stopped
-    command: uv run celery -A celery_app worker --loglevel=debug -Q m6_graph
+    command: celery -A celery_app worker --loglevel=debug -Q m6_graph
 
   frontend:
     build:

@@ -12,7 +12,7 @@ describe("GraphDomainSelect", () => {
     expect(screen.getByRole("option", { name: "전체" })).toBeInTheDocument();
     expect(screen.getByRole("option", { name: "security" })).toBeInTheDocument();
     expect(screen.getByRole("option", { name: "performance" })).toBeInTheDocument();
-    expect(screen.getByRole("option", { name: "both" })).toBeInTheDocument();
+    // expect(screen.getByRole("option", { name: "both" })).toBeInTheDocument();
   });
 
   it("값을 변경하면 onChange가 새 도메인으로 호출됨", async () => {

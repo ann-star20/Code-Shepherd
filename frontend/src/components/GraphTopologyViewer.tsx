@@ -19,10 +19,10 @@ const LABEL_GAP = 5;
 const LEGEND_DOMAINS = [
   { label: "security",     color: DOMAIN_COLOR.security },
   { label: "performance",  color: DOMAIN_COLOR.performance },
-  { label: "both",         color: DOMAIN_COLOR.both },
-  { label: "draft (점선)", color: DOMAIN_COLOR.default },
-  { label: "new (주황 링)", color: NEW_NODE_RING_COLOR },
-  { label: "HITL 대상 (파란 점선)", color: HITL_FOCUS_RING_COLOR },
+  // { label: "both",         color: DOMAIN_COLOR.both },
+  // { label: "draft (점선)", color: DOMAIN_COLOR.default },
+  // { label: "new (주황 링)", color: NEW_NODE_RING_COLOR },
+  // { label: "HITL 대상 (파란 점선)", color: HITL_FOCUS_RING_COLOR },
 ];
 
 const LEGEND_EDGES = [

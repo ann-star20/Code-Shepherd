@@ -13,32 +13,11 @@ import sys
 from pathlib import Path
 
 import asyncpg
-import httpx
 
 # 로컬 패키지 인입 경로 정밀 바인딩
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
-
-class _OllamaEmbedder:
-    """Ollama /api/embeddings 직접 호출 — app.infrastructure 없이 동작."""
-
-    def __init__(self, base_url: str, model: str) -> None:
-        self._url = f"{base_url.rstrip('/')}/api/embeddings"
-        self._model = model
-
-    def get_embedding(self, text: str) -> list[float]:
-        """동기 호출 (시드 스크립트용). 1024차원 벡터 반환."""
-        resp = httpx.post(
-            self._url,
-            json={"model": self._model, "prompt": text},
-            timeout=60,
-        )
-        resp.raise_for_status()
-        vec: list[float] = resp.json()["embedding"]
-        # ★ 차원 검증 — bge-m3은 1024 (schema.md ★ 보정점)
-        if len(vec) != 1024:
-            raise ValueError(f"임베딩 차원 불일치: 기대 1024, 실제 {len(vec)}")
-        return vec
+from app.infrastructure.embeddings import BgeEmbeddingClient
 
 logging.basicConfig(
     level=logging.INFO, format="[%(asctime)s] %(levelname)s: %(message)s"
@@ -183,14 +162,11 @@ async def main() -> None:
 
     conn = await asyncpg.connect(dsn)
     try:
-        logger.info("[1/4] 통합 1024차원 pgvector + HNSW 스키마 DDL 레이어 빌드...")
-        await _apply_schema(conn)
+        # logger.info("[1/4] 통합 1024차원 pgvector + HNSW 스키마 DDL 레이어 빌드...")
+        # await _apply_schema(conn)
 
-        logger.info("[2/4] BGE-M3 Ollama 임베딩 클라이언트 초기화...")
-        _embedder = _OllamaEmbedder(
-            base_url=os.getenv("OLLAMA_BASE_URL", "http://localhost:11434"),
-            model=os.getenv("EMBEDDING_MODEL", "bge-m3"),
-        )
+        logger.info("[2/4] BGE-M3 로컬 임베딩 클라이언트 초기화...")
+        _embedder = BgeEmbeddingClient()
 
         logger.info(
             "[3/4] 보안 도메인 수렴 개념 마스터 시드 적재 (Aliases 파스칼 풀네임 자동 임베딩)..."
