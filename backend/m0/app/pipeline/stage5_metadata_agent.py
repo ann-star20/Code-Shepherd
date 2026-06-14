@@ -305,19 +305,19 @@ def _extract_h1_title(markdown: str, max_lines: int = 10) -> str | None:
     return None
 
 
-# AI/ML 영역 시그널 키워드 — LLM이 다른 카테고리로 오분류할 때 교정 기준으로 사용
-_AI_ML_SIGNAL_KEYWORDS: list[str] = [
-    # RAG / 벡터 검색
-    "rag", "retrieval-augmented generation", "retrieval augmented generation",
-    "벡터검색", "벡터 검색", "벡터db", "벡터 db", "pgvector",
-    "임베딩 파이프라인", "임베딩 설계",
+# 제목에 이 키워드가 포함되면 AI_ML 카테고리로 교정한다.
+# 제목(title)만 체크 — 본문/태그에 우연히 등장하는 키워드로 인한 오분류 방지.
+_AI_ML_TITLE_KEYWORDS: list[str] = [
+    # RAG
+    "rag", "retrieval-augmented", "retrieval augmented",
     # 검색 품질 지표
-    "sqm", "search quality", "검색 품질",
-    "precision@", "recall@", "ndcg", "mrr", "map@",
-    "검색 랭킹", "랭킹 알고리즘", "검색 성능 지표",
+    "sqm", "검색 품질 지표", "검색 품질 평가", "검색 랭킹 품질",
+    "ndcg", "precision@", "recall@", "search quality metrics",
+    # 임베딩
+    "임베딩 파이프라인", "임베딩 설계", "임베딩 시스템",
     # ML 학습·배포
-    "mlops", "파인튜닝", "fine-tuning", "모델 학습", "모델 배포",
-    "모델 모니터링", "피처 엔지니어링",
+    "mlops", "파인튜닝", "fine-tuning",
+    "llm 파이프라인", "ml 파이프라인",
 ]
 
 
@@ -328,21 +328,23 @@ def _disambiguate_category(
     markdown: str,
 ) -> str:
     """
-    LLM이 반환한 카테고리가 부정확할 때 AI/ML 시그널 키워드로 교정한다.
+    LLM이 반환한 카테고리가 부정확할 때 문서 제목 기반으로 교정한다.
+
+    제목만 체크하는 이유: 태그·본문의 기술 용어(pgvector, 벡터 등)는
+    AI_ML 문서가 아닌 장애 보고서·아키텍처 문서에도 등장할 수 있어
+    과도한 AI_ML 오분류를 유발한다.
 
     적용 규칙:
-    1. llm_category 가 VALID_CATEGORIES 에 없으면 잠재적 오분류로 간주
-    2. 제목·태그·본문 앞 500자에 AI_ML 시그널 키워드가 있으면 AI_ML 반환
-    3. 위 조건 모두 해당 없으면 llm_category 그대로 반환
-       (단, VALID_CATEGORIES 에 없는 카테고리는 '기타'로 폴백)
+    1. 제목에 AI_ML 시그널 키워드 → AI_ML 교정 (단, 이미 AI_ML이면 유지)
+    2. llm_category 가 VALID_CATEGORIES 에 없으면 '기타'로 폴백
+    3. 그 외 llm_category 그대로 반환
     """
-    corpus = " ".join([title] + tags + [markdown[:500]]).lower()
-
-    has_ai_ml_signal = any(kw in corpus for kw in _AI_ML_SIGNAL_KEYWORDS)
+    title_lower = title.lower()
+    has_ai_ml_signal = any(kw in title_lower for kw in _AI_ML_TITLE_KEYWORDS)
 
     if has_ai_ml_signal and llm_category != "AI_ML":
         logger.info(
-            "Stage 5: 카테고리 교정 AI_ML",
+            "Stage 5: 카테고리 교정 AI_ML (제목 시그널)",
             extra={"from": llm_category, "title": title},
         )
         return "AI_ML"

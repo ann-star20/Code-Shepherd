@@ -1,6 +1,6 @@
 # KMS 파이프라인 성능평가 요약 (발표용)
 
-**평가 일시**: 2026-06-14 19:50  |  **전체 문서**: 19개  |  **성숙도 점수**: 83.3/100
+**평가 일시**: 2026-06-14 15:02  |  **전체 문서**: 19개  |  **성숙도 점수**: 81.4/100
 
 ---
 
@@ -8,14 +8,14 @@
 
 | Stage | Agent/Node | 역할 | 주요 측정 지표 | 현재 값 |
 |-------|-----------|------|--------------|--------|
-| Stage 1 | DocumentParserAgent | PDF/DOCX/PPTX/MD/TXT 파싱 → Markdown 변환 | parsing_time_ms, parser_used | 3,336ms |
-| Stage 2 | MarkdownValidateAgent | Markdown 품질 검증 (HITL 분기) | quality_score, 수정 횟수 | avg=0.884, latency=1,718ms |
-| Stage 3 | ChunkingAgent | Parent-Child 청킹 (512/128 토큰) | chunk_size_compliance_rate, parent_child_integrity | 93.0%/100.0% |
-| Stage 4 | ChunkValidateAgent | 청크 범위 검증 (100-1500 토큰, HITL 분기) | 통과율 | latency=49ms |
-| Stage 5 | MetadataExtractAgent | LLM 메타데이터 추출 (제목/카테고리/태그/엔티티) | category_accuracy, tags_f1, entity_recall | 0.882/0.622/0.776 |
-| Stage 5b | MetadataValidateAgent | 메타데이터 검증 + KB Evolution HITL | metadata_score, hitl_recall | avg=0.947, latency=1,390ms |
+| Stage 1 | DocumentParserAgent | PDF/DOCX/PPTX/MD/TXT 파싱 → Markdown 변환 | parsing_time_ms, parser_used | 2,991ms |
+| Stage 2 | MarkdownValidateAgent | Markdown 품질 검증 (HITL 분기) | quality_score, 수정 횟수 | avg=0.892, latency=1,700ms |
+| Stage 3 | ChunkingAgent | Parent-Child 청킹 (512/128 토큰) | chunk_size_compliance_rate, parent_child_integrity | 92.6%/100.0% |
+| Stage 4 | ChunkValidateAgent | 청크 범위 검증 (100-1500 토큰, HITL 분기) | 통과율 | latency=45ms |
+| Stage 5 | MetadataExtractAgent | LLM 메타데이터 추출 (제목/카테고리/태그/엔티티) | category_accuracy, tags_f1, entity_recall | 0.938/0.652/0.697 |
+| Stage 5b | MetadataValidateAgent | 메타데이터 검증 + KB Evolution HITL | metadata_score, hitl_recall | avg=0.963, latency=1,202ms |
 | Stage 6 | StoreRouteAgent | pgVector/GCS/Neo4j 저장 | neo4j_synced_rate, storage_synced_rate | neo4j=100.0%, gcs=100.0% |
-| HITL | hitl_pending 노드 | 품질 안전망 — 사람 검토 대기 | hitl_recall, false_pass_rate | recall=66.7%, FPR=33.3% |
+| HITL | hitl_pending 노드 | 품질 안전망 — 사람 검토 대기 | hitl_recall, false_pass_rate | recall=100.0%, FPR=0.0% |
 
 ---
 
@@ -23,11 +23,11 @@
 
 | KPI | 현재 값 | 목표 | 상태 |
 |----|--------|------|------|
-| 제목 정확도 | 0.882 | 0.80 | PASS |
-| 카테고리 정확도 | 0.882 | 0.85 | PASS |
-| 태그 F1 | 0.622 | 0.60 | PASS |
-| 엔티티 Recall | 0.776 | 0.60 | PASS |
-| 파싱 품질 점수 | 0.884 | 0.85 | PASS |
+| 제목 정확도 | 0.875 | 0.80 | PASS |
+| 카테고리 정확도 | 0.938 | 0.85 | PASS |
+| 태그 F1 | 0.652 | 0.60 | PASS |
+| 엔티티 Recall | 0.697 | 0.60 | PASS |
+| 파싱 품질 점수 | 0.892 | 0.85 | PASS |
 
 ---
 
@@ -37,8 +37,8 @@
 
 | 지표 | 값 | 의미 |
 |----|-----|------|
-| HITL Recall (탐지율) | 66.7% | 문제 문서를 놓치지 않는가 |
-| False Pass Rate | 33.3% | 문제 문서가 HITL 없이 저장되는 비율 |
+| HITL Recall (탐지율) | 100.0% | 문제 문서를 놓치지 않는가 |
+| False Pass Rate | 0.0% | 문제 문서가 HITL 없이 저장되는 비율 |
 | HITL Precision | 100.0% | HITL 중 진짜 문제인 비율 |
 | False HITL Rate | 0.0% | 정상 문서가 잘못 HITL된 비율 |
 
@@ -62,21 +62,21 @@
 
 | 지표 | 값 | 임계값 | 결과 |
 |----|-----|------|------|
-| completion_rate | 0.895 | 0.80 | PASS |
-| category_accuracy | 0.882 | 0.85 | PASS |
-| avg_tags_f1 | 0.622 | 0.60 | PASS |
-| avg_entity_name_recall | 0.776 | 0.60 | PASS |
-| avg_quality_score | 0.883 | 0.85 | PASS |
+| completion_rate | 0.842 | 0.80 | PASS |
+| category_accuracy | 0.938 | 0.85 | PASS |
+| avg_tags_f1 | 0.652 | 0.60 | PASS |
+| avg_entity_name_recall | 0.697 | 0.60 | PASS |
+| avg_quality_score | 0.892 | 0.85 | PASS |
 
 ---
 
 ## 6. 발표용 요약 문구
 
-- **파이프라인 성숙도**: 83.3/100점 (17/19개 문서 정확도 평가)
+- **파이프라인 성숙도**: 81.4/100점 (16/19개 문서 정확도 평가)
 - **CI Gate**: PASS — 핵심 5개 KPI 전부 임계값 통과
-- **HITL 안전망**: 문제 문서 탐지율(Recall) 66.7% — 잘못된 지식 저장 방지
-- **자동화율**: 89.5% (HITL 검토 완료 후 100% 예상)
-- **카테고리 정확도**: 0.882 / 태그 F1: 0.622
+- **HITL 안전망**: 문제 문서 탐지율(Recall) 100.0% — 잘못된 지식 저장 방지
+- **자동화율**: 84.2% (HITL 검토 완료 후 100% 예상)
+- **카테고리 정확도**: 0.938 / 태그 F1: 0.652
 
 > **핵심 메시지**: KMS 파이프라인은 단순 저장이 아니라 품질 안전망을 통해
 > 기업 지식이 **정확하게** DB에 적재되는지를 보장합니다.

@@ -1,88 +1,88 @@
 {
-  "timestamp": "2026-06-14T19:50:05.226142",
-  "maturity_score": 83.3,
+  "timestamp": "2026-06-14T15:02:39.837177",
+  "maturity_score": 81.4,
   "ci_gate": {
     "overall": "PASS",
     "details": {
       "completion_rate": {
         "status": "PASS",
-        "value": 0.8947,
+        "value": 0.8421,
         "threshold": 0.8
       },
       "category_accuracy": {
         "status": "PASS",
-        "value": 0.8824,
+        "value": 0.9375,
         "threshold": 0.85
       },
       "avg_tags_f1": {
         "status": "PASS",
-        "value": 0.6224,
+        "value": 0.6518,
         "threshold": 0.6
       },
       "avg_entity_name_recall": {
         "status": "PASS",
-        "value": 0.7759,
+        "value": 0.697,
         "threshold": 0.6
       },
       "avg_quality_score": {
         "status": "PASS",
-        "value": 0.8835,
+        "value": 0.8919,
         "threshold": 0.85
       }
     }
   },
   "automation": {
     "total_documents": 19,
-    "stored": 17,
+    "stored": 16,
     "stored_partial": 0,
-    "hitl_pending": 2,
+    "hitl_pending": 3,
     "error_or_timeout": 0,
-    "completion_rate": 0.8947368421052632,
-    "hitl_rate": 0.10526315789473684,
+    "completion_rate": 0.8421052631578947,
+    "hitl_rate": 0.15789473684210525,
     "error_rate": 0.0,
     "status_breakdown": {
-      "stored": 17,
-      "hitl_pending": 2
+      "stored": 16,
+      "hitl_pending": 3
     }
   },
   "accuracy": {
-    "evaluated_documents": 17,
-    "documents_with_golden": 17,
-    "avg_quality_score": 0.8835294117647059,
-    "title_accuracy": 0.8823529411764706,
-    "category_accuracy": 0.8823529411764706,
-    "avg_tags_recall": 0.6639589169000933,
-    "avg_tags_precision": 0.5966386554621849,
-    "avg_tags_f1": 0.6224028023494832,
-    "avg_entity_name_recall": 0.7758661359280554,
-    "avg_entity_partial_score": 0.6819512015332448,
+    "evaluated_documents": 16,
+    "documents_with_golden": 16,
+    "avg_quality_score": 0.891875,
+    "title_accuracy": 0.875,
+    "category_accuracy": 0.9375,
+    "avg_tags_recall": 0.6809027777777777,
+    "avg_tags_precision": 0.6316964285714286,
+    "avg_tags_f1": 0.6518404888738221,
+    "avg_entity_name_recall": 0.6969924812030075,
+    "avg_entity_partial_score": 0.620108865914787,
     "by_file_type": {
       "md": {
-        "count": 11,
+        "count": 10,
         "title_accuracy": 1.0,
-        "category_accuracy": 0.9090909090909091,
-        "avg_tags_f1": 0.6381748427448469,
-        "avg_entity_name_recall": 0.8337662337662337
+        "category_accuracy": 1.0,
+        "avg_tags_f1": 0.7055090311986864,
+        "avg_entity_name_recall": 0.7866666666666667
       },
       "pdf": {
         "count": 3,
         "title_accuracy": 0.6666666666666666,
-        "category_accuracy": 0.6666666666666666,
-        "avg_tags_f1": 0.623249299719888,
-        "avg_entity_name_recall": 0.6616541353383458
+        "category_accuracy": 1.0,
+        "avg_tags_f1": 0.5218446601941747,
+        "avg_entity_name_recall": 0.5839598997493735
       },
       "docx": {
         "count": 1,
         "title_accuracy": 1.0,
-        "category_accuracy": 1.0,
-        "avg_tags_f1": 0.35294117647058826,
-        "avg_entity_name_recall": 0.5
+        "category_accuracy": 0.0,
+        "avg_tags_f1": 0.5882352941176471,
+        "avg_entity_name_recall": 0.14285714285714285
       },
       "pptx": {
         "count": 1,
         "title_accuracy": 0.0,
         "category_accuracy": 1.0,
-        "avg_tags_f1": 0.5882352941176471,
+        "avg_tags_f1": 0.47058823529411764,
         "avg_entity_name_recall": 0.5333333333333333
       },
       "txt": {
@@ -90,7 +90,7 @@
         "title_accuracy": 1.0,
         "category_accuracy": 1.0,
         "avg_tags_f1": 0.75,
-        "avg_entity_name_recall": 1.0
+        "avg_entity_name_recall": 0.8571428571428571
       }
     }
   },
@@ -98,10 +98,10 @@
     "by_file_type": {
       "md": {
         "total": 13,
-        "stored": 11,
-        "hitl_pending": 2,
+        "stored": 10,
+        "hitl_pending": 3,
         "error": 0,
-        "success_rate": 0.8461538461538461
+        "success_rate": 0.7692307692307693
       },
       "pdf": {
         "total": 3,
@@ -134,19 +134,19 @@
     },
     "timing": {
       "count": 19,
-      "avg_ms": 27545,
-      "max_ms": 41921,
-      "min_ms": 10297
+      "avg_ms": 28059,
+      "max_ms": 41512,
+      "min_ms": 10286
     }
   },
   "hitl_quality_safety_net": {
     "hitl_precision": 1.0,
-    "hitl_recall": 0.6666666666666666,
-    "false_pass_rate": 0.3333333333333333,
+    "hitl_recall": 1.0,
+    "false_pass_rate": 0.0,
     "false_hitl_rate": 0.0,
-    "tp": 2,
+    "tp": 3,
     "fp": 0,
-    "fn": 1,
+    "fn": 0,
     "tn": 16,
     "problem_doc_count": 3,
     "normal_doc_count": 16,
@@ -155,73 +155,73 @@
   "stage_latency": {
     "stage1": {
       "agent_name": "DocumentParserAgent",
-      "avg_ms": 3336,
-      "max_ms": 22274,
-      "min_ms": 46,
+      "avg_ms": 2991,
+      "max_ms": 16197,
+      "min_ms": 51,
       "n": 19
     },
     "stage2": {
       "agent_name": "MarkdownValidateAgent",
-      "avg_ms": 1718,
-      "max_ms": 6622,
-      "min_ms": 929,
+      "avg_ms": 1700,
+      "max_ms": 6975,
+      "min_ms": 908,
       "n": 19
     },
     "stage3": {
       "agent_name": "ChunkingAgent",
-      "avg_ms": 74,
-      "max_ms": 422,
-      "min_ms": 46,
+      "avg_ms": 51,
+      "max_ms": 71,
+      "min_ms": 43,
       "n": 18
     },
     "stage4": {
       "agent_name": "ChunkValidateAgent",
-      "avg_ms": 49,
-      "max_ms": 66,
-      "min_ms": 41,
+      "avg_ms": 45,
+      "max_ms": 60,
+      "min_ms": 40,
       "n": 18
     },
     "stage5": {
       "agent_name": "MetadataExtractAgent",
-      "avg_ms": 11266,
-      "max_ms": 16152,
-      "min_ms": 6613,
+      "avg_ms": 11679,
+      "max_ms": 15568,
+      "min_ms": 6796,
       "n": 18
     },
     "stage5b": {
       "agent_name": "MetadataValidateAgent",
-      "avg_ms": 1390,
-      "max_ms": 2603,
-      "min_ms": 1000,
+      "avg_ms": 1202,
+      "max_ms": 1927,
+      "min_ms": 42,
       "n": 18
     },
     "stage6": {
       "agent_name": "StoreRouteAgent",
-      "avg_ms": 8844,
-      "max_ms": 18103,
-      "min_ms": 2317,
-      "n": 17
+      "avg_ms": 8872,
+      "max_ms": 18139,
+      "min_ms": 3830,
+      "n": 16
     }
   },
   "chunk_compliance": {
-    "chunk_size_compliance_rate": 0.9303,
+    "chunk_size_compliance_rate": 0.926,
     "parent_child_integrity_rate": 1.0,
-    "evaluated_documents": 17,
-    "compliance_measured": 17,
-    "integrity_measured": 17
+    "evaluated_documents": 16,
+    "compliance_measured": 16,
+    "integrity_measured": 16
   },
   "storage_sync": {
     "neo4j_synced_rate": 1.0,
     "storage_synced_rate": 1.0,
-    "neo4j_known_count": 17,
-    "storage_known_count": 17,
-    "stored_count": 17,
+    "neo4j_known_count": 16,
+    "storage_known_count": 16,
+    "stored_count": 16,
     "source": "db_flag"
   },
   "quality_score_details": {
-    "avg_parser_quality_score": 0.8835,
-    "avg_metadata_score": 0.9471,
-    "parser_quality_measured": 17,
-    "metadata_score_measured": 17
+    "avg_parser_quality_score": 0.8919,
+    "avg_metadata_score": 0.9625,
+    "parser_quality_measured": 16,
+    "metadata_score_measured": 16
   }
 }

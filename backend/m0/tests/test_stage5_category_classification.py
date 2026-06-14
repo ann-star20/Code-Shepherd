@@ -60,15 +60,18 @@ class TestDisambiguateCategory:
             "RAG 관련 문서는 '아키텍처'로 분류되더라도 AI_ML로 교정되어야 함"
         )
 
-    def test_rag_in_tags_only_reclassified(self):
-        """태그에만 RAG가 있어도 교정한다."""
+    def test_rag_in_tags_only_not_reclassified(self):
+        """
+        태그에만 RAG가 있고 제목에 AI_ML 시그널이 없으면 교정하지 않는다.
+        제목-only 체크: 태그/본문의 기술 용어로 인한 과도한 오분류 방지.
+        """
         result = _disambiguate_category(
             llm_category="아키텍처",
             title="사내 검색 시스템 구축 방안",
             tags=["RAG", "Elasticsearch", "LLM"],
             markdown="# 검색 시스템 구축\n검색 인프라 설계 문서입니다.",
         )
-        assert result == "AI_ML"
+        assert result == "아키텍처"
 
     def test_embedding_design_doc_reclassified(self):
         """임베딩 설계 문서도 AI_ML 교정 대상."""
@@ -167,6 +170,26 @@ class TestDisambiguateCategory:
             markdown="# 경비 처리 규정\n출장 경비 청구 절차를 안내합니다.",
         )
         assert result == "기타"
+
+    def test_incident_report_with_pgvector_not_reclassified(self):
+        """
+        md_08 시나리오:
+        장애 보고서 내용에 pgvector가 등장해도 제목에 AI_ML 시그널이 없으면 교정하지 않는다.
+        과거 버그: 본문/태그 키워드로 인해 배포 문서가 AI_ML로 오분류됨.
+        """
+        result = _disambiguate_category(
+            llm_category="배포",
+            title="장애 보고서 — 검색 서비스 응답 지연",
+            tags=["pgvector", "HNSW", "장애 보고", "P95", "검색 API"],
+            markdown=(
+                "# 장애 보고서 — 검색 서비스 응답 지연\n\n"
+                "pgvector HNSW 인덱스 미적용으로 인한 검색 API 응답 지연 장애.\n"
+                "Grafana에서 벡터 검색 쿼리 5배 증가 확인.\n"
+            ),
+        )
+        assert result == "배포", (
+            "장애 보고서는 pgvector가 등장해도 배포 카테고리를 유지해야 함"
+        )
 
 
 # ────────────────────────────────────────────────────────────────
