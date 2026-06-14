@@ -917,8 +917,9 @@ PARSER_QUALITY_THRESHOLD = int(os.getenv("PARSER_QUALITY_THRESHOLD", "60"))
 # PDF 파서 시도 순서 (품질 낮을 때 자동 전환)
 _PDF_PARSER_SEQUENCE = ["pymupdf", "unstructured", "gemini_ocr"]
 
-# DOCX 파서 시도 순서 (python_docx 품질 미달 시 LibreOffice PDF 변환 → PyMuPDF → unstructured 폴백)
-_DOCX_PARSER_SEQUENCE = ["python_docx", "libreoffice_pdf", "unstructured"]
+# DOCX 파서 시도 순서: LibreOffice PDF 렌더링 우선 → python_docx → unstructured 폴백
+# LibreOffice가 표/이미지/텍스트박스를 PDF로 완전 렌더링하므로 복잡한 DOCX에 최적.
+_DOCX_PARSER_SEQUENCE = ["libreoffice_pdf", "python_docx", "unstructured"]
 
 
 async def _parse_with_quality_loop(

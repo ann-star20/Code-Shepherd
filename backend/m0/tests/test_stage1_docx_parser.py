@@ -426,15 +426,18 @@ from app.pipeline.stage1_document_parser_agent import _convert_docx_to_pdf_via_l
 
 
 class TestLibreOfficePdfFallback:
-    def test_sequence_has_libreoffice_pdf_between_python_docx_and_unstructured(self):
-        """_DOCX_PARSER_SEQUENCE에서 libreoffice_pdf가 python_docx와 unstructured 사이에 위치한다."""
+    def test_sequence_has_libreoffice_pdf_first(self):
+        """_DOCX_PARSER_SEQUENCE에서 libreoffice_pdf가 첫 번째 파서여야 한다."""
         from app.pipeline.stage1_document_parser_agent import _DOCX_PARSER_SEQUENCE
         assert "libreoffice_pdf" in _DOCX_PARSER_SEQUENCE, "libreoffice_pdf가 시퀀스에 없음"
-        idx_docx = _DOCX_PARSER_SEQUENCE.index("python_docx")
+        assert _DOCX_PARSER_SEQUENCE[0] == "libreoffice_pdf", (
+            f"libreoffice_pdf가 첫 번째가 아님: {_DOCX_PARSER_SEQUENCE}"
+        )
         idx_lo = _DOCX_PARSER_SEQUENCE.index("libreoffice_pdf")
+        idx_docx = _DOCX_PARSER_SEQUENCE.index("python_docx")
         idx_us = _DOCX_PARSER_SEQUENCE.index("unstructured")
-        assert idx_docx < idx_lo < idx_us, (
-            f"순서 오류: python_docx={idx_docx}, libreoffice_pdf={idx_lo}, unstructured={idx_us}"
+        assert idx_lo < idx_docx < idx_us, (
+            f"순서 오류: libreoffice_pdf={idx_lo}, python_docx={idx_docx}, unstructured={idx_us}"
         )
 
     @patch("subprocess.run")
