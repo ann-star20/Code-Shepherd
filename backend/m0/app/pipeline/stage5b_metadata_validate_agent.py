@@ -40,6 +40,41 @@ from app.pipeline._category_definitions import build_category_prompt_snippet
 
 FALLBACK_TITLE = "제목 없음"
 
+# 신규 기술 도메인 키워드 — 기존 VALID_CATEGORIES 에 없는 도메인을 감지한다.
+# Stage 5가 기존 카테고리로 분류하더라도 이 키워드가 있으면 KB Evolution HITL 발동.
+_EMERGING_DOMAIN_KEYWORDS: list[str] = [
+    # 양자 기술
+    "양자컴퓨팅", "양자 컴퓨팅", "양자컴퓨터", "양자 컴퓨터",
+    "Post-Quantum", "PQC", "QKD", "양자 키 분배", "양자 내성",
+    "CRYSTALS-Kyber", "CRYSTALS-Dilithium",
+    # 분산 원장 / Web3
+    "블록체인", "Web3", "NFT", "스마트 컨트랙트", "탈중앙화",
+    "DeFi", "DAO", "크립토",
+    # 신경 인터페이스
+    "뇌-컴퓨터 인터페이스", "BCI", "뇌컴퓨터",
+    # 기타 신기술 도메인
+    "메타버스", "홀로그램 컴퓨팅", "광자 컴퓨팅",
+]
+
+
+def detect_emerging_domain_keywords(
+    title: str,
+    tags: list[str],
+    markdown: str,
+) -> bool:
+    """
+    신규 기술 도메인 키워드가 제목·태그·본문에 있으면 True를 반환한다.
+
+    Stage 5가 category_is_new=False로 판단하더라도 이 함수가 True를 반환하면
+    Stage 5b는 KB Evolution HITL을 발동해야 한다.
+    """
+    corpus = " ".join([title] + tags + [markdown[:1000]])
+    corpus_lower = corpus.lower()
+    for keyword in _EMERGING_DOMAIN_KEYWORDS:
+        if keyword.lower() in corpus_lower:
+            return True
+    return False
+
 _SYSTEM_PROMPT = f"""\
 당신은 사내 문서 메타데이터 검증 에이전트입니다.
 Stage 5에서 추출된 메타데이터가 실제 문서 내용을 정확히 대표하는지 독립적으로 검증하는 것이 유일한 임무입니다.
@@ -104,7 +139,9 @@ async def stage5b_metadata_validate(state: "DocPipelineState") -> dict:
     category_reasoning = state.get("category_reasoning", "")
     category_alternatives = state.get("category_alternatives", [])
 
-    # ── 1. KB Evolution 분기 — 새 카테고리 제안 시 즉시 HITL ─────────
+    # ── 1. KB Evolution 분기 ─────────────────────────────────────────
+    # (a) Stage 5가 명시적으로 신규 카테고리 플래그를 세운 경우
+    # (b) Stage 5가 기존 카테고리로 분류했더라도 신규 도메인 키워드가 감지된 경우
     if category_is_new:
         logger.warning(
             "Stage 5b: 새 카테고리 감지 — KB Evolution HITL 등록",
@@ -123,6 +160,29 @@ async def stage5b_metadata_validate(state: "DocPipelineState") -> dict:
             "current_stage":        "stage5b_metadata_validate",
             "category_reasoning":   category_reasoning,
             "category_alternatives": category_alternatives,
+        }
+
+    # (b) 신규 도메인 키워드 감지 — Stage 5가 기존 카테고리로 분류했더라도
+    if detect_emerging_domain_keywords(title=title, tags=tags, markdown=markdown):
+        detected = [kw for kw in _EMERGING_DOMAIN_KEYWORDS
+                    if kw.lower() in (" ".join([title] + tags + [markdown[:1000]]).lower())]
+        issues = [
+            f"신규 기술 도메인 키워드 감지: {', '.join(detected[:3])}",
+            f"현재 카테고리 '{category}'가 신규 도메인을 충분히 반영하지 못할 수 있음 — KB Evolution 검토 필요",
+        ]
+        logger.warning(
+            "Stage 5b: 신규 도메인 키워드 감지 — KB Evolution HITL 등록",
+            extra={"doc_id": doc_id, "keywords": detected, "category": category},
+        )
+        return {
+            "metadata_valid":        False,
+            "metadata_score":        0.0,
+            "metadata_issues":       issues,
+            "hitl_required":         True,
+            "status":                "hitl_pending",
+            "current_stage":         "stage5b_metadata_validate",
+            "category_reasoning":    f"신규 도메인 키워드: {', '.join(detected)}",
+            "category_alternatives": [],
         }
 
     # ── 2. 규칙 기반 사전 검사 (LLM 없이 즉시 판단) ──────────────────
