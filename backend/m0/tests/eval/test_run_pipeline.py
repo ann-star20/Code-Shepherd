@@ -299,6 +299,7 @@ def test_build_output_entry_has_required_fields():
     entry = build_output_entry(
         golden_id="md_01",
         doc_id="uuid-001",
+        file_type="md",
         title="테스트 제목",
         category="AI_ML",
         tags=["LLM", "GPT"],

@@ -113,6 +113,7 @@ class DocDetailsResponse(BaseModel):
     quality_score: float | None = None
     doc_complexity: str | None = None
     parsing_time_ms: int | None = None
+    stage5_latency_ms: int | None = None
     agent_traces: list[AgentTraceItem]
     chunks: list[ChunkItem]
 
@@ -434,16 +435,17 @@ async def _update_document_status(
 ) -> None:
     session_factory = _get_session_factory()
     async with session_factory() as session:
-        if state and any(state.get(k) for k in ("parser_used", "doc_complexity", "parsing_time_ms", "quality_score")):
+        if state and any(state.get(k) for k in ("parser_used", "doc_complexity", "parsing_time_ms", "quality_score", "stage5_latency_ms")):
             await session.execute(
                 text("""
                     UPDATE documents
-                    SET upload_status   = :status,
-                        parser_used     = COALESCE(:parser_used, parser_used),
-                        doc_complexity  = COALESCE(:doc_complexity, doc_complexity),
-                        parsing_time_ms = COALESCE(:parsing_time_ms, parsing_time_ms),
-                        quality_score   = COALESCE(:quality_score, quality_score),
-                        error_message   = COALESCE(:error_message, error_message)
+                    SET upload_status      = :status,
+                        parser_used        = COALESCE(:parser_used, parser_used),
+                        doc_complexity     = COALESCE(:doc_complexity, doc_complexity),
+                        parsing_time_ms    = COALESCE(:parsing_time_ms, parsing_time_ms),
+                        quality_score      = COALESCE(:quality_score, quality_score),
+                        stage5_latency_ms  = COALESCE(:stage5_latency_ms, stage5_latency_ms),
+                        error_message      = COALESCE(:error_message, error_message)
                     WHERE doc_id = :doc_id
                 """),
                 {
@@ -452,6 +454,7 @@ async def _update_document_status(
                     "doc_complexity": state.get("doc_complexity"),
                     "parsing_time_ms": state.get("parsing_time_ms"),
                     "quality_score": state.get("quality_score"),
+                    "stage5_latency_ms": state.get("stage5_latency_ms"),
                     "error_message": error_message,
                     "doc_id": doc_id,
                 },
@@ -822,6 +825,7 @@ async def get_doc_details(
             text("""
                 SELECT title, file_type, upload_status, created_at,
                        parser_used, quality_score, doc_complexity, parsing_time_ms,
+                       stage5_latency_ms,
                        permission_level, department_id, user_id
                 FROM documents WHERE doc_id = :doc_id
             """),
@@ -905,6 +909,7 @@ async def get_doc_details(
         quality_score=doc_row["quality_score"],
         doc_complexity=doc_row["doc_complexity"],
         parsing_time_ms=doc_row["parsing_time_ms"],
+        stage5_latency_ms=doc_row["stage5_latency_ms"],
         agent_traces=traces,
         chunks=chunks,
     )

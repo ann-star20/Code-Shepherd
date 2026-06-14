@@ -154,6 +154,9 @@ async def fetch_metadata(
 
         quality_score: float = 0.0
         child_chunk_count: int | None = None
+        parsing_time_ms: int | None = None
+        parser_used: str | None = None
+        stage5_latency_ms: int | None = None
         try:
             det_resp = await client.get(
                 f"{base_url}/kms/docs/{doc_id}/details", headers=headers
@@ -165,6 +168,11 @@ async def fetch_metadata(
                 child_chunk_count = sum(
                     1 for c in chunks if c.get("chunk_type") == "child"
                 )
+                raw_pt = det_data.get("parsing_time_ms")
+                parsing_time_ms = int(raw_pt) if raw_pt is not None else None
+                parser_used = det_data.get("parser_used")
+                raw_s5 = det_data.get("stage5_latency_ms")
+                stage5_latency_ms = int(raw_s5) if raw_s5 is not None else None
         except Exception as e:
             logger.warning("details 조회 실패 doc_id=%s: %s", doc_id, e)
 
@@ -183,6 +191,9 @@ async def fetch_metadata(
         "entities": entities_by_type,
         "quality_score": quality_score,
         "child_chunk_count": child_chunk_count,
+        "parsing_time_ms": parsing_time_ms,
+        "parser_used": parser_used,
+        "stage5_latency_ms": stage5_latency_ms,
     }
 
 
@@ -203,6 +214,8 @@ def build_output_entry(
     processing_time_ms: float | None = None,
     child_chunk_count: int | None = None,
     stage5_latency_ms: int | None = None,
+    parsing_time_ms: int | None = None,
+    parser_used: str | None = None,
 ) -> dict:
     """run_eval.py의 load_results_from_file()이 읽을 수 있는 형식으로 반환한다."""
     return {
@@ -218,6 +231,8 @@ def build_output_entry(
         "processing_time_ms":  processing_time_ms,
         "child_chunk_count":   child_chunk_count,
         "stage5_latency_ms":   stage5_latency_ms,
+        "parsing_time_ms":     parsing_time_ms,
+        "parser_used":         parser_used,
     }
 
 
@@ -299,6 +314,9 @@ async def run(
                 status=status,
                 processing_time_ms=processing_time_ms,
                 child_chunk_count=meta.get("child_chunk_count"),
+                stage5_latency_ms=meta.get("stage5_latency_ms"),
+                parsing_time_ms=meta.get("parsing_time_ms"),
+                parser_used=meta.get("parser_used"),
             ))
 
         except TimeoutError as e:

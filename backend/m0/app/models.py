@@ -73,6 +73,8 @@ class Document(Base):
     file_hash: Mapped[str | None] = mapped_column(String(64), nullable=True)
     # Stage 5b 메타데이터 검증 품질 점수 (0.0~1.0)
     metadata_score: Mapped[float | None] = mapped_column(Float, nullable=True)
+    # Stage 5 Gemini LLM 호출 소요 시간 (ms) — 파이프라인 성능 분석용
+    stage5_latency_ms: Mapped[int | None] = mapped_column(Integer, nullable=True)
 
     chunks: Mapped[list["Chunk"]] = relationship(
         "Chunk", back_populates="document", cascade="all, delete-orphan"
