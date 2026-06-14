@@ -20,22 +20,22 @@ function formatMs(ms: number): string {
 }
 
 const STATUS_BG: Record<StageStatus, string> = {
-  success: "#14532d",
-  fail:    "#450a0a",
-  running: "#451a03",
-  pending: "#1f2937",
+  success: "#f0fdf4",
+  fail:    "#fef2f2",
+  running: "#fffbeb",
+  pending: "#f9fafb",
 };
 const STATUS_BORDER: Record<StageStatus, string> = {
   success: "#22c55e",
   fail:    "#ef4444",
   running: "#f59e0b",
-  pending: "#374151",
+  pending: "#e5e7eb",
 };
 const STATUS_DOT: Record<StageStatus, string> = {
   success: "#22c55e",
   fail:    "#ef4444",
   running: "#f59e0b",
-  pending: "#4b5563",
+  pending: "#d1d5db",
 };
 const STATUS_LABEL: Record<StageStatus, string> = {
   success: "완료",
@@ -80,24 +80,24 @@ export function M2PipelineFlow({ isLoading, stages, found, result }: Props) {
           <span style={s.headerTitle}>M2 정적 분석 · 보안 스캔 파이프라인</span>
         </div>
         <div style={s.headerRight}>
-          <span style={{ ...s.badge, background: "#1e1b4b", color: "#a5b4fc", borderColor: "#4f46e5" }}>
+          <span style={{ ...s.badge, background: "#ede9fe", color: "#6d28d9", borderColor: "#c4b5fd" }}>
             🤖 LLM Agent ×1
           </span>
-          <span style={{ ...s.badge, background: "#1c1917", color: "#a8a29e", borderColor: "#44403c" }}>
+          <span style={{ ...s.badge, background: "#f3f4f6", color: "#6b7280", borderColor: "#e5e7eb" }}>
             ⚙️ Tool ×3
           </span>
           {result && (
             <>
-              <span style={{ ...s.badge, background: "#1e1b4b", color: "#a5b4fc", borderColor: "#4f46e5" }}>
+              <span style={{ ...s.badge, background: "#ede9fe", color: "#6d28d9", borderColor: "#c4b5fd" }}>
                 SA {result.staticIssues}건
               </span>
-              <span style={{ ...s.badge, background: "#300", color: "#fca5a5", borderColor: "#991b1b" }}>
+              <span style={{ ...s.badge, background: "#fee2e2", color: "#dc2626", borderColor: "#fca5a5" }}>
                 SEC {result.securityIssues}건
               </span>
             </>
           )}
           {runningStage && (
-            <span style={{ ...s.counter, color: "#f59e0b", borderColor: "#f59e0b55", background: "#451a03", border: "1px solid" }}>
+            <span style={{ ...s.counter, color: "#b45309", borderColor: "#fcd34d", background: "#fffbeb", border: "1px solid" }}>
               ▶ {runningStage.label} 처리중
             </span>
           )}
@@ -111,9 +111,9 @@ export function M2PipelineFlow({ isLoading, stages, found, result }: Props) {
           const stageMs    = byKey[stage.key]?.ms;
           const isRunning  = sk === "running";
           const isLlmAgent = stage.nodeType === "agent";
-          const idleAccent  = isLlmAgent ? "#4f46e5" : "#374151";
+          const idleAccent  = isLlmAgent ? "#c4b5fd" : "#e5e7eb";
           const borderColor = sk === "pending" ? idleAccent : STATUS_BORDER[sk];
-          const bgColor     = sk === "pending" && isLlmAgent ? "#1e1b4b" : STATUS_BG[sk];
+          const bgColor     = sk === "pending" && isLlmAgent ? "#f5f3ff" : STATUS_BG[sk];
 
           const card = (
             <div key={stage.key} style={{
@@ -130,7 +130,7 @@ export function M2PipelineFlow({ isLoading, stages, found, result }: Props) {
                     background: STATUS_DOT[sk],
                     animation:  isRunning ? "pulse-dot 0.8s ease-in-out infinite" : "none",
                   }} />
-                  <span style={{ ...s.cardType, color: isLlmAgent ? "#a5b4fc" : "#6b7280" }}>
+                  <span style={{ ...s.cardType, color: isLlmAgent ? "#6d28d9" : "#6b7280" }}>
                     {isLlmAgent ? "Agent" : "Tool"}
                   </span>
                 </div>
@@ -155,8 +155,8 @@ export function M2PipelineFlow({ isLoading, stages, found, result }: Props) {
             return [
               card,
               <div key={`conn-${stage.key}`} style={s.connector}>
-                <div style={{ ...s.connLine, background: sk === "success" ? "#22c55e66" : "#374151" }} />
-                <div style={{ ...s.connArrow, borderLeftColor: sk === "success" ? "#22c55e66" : "#374151" }} />
+                <div style={{ ...s.connLine, background: sk === "success" ? "#22c55e" : "#e5e7eb" }} />
+                <div style={{ ...s.connArrow, borderLeftColor: sk === "success" ? "#22c55e" : "#e5e7eb" }} />
               </div>,
             ];
           }
@@ -168,24 +168,24 @@ export function M2PipelineFlow({ isLoading, stages, found, result }: Props) {
 }
 
 const s: Record<string, React.CSSProperties> = {
-  wrapper:     { background: "#0d1117", borderRadius: 14, padding: "20px 24px 24px", border: "1px solid #21262d", fontFamily: "system-ui, sans-serif" },
-  header:      { display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 20, paddingBottom: 14, borderBottom: "1px solid #21262d", flexWrap: "wrap", gap: 8 },
+  wrapper:     { background: "#ffffff", borderRadius: 12, padding: "18px 22px 22px", border: "1px solid #e5e7eb", fontFamily: "system-ui, sans-serif" },
+  header:      { display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 18, paddingBottom: 12, borderBottom: "1px solid #e5e7eb", flexWrap: "wrap", gap: 8 },
   headerLeft:  { display: "flex", alignItems: "center", gap: 8 },
-  headerTitle: { color: "#e6edf3", fontSize: 13, fontWeight: 600 },
+  headerTitle: { color: "#111827", fontSize: 13, fontWeight: 600 },
   headerRight: { display: "flex", alignItems: "center", gap: 6, flexWrap: "wrap" },
   badge:       { fontSize: 10, fontWeight: 700, padding: "3px 9px", borderRadius: 20, border: "1px solid", letterSpacing: "0.03em" },
-  counter:     { color: "#8b949e", fontSize: 11, background: "#21262d", padding: "3px 10px", borderRadius: 20 },
+  counter:     { color: "#6b7280", fontSize: 11, background: "#f3f4f6", padding: "3px 10px", borderRadius: 20 },
   flow:        { display: "flex", alignItems: "center", width: "100%" },
   card:        { width: 130, borderRadius: 10, border: "1.5px solid", flexShrink: 0, overflow: "hidden", transition: "border-color 0.4s, background-color 0.4s, box-shadow 0.3s" },
   cardHeader:  { display: "flex", alignItems: "center", justifyContent: "space-between", padding: "7px 10px 6px", borderBottom: "1px solid" },
   cardType:    { fontSize: 10, fontWeight: 700, letterSpacing: "0.05em", textTransform: "uppercase" as const },
-  stepNum:     { color: "#6e7681", fontSize: 10, fontWeight: 600 },
+  stepNum:     { color: "#9ca3af", fontSize: 10, fontWeight: 600 },
   dot:         { width: 7, height: 7, borderRadius: "50%", flexShrink: 0, transition: "background-color 0.4s" },
   cardBody:    { display: "flex", flexDirection: "column", alignItems: "center", padding: "12px 8px 10px", gap: 5, minHeight: 84, justifyContent: "center" },
-  label:       { color: "#e6edf3", fontSize: 11, fontWeight: 600, textAlign: "center", lineHeight: 1.35 },
-  tools:       { fontSize: 9, color: "#6b7280", textAlign: "center", lineHeight: 1.3 },
-  timing:      { color: "#8b949e", fontSize: 10, fontVariantNumeric: "tabular-nums" },
-  runningBadge:{ color: "#f59e0b", fontSize: 10, fontWeight: 700 },
+  label:       { color: "#111827", fontSize: 11, fontWeight: 600, textAlign: "center", lineHeight: 1.35 },
+  tools:       { fontSize: 9, color: "#9ca3af", textAlign: "center", lineHeight: 1.3 },
+  timing:      { color: "#6b7280", fontSize: 10, fontVariantNumeric: "tabular-nums" },
+  runningBadge:{ color: "#b45309", fontSize: 10, fontWeight: 700 },
   cardFooter:  { display: "flex", justifyContent: "center", padding: "6px 8px", borderTop: "1px solid" },
   statusPill:  { fontSize: 9, fontWeight: 700, padding: "2px 10px", borderRadius: 10, border: "1px solid", letterSpacing: "0.04em" },
   connector:   { display: "flex", alignItems: "center", flex: 1, minWidth: 16 },
