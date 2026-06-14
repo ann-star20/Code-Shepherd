@@ -413,3 +413,67 @@ class TestTextBoxExtraction:
 
         result = _extract_textbox_lines_from_para(para)
         assert "중첩 텍스트 박스" in result, f"깊은 중첩 텍스트 박스 미추출: {result}"
+
+
+# ---------------------------------------------------------------------------
+# Bug 7: DOCX 품질 미달 시 LibreOffice PDF 폴백 미구현
+# ---------------------------------------------------------------------------
+
+import subprocess
+from unittest.mock import patch, MagicMock
+
+from app.pipeline.stage1_document_parser_agent import _convert_docx_to_pdf_via_libreoffice
+
+
+class TestLibreOfficePdfFallback:
+    def test_sequence_has_libreoffice_pdf_between_python_docx_and_unstructured(self):
+        """_DOCX_PARSER_SEQUENCE에서 libreoffice_pdf가 python_docx와 unstructured 사이에 위치한다."""
+        from app.pipeline.stage1_document_parser_agent import _DOCX_PARSER_SEQUENCE
+        assert "libreoffice_pdf" in _DOCX_PARSER_SEQUENCE, "libreoffice_pdf가 시퀀스에 없음"
+        idx_docx = _DOCX_PARSER_SEQUENCE.index("python_docx")
+        idx_lo = _DOCX_PARSER_SEQUENCE.index("libreoffice_pdf")
+        idx_us = _DOCX_PARSER_SEQUENCE.index("unstructured")
+        assert idx_docx < idx_lo < idx_us, (
+            f"순서 오류: python_docx={idx_docx}, libreoffice_pdf={idx_lo}, unstructured={idx_us}"
+        )
+
+    @patch("subprocess.run")
+    def test_conversion_calls_libreoffice_with_correct_args(self, mock_run):
+        """LibreOffice 호출 시 --headless --convert-to pdf --outdir 인자를 사용한다."""
+        mock_run.return_value = MagicMock(returncode=0, stderr=b"")
+        # PDF 파일이 실제로 생성된 것처럼 mock
+        with patch("os.path.exists", return_value=True):
+            try:
+                _convert_docx_to_pdf_via_libreoffice("/tmp/test.docx")
+            except Exception:
+                pass  # 파일 존재 여부 외 예외는 무시
+        mock_run.assert_called_once()
+        cmd_args = mock_run.call_args[0][0]
+        assert "libreoffice" in cmd_args[0], "libreoffice 실행 파일명 없음"
+        assert "--headless" in cmd_args, "--headless 없음"
+        assert "--convert-to" in cmd_args, "--convert-to 없음"
+        assert "pdf" in cmd_args, "pdf 포맷 지정 없음"
+        assert "--outdir" in cmd_args, "--outdir 없음"
+
+    @patch("subprocess.run")
+    def test_conversion_success_returns_pdf_path(self, mock_run):
+        """변환 성공 시 .pdf 확장자 경로를 반환한다."""
+        mock_run.return_value = MagicMock(returncode=0, stderr=b"")
+        with patch("os.path.exists", return_value=True):
+            result = _convert_docx_to_pdf_via_libreoffice("/tmp/myfile.docx")
+        assert result.endswith(".pdf"), f"PDF 경로 반환 실패: {result}"
+        assert "myfile" in result, f"원본 파일명이 PDF 경로에 없음: {result}"
+
+    @patch("subprocess.run")
+    def test_conversion_nonzero_exit_raises_runtime_error(self, mock_run):
+        """LibreOffice 비정상 종료 시 RuntimeError를 발생시킨다."""
+        mock_run.return_value = MagicMock(returncode=1, stderr=b"conversion failed")
+        with pytest.raises(RuntimeError, match="LibreOffice"):
+            _convert_docx_to_pdf_via_libreoffice("/tmp/test.docx")
+
+    @patch("subprocess.run")
+    def test_conversion_timeout_raises_runtime_error(self, mock_run):
+        """LibreOffice 60초 초과 시 RuntimeError를 발생시킨다."""
+        mock_run.side_effect = subprocess.TimeoutExpired(cmd=["libreoffice"], timeout=60)
+        with pytest.raises(RuntimeError, match="타임아웃"):
+            _convert_docx_to_pdf_via_libreoffice("/tmp/test.docx")
