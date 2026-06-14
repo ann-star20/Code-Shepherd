@@ -160,6 +160,12 @@ async def fetch_metadata(
         parsing_time_ms: int | None = None
         parser_used: str | None = None
         stage5_latency_ms: int | None = None
+        neo4j_synced: bool | None = None
+        storage_synced: bool | None = None
+        metadata_score: float | None = None
+        stage_latencies: dict = {}
+        chunk_size_compliance_rate: float | None = None
+        parent_child_integrity_rate: float | None = None
         try:
             det_resp = await client.get(
                 f"{base_url}/kms/docs/{doc_id}/details", headers=headers
@@ -184,6 +190,31 @@ async def fetch_metadata(
                 parser_used = det_data.get("parser_used")
                 raw_s5 = det_data.get("stage5_latency_ms")
                 stage5_latency_ms = int(raw_s5) if raw_s5 is not None else None
+                neo4j_synced = det_data.get("neo4j_synced")
+                storage_synced = det_data.get("storage_synced")
+                raw_ms = det_data.get("metadata_score")
+                metadata_score = float(raw_ms) if raw_ms is not None else None
+                # Stage별 latency (agent_name -> execution_ms)
+                for trace in (det_data.get("agent_traces") or []):
+                    agent_name = trace.get("agent_name")
+                    exec_ms = trace.get("execution_ms")
+                    if agent_name and exec_ms is not None:
+                        stage_latencies[agent_name] = int(exec_ms)
+                # Chunk size compliance: child 청크 중 100-1500 토큰 범위 비율
+                child_chunks = [c for c in chunks if c.get("chunk_type") == "child"]
+                if child_chunks:
+                    compliant = sum(
+                        1 for c in child_chunks
+                        if 100 <= (c.get("token_count") or 0) <= 1500
+                    )
+                    chunk_size_compliance_rate = round(compliant / len(child_chunks), 4)
+                # Parent-child integrity: child 중 parent_chunk_id가 있는 비율
+                if child_chunks:
+                    has_parent = sum(
+                        1 for c in child_chunks
+                        if c.get("parent_chunk_id") is not None
+                    )
+                    parent_child_integrity_rate = round(has_parent / len(child_chunks), 4)
         except Exception as e:
             logger.warning("details 조회 실패 doc_id=%s: %s", doc_id, e)
 
@@ -208,6 +239,12 @@ async def fetch_metadata(
         "parsing_time_ms": parsing_time_ms,
         "parser_used": parser_used,
         "stage5_latency_ms": stage5_latency_ms,
+        "neo4j_synced": neo4j_synced,
+        "storage_synced": storage_synced,
+        "metadata_score": metadata_score,
+        "stage_latencies": stage_latencies,
+        "chunk_size_compliance_rate": chunk_size_compliance_rate,
+        "parent_child_integrity_rate": parent_child_integrity_rate,
     }
 
 
@@ -233,26 +270,38 @@ def build_output_entry(
     parent_chunk_count: int | None = None,
     avg_child_per_parent: float | None = None,
     avg_chunk_tokens: float | None = None,
+    neo4j_synced: bool | None = None,
+    storage_synced: bool | None = None,
+    metadata_score: float | None = None,
+    stage_latencies: dict | None = None,
+    chunk_size_compliance_rate: float | None = None,
+    parent_child_integrity_rate: float | None = None,
 ) -> dict:
     """run_eval.py의 load_results_from_file()이 읽을 수 있는 형식으로 반환한다."""
     return {
-        "golden_id":            golden_id,
-        "doc_id":               doc_id,
-        "file_type":            file_type,
-        "title":                title,
-        "category":             category,
-        "tags":                 tags,
-        "entities":             entities,
-        "quality_score":        quality_score,
-        "status":               status,
-        "processing_time_ms":   processing_time_ms,
-        "child_chunk_count":    child_chunk_count,
-        "parent_chunk_count":   parent_chunk_count,
-        "avg_child_per_parent": avg_child_per_parent,
-        "avg_chunk_tokens":     avg_chunk_tokens,
-        "stage5_latency_ms":    stage5_latency_ms,
-        "parsing_time_ms":      parsing_time_ms,
-        "parser_used":          parser_used,
+        "golden_id":                    golden_id,
+        "doc_id":                       doc_id,
+        "file_type":                    file_type,
+        "title":                        title,
+        "category":                     category,
+        "tags":                         tags,
+        "entities":                     entities,
+        "quality_score":                quality_score,
+        "status":                       status,
+        "processing_time_ms":           processing_time_ms,
+        "child_chunk_count":            child_chunk_count,
+        "parent_chunk_count":           parent_chunk_count,
+        "avg_child_per_parent":         avg_child_per_parent,
+        "avg_chunk_tokens":             avg_chunk_tokens,
+        "stage5_latency_ms":            stage5_latency_ms,
+        "parsing_time_ms":              parsing_time_ms,
+        "parser_used":                  parser_used,
+        "neo4j_synced":                 neo4j_synced,
+        "storage_synced":               storage_synced,
+        "metadata_score":               metadata_score,
+        "stage_latencies":              stage_latencies or {},
+        "chunk_size_compliance_rate":   chunk_size_compliance_rate,
+        "parent_child_integrity_rate":  parent_child_integrity_rate,
     }
 
 
@@ -340,6 +389,12 @@ async def run(
                 stage5_latency_ms=meta.get("stage5_latency_ms"),
                 parsing_time_ms=meta.get("parsing_time_ms"),
                 parser_used=meta.get("parser_used"),
+                neo4j_synced=meta.get("neo4j_synced"),
+                storage_synced=meta.get("storage_synced"),
+                metadata_score=meta.get("metadata_score"),
+                stage_latencies=meta.get("stage_latencies"),
+                chunk_size_compliance_rate=meta.get("chunk_size_compliance_rate"),
+                parent_child_integrity_rate=meta.get("parent_child_integrity_rate"),
             ))
 
         except TimeoutError as e:

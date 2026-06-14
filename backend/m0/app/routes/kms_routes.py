@@ -101,6 +101,7 @@ class ChunkItem(BaseModel):
     section_header: str | None = None
     page_number: int | None = None
     chunk_index: int | None = None
+    parent_chunk_id: str | None = None
 
 
 class DocDetailsResponse(BaseModel):
@@ -114,6 +115,9 @@ class DocDetailsResponse(BaseModel):
     doc_complexity: str | None = None
     parsing_time_ms: int | None = None
     stage5_latency_ms: int | None = None
+    neo4j_synced: bool | None = None
+    storage_synced: bool | None = None
+    metadata_score: float | None = None
     agent_traces: list[AgentTraceItem]
     chunks: list[ChunkItem]
 
@@ -825,7 +829,7 @@ async def get_doc_details(
             text("""
                 SELECT title, file_type, upload_status, created_at,
                        parser_used, quality_score, doc_complexity, parsing_time_ms,
-                       stage5_latency_ms,
+                       stage5_latency_ms, neo4j_synced, storage_synced, metadata_score,
                        permission_level, department_id, user_id
                 FROM documents WHERE doc_id = :doc_id
             """),
@@ -861,7 +865,8 @@ async def get_doc_details(
         chunk_result = await session.execute(
             text("""
                 SELECT chunk_id::text, chunk_type, content, token_count,
-                       section_header, page_number, chunk_index
+                       section_header, page_number, chunk_index,
+                       parent_chunk_id::text
                 FROM chunks
                 WHERE doc_id = :doc_id
                 ORDER BY
@@ -895,6 +900,7 @@ async def get_doc_details(
             section_header=r["section_header"],
             page_number=r["page_number"],
             chunk_index=r["chunk_index"],
+            parent_chunk_id=r.get("parent_chunk_id"),
         )
         for r in chunk_rows
     ]
@@ -910,6 +916,9 @@ async def get_doc_details(
         doc_complexity=doc_row["doc_complexity"],
         parsing_time_ms=doc_row["parsing_time_ms"],
         stage5_latency_ms=doc_row["stage5_latency_ms"],
+        neo4j_synced=doc_row["neo4j_synced"],
+        storage_synced=doc_row["storage_synced"],
+        metadata_score=doc_row["metadata_score"],
         agent_traces=traces,
         chunks=chunks,
     )

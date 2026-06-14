@@ -1,7 +1,8 @@
 {
-  "version": "1.1",
+  "version": "1.2",
   "created_at": "2025-06-08",
   "updated_at": "2026-06-14",
+  "changes_v1_2": "txt_01 추가 (TXT 파일 유형 검증)",
   "description": "KMS 파이프라인 평가용 Golden Dataset — 15개 정상 문서 + 3개 HITL 검증 문서",
   "evaluation_criteria": {
     "title_match": "exact 또는 normalized (공백/대소문자 무시)",
@@ -722,6 +723,23 @@
         "tags": [],
         "entities": {},
         "note": "HITL 품질 안전망 검증용 — '2024년 4분기 업무'처럼 모호한 내용은 metadata_score 미달로 HITL 예상"
+      }
+    },
+    {
+      "id": "txt_01",
+      "file": "documents/txt/txt_01_cloud_architecture.txt",
+      "file_type": "txt",
+      "expected_hitl": false,
+      "expected": {
+        "title": "클라우드 인프라 아키텍처 가이드",
+        "category": "배포",
+        "tags": ["클라우드", "GCP", "IaC", "Terraform", "CI/CD", "모니터링", "보안", "Cloud Run"],
+        "entities": {
+          "technology": ["GCP", "Terraform", "Cloud Run", "Cloud SQL", "BigQuery", "Memorystore", "Cloud Storage", "Cloud Build", "Artifact Registry", "Cloud Monitoring", "Cloud Trace", "PagerDuty"],
+          "concept": ["불변 인프라", "최소 권한 원칙", "다중 가용영역", "IaC", "카나리 배포"],
+          "standard": ["TLS 1.3", "AES-256", "RTO", "RPO"]
+        },
+        "note": "TXT 형식 파일 파싱 검증 — 인프라 아키텍처 가이드"
       }
     }
   ]

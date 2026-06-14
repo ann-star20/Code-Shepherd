@@ -1,0 +1,199 @@
+{
+  "timestamp": "2026-06-14T19:32:09.244630",
+  "maturity_score": 83.2,
+  "ci_gate": {
+    "overall": "PASS",
+    "details": {
+      "completion_rate": {
+        "status": "PASS",
+        "value": 0.8889,
+        "threshold": 0.8
+      },
+      "category_accuracy": {
+        "status": "PASS",
+        "value": 0.875,
+        "threshold": 0.85
+      },
+      "avg_tags_f1": {
+        "status": "PASS",
+        "value": 0.6278,
+        "threshold": 0.6
+      },
+      "avg_entity_name_recall": {
+        "status": "PASS",
+        "value": 0.7771,
+        "threshold": 0.6
+      },
+      "avg_quality_score": {
+        "status": "PASS",
+        "value": 0.8956,
+        "threshold": 0.85
+      }
+    }
+  },
+  "automation": {
+    "total_documents": 18,
+    "stored": 16,
+    "stored_partial": 0,
+    "hitl_pending": 2,
+    "error_or_timeout": 0,
+    "completion_rate": 0.8888888888888888,
+    "hitl_rate": 0.1111111111111111,
+    "error_rate": 0.0,
+    "status_breakdown": {
+      "stored": 16,
+      "hitl_pending": 2
+    }
+  },
+  "accuracy": {
+    "evaluated_documents": 16,
+    "documents_with_golden": 16,
+    "avg_quality_score": 0.895625,
+    "title_accuracy": 0.875,
+    "category_accuracy": 0.875,
+    "avg_tags_recall": 0.6837549603174603,
+    "avg_tags_precision": 0.5926339285714286,
+    "avg_tags_f1": 0.627806719359749,
+    "avg_entity_name_recall": 0.7770520050125314,
+    "avg_entity_partial_score": 0.6835173872180451,
+    "by_file_type": {
+      "md": {
+        "count": 11,
+        "title_accuracy": 1.0,
+        "category_accuracy": 0.9090909090909091,
+        "avg_tags_f1": 0.6628499668175614,
+        "avg_entity_name_recall": 0.8454545454545456
+      },
+      "pdf": {
+        "count": 3,
+        "title_accuracy": 0.6666666666666666,
+        "category_accuracy": 0.6666666666666666,
+        "avg_tags_f1": 0.5067204301075269,
+        "avg_entity_name_recall": 0.6791979949874687
+      },
+      "docx": {
+        "count": 1,
+        "title_accuracy": 1.0,
+        "category_accuracy": 1.0,
+        "avg_tags_f1": 0.5882352941176471,
+        "avg_entity_name_recall": 0.42857142857142855
+      },
+      "pptx": {
+        "count": 1,
+        "title_accuracy": 0.0,
+        "category_accuracy": 1.0,
+        "avg_tags_f1": 0.6451612903225806,
+        "avg_entity_name_recall": 0.6666666666666666
+      }
+    }
+  },
+  "reliability": {
+    "by_file_type": {
+      "md": {
+        "total": 13,
+        "stored": 11,
+        "hitl_pending": 2,
+        "error": 0,
+        "success_rate": 0.8461538461538461
+      },
+      "pdf": {
+        "total": 3,
+        "stored": 3,
+        "hitl_pending": 0,
+        "error": 0,
+        "success_rate": 1.0
+      },
+      "docx": {
+        "total": 1,
+        "stored": 1,
+        "hitl_pending": 0,
+        "error": 0,
+        "success_rate": 1.0
+      },
+      "pptx": {
+        "total": 1,
+        "stored": 1,
+        "hitl_pending": 0,
+        "error": 0,
+        "success_rate": 1.0
+      }
+    },
+    "timing": {
+      "count": 18,
+      "avg_ms": 29033,
+      "max_ms": 45922,
+      "min_ms": 10313
+    }
+  },
+  "hitl_quality_safety_net": {
+    "hitl_precision": 1.0,
+    "hitl_recall": 0.6666666666666666,
+    "false_pass_rate": 0.3333333333333333,
+    "false_hitl_rate": 0.0,
+    "tp": 2,
+    "fp": 0,
+    "fn": 1,
+    "tn": 16,
+    "problem_doc_count": 3,
+    "normal_doc_count": 16,
+    "note": "문제 문서 3개 / 정상 문서 16개 기준"
+  },
+  "stage_latency": {
+    "stage1": {
+      "agent_name": "DocumentParserAgent",
+      "avg_ms": null,
+      "n": 0
+    },
+    "stage2": {
+      "agent_name": "MarkdownValidateAgent",
+      "avg_ms": null,
+      "n": 0
+    },
+    "stage3": {
+      "agent_name": "ChunkingAgent",
+      "avg_ms": null,
+      "n": 0
+    },
+    "stage4": {
+      "agent_name": "ChunkValidateAgent",
+      "avg_ms": null,
+      "n": 0
+    },
+    "stage5": {
+      "agent_name": "MetadataExtractAgent",
+      "avg_ms": null,
+      "n": 0
+    },
+    "stage5b": {
+      "agent_name": "MetadataValidateAgent",
+      "avg_ms": null,
+      "n": 0
+    },
+    "stage6": {
+      "agent_name": "StoreRouteAgent",
+      "avg_ms": null,
+      "n": 0
+    }
+  },
+  "chunk_compliance": {
+    "chunk_size_compliance_rate": null,
+    "parent_child_integrity_rate": null,
+    "evaluated_documents": 16,
+    "compliance_measured": 0,
+    "integrity_measured": 0
+  },
+  "storage_sync": {
+    "neo4j_synced_rate": null,
+    "storage_synced_rate": null,
+    "neo4j_known_count": 0,
+    "storage_known_count": 0,
+    "stored_count": 16,
+    "source": "unavailable"
+  },
+  "quality_score_details": {
+    "avg_parser_quality_score": 0.8956,
+    "avg_metadata_score": null,
+    "parser_quality_measured": 16,
+    "metadata_score_measured": 0
+  }
+}
