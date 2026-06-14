@@ -15,6 +15,7 @@ from __future__ import annotations
 
 import functools
 import time
+from collections.abc import Callable
 from contextvars import ContextVar
 
 from langgraph.graph import END, START, StateGraph
@@ -30,6 +31,8 @@ from src.nodes.retrieve import retrieve
 
 # run_review_traced 가 설정 — 미설정(None)이면 trace 기록 없이 동작 (오버헤드 0)
 _trace_var: ContextVar[list | None] = ContextVar("dev3_trace", default=None)
+# SSE 스트리밍용 — 노드마다 호출되는 emit 콜백 (asyncio.to_thread 컨텍스트 복사로 전달)
+_emit_var: ContextVar[Callable | None] = ContextVar("dev3_emit", default=None)
 
 _NODE_LABELS: dict[str, str] = {
     "assemble_input": "⓪ 입력 수집",
@@ -71,24 +74,35 @@ def _traced(name: str, fn):
     @functools.wraps(fn)
     def wrapper(state):
         trace = _trace_var.get()
+        emit = _emit_var.get()
         t0 = time.perf_counter()
+        if emit is not None:
+            emit({"type": "node_start", "node": name, "label": _NODE_LABELS.get(name, name)})
         try:
             result = fn(state)
         except Exception as exc:
-            if trace is not None:
-                trace.append({
-                    "node": name, "label": _NODE_LABELS.get(name, name),
-                    "ms": int((time.perf_counter() - t0) * 1000),
-                    "summary": f"{type(exc).__name__}: {exc}", "ok": False,
-                })
-            raise
-        if trace is not None:
-            update = result.update if isinstance(result, Command) else (result or {})
-            trace.append({
+            entry = {
+                "type": "node_done",
                 "node": name, "label": _NODE_LABELS.get(name, name),
                 "ms": int((time.perf_counter() - t0) * 1000),
-                "summary": _summarize(name, update or {}), "ok": True,
-            })
+                "summary": f"{type(exc).__name__}: {exc}", "ok": False,
+            }
+            if trace is not None:
+                trace.append({k: v for k, v in entry.items() if k != "type"})
+            if emit is not None:
+                emit(entry)
+            raise
+        update = result.update if isinstance(result, Command) else (result or {})
+        entry = {
+            "type": "node_done",
+            "node": name, "label": _NODE_LABELS.get(name, name),
+            "ms": int((time.perf_counter() - t0) * 1000),
+            "summary": _summarize(name, update or {}), "ok": True,
+        }
+        if trace is not None:
+            trace.append({k: v for k, v in entry.items() if k != "type"})
+        if emit is not None:
+            emit(entry)
         return result
     return wrapper
 
@@ -117,14 +131,21 @@ def build_graph():
 _app = None
 
 
-def run_review_traced(inp: ReviewInput) -> tuple[ReviewOutput, list[dict]]:
-    """run_review + 노드 실행 trace. http_adapter·Streamlit 타임라인용."""
+def run_review_traced(
+    inp: ReviewInput, emit_fn: Callable | None = None
+) -> tuple[ReviewOutput, list[dict]]:
+    """run_review + 노드 실행 trace. http_adapter·Streamlit 타임라인용.
+
+    emit_fn: 노드 이벤트마다 호출되는 콜백(dict) — SSE 스트리밍용.
+             asyncio.to_thread 에서 실행되므로 thread-safe 하게 구현해야 한다.
+    """
     global _app
     if _app is None:
         _app = build_graph()
 
     trace: list[dict] = []
-    token = _trace_var.set(trace)
+    trace_token = _trace_var.set(trace)
+    emit_token = _emit_var.set(emit_fn)
     try:
         state = _app.invoke({
             "diff": inp.diff,
@@ -132,7 +153,8 @@ def run_review_traced(inp: ReviewInput) -> tuple[ReviewOutput, list[dict]]:
             "repo_meta": inp.repo_meta,
         })
     finally:
-        _trace_var.reset(token)
+        _trace_var.reset(trace_token)
+        _emit_var.reset(emit_token)
 
     output = ReviewOutput(
         findings=state.get("findings", []),
