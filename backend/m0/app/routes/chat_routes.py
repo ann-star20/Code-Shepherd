@@ -644,7 +644,13 @@ async def chat(
         elif storage == "gcs":
             results = await _query_gcs(request.question)
         else:
-            results = await _query_pgvector(request.question, session_factory, top_k=request.top_k)
+            results = await _query_pgvector(
+                request.question,
+                session_factory,
+                top_k=request.top_k,
+                user_team=current_user["team"],
+                user_id=current_user["user_id"],
+            )
         raw_chunks.extend(results)
 
     context = "\n\n".join(
