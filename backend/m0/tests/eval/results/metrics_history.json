@@ -262,5 +262,38 @@
     "status_breakdown": {
       "stored": 15
     }
+  },
+  {
+    "label": "v1.1-hitl-quality-kpis",
+    "evaluation_date": "2026-06-14T19:13:41.354162",
+    "saved_at": "2026-06-14T19:14:16.060166",
+    "git_commit_hash": "f009974",
+    "git_commit_full": "f00997454c5419d045b9abe3f365137bddd1af0e",
+    "git_branch": "feature/module0-kms",
+    "git_message": "",
+    "dataset_version": "1.1",
+    "note": "HITL 품질 안전망 KPI 도입 후 첫 공식 측정 — golden v1.1(18문서), 성숙도83.2, CI PASS",
+    "ci_gate": "PASS",
+    "metrics": {
+      "maturity_score": 83.2,
+      "total_documents": 18,
+      "stored": 16,
+      "hitl_pending": 2,
+      "error_or_timeout": 0,
+      "completion_rate": 0.8888888888888888,
+      "hitl_rate": 0.1111111111111111,
+      "error_rate": 0.0,
+      "title_accuracy": 0.875,
+      "category_accuracy": 0.875,
+      "tags_f1": 0.627806719359749,
+      "entity_name_recall": 0.7770520050125314,
+      "entity_partial_score": 0.6835173872180451,
+      "quality_score": 0.895625,
+      "avg_processing_time_ms": 29033
+    },
+    "status_breakdown": {
+      "stored": 16,
+      "hitl_pending": 2
+    }
   }
 ]

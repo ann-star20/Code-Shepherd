@@ -22,6 +22,7 @@ KMS 파이프라인 성숙도 평가 스크립트 v2
 from __future__ import annotations
 
 import argparse
+import io
 import json
 import logging
 import re
@@ -29,6 +30,12 @@ import sys
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Optional
+
+# Windows cp949 환경에서 한글 + 특수문자 출력 깨짐 방지
+if hasattr(sys.stdout, "buffer"):
+    sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding="utf-8", errors="replace")
+if hasattr(sys.stderr, "buffer"):
+    sys.stderr = io.TextIOWrapper(sys.stderr.buffer, encoding="utf-8", errors="replace")
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
 logger = logging.getLogger(__name__)
