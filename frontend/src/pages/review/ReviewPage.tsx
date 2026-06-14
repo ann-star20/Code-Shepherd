@@ -6,6 +6,8 @@
 
 import { useEffect, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
+
+type StreamStatus = "waiting" | "streaming" | "done" | "error";
 import {
   AlertTriangle,
   CheckCircle2,
@@ -48,7 +50,7 @@ interface TraceNode {
   label: string;
   ms: number;
   summary: string;
-  ok: boolean;
+  status: "running" | "done" | "error";
 }
 
 interface ReviewResult {
@@ -122,9 +124,11 @@ function TraceTimeline({ trace }: { trace: TraceNode[] }) {
             {/* 인덱스 뱃지 */}
             <span
               className={`mt-0.5 flex-shrink-0 w-5 h-5 rounded-full flex items-center justify-center text-[10px] font-bold
-                ${step.ok
+                ${step.status === "done"
                   ? "bg-green-100 text-green-700"
-                  : "bg-red-100 text-red-700"
+                  : step.status === "error"
+                  ? "bg-red-100 text-red-700"
+                  : "bg-blue-100 text-blue-700"
                 }`}
             >
               {i}
@@ -145,8 +149,10 @@ function TraceTimeline({ trace }: { trace: TraceNode[] }) {
               </p>
             </div>
 
-            {/* 성공/실패 아이콘 */}
-            {step.ok ? (
+            {/* 성공/실패/진행중 아이콘 */}
+            {step.status === "running" ? (
+              <Loader2 size={14} className="mt-0.5 flex-shrink-0 text-blue-400 animate-spin" />
+            ) : step.status === "done" ? (
               <CheckCircle2 size={14} className="mt-0.5 flex-shrink-0 text-green-500" />
             ) : (
               <Circle size={14} className="mt-0.5 flex-shrink-0 text-red-400" />
@@ -242,18 +248,68 @@ function ReviewDetail({
   owner: string;
   repo: string;
 }) {
-  const {
-    data: review,
-    isLoading,
-    isError,
-  } = useQuery<ReviewResult>({
-    queryKey: ["review", owner, repo, pr.github_pr_number],
-    queryFn: () =>
-      reviewApi.getReview(owner, repo, pr.github_pr_number).then((r) => r.data),
-    enabled: !!owner && !!repo,
-  });
+  const [streamStatus, setStreamStatus] = useState<StreamStatus>("waiting");
+  const [streamTrace, setStreamTrace] = useState<TraceNode[]>([]);
+  const [streamResult, setStreamResult] = useState<ReviewResult | null>(null);
 
-  const header = (
+  useEffect(() => {
+    if (!owner || !repo) return;
+    setStreamStatus("waiting");
+    setStreamTrace([]);
+    setStreamResult(null);
+
+    const url = `/m3-api/review/stream/${owner}/${repo}/${pr.github_pr_number}`;
+    const es = new EventSource(url);
+
+    es.onmessage = (e) => {
+      const data = JSON.parse(e.data as string) as Record<string, unknown>;
+      if (data.type === "waiting") {
+        setStreamStatus("waiting");
+      } else if (data.type === "node_start") {
+        setStreamStatus("streaming");
+        setStreamTrace((prev) => [
+          ...prev,
+          { node: data.node as string, label: data.label as string, ms: 0, summary: "실행 중...", status: "running" },
+        ]);
+      } else if (data.type === "node_done") {
+        setStreamTrace((prev) =>
+          prev.map((t) =>
+            t.node === (data.node as string)
+              ? { ...t, ms: data.ms as number, summary: data.summary as string, status: (data.ok as boolean) ? "done" : "error" }
+              : t
+          )
+        );
+      } else if (data.type === "done") {
+        const r = data.result as Record<string, unknown>;
+        const rawTrace = (r.trace as Array<Record<string, unknown>>) ?? [];
+        const trace: TraceNode[] = rawTrace.map((t) => ({
+          node: t.node as string,
+          label: t.label as string,
+          ms: t.ms as number,
+          summary: t.summary as string,
+          status: (t.ok as boolean) ? "done" : "error",
+        }));
+        setStreamTrace(trace);
+        setStreamResult({
+          found: true,
+          verdict: r.verdict as Verdict,
+          comment: (r.comment as string) ?? "",
+          issues: (r.issues as ReviewIssue[]) ?? [],
+          trace,
+        });
+        setStreamStatus("done");
+        es.close();
+      } else if (data.type === "error") {
+        setStreamStatus("error");
+        es.close();
+      }
+    };
+
+    es.onerror = () => { setStreamStatus("error"); es.close(); };
+    return () => { es.close(); };
+  }, [owner, repo, pr.github_pr_number]);
+
+  const prHeader = (
     <div className="flex items-center justify-between gap-3 mb-4">
       <h2 className="text-base font-semibold text-notion-text">
         PR #{pr.github_pr_number}{" "}
@@ -276,10 +332,10 @@ function ReviewDetail({
     </div>
   );
 
-  if (isError) {
+  if (streamStatus === "error") {
     return (
       <div data-testid="review-detail">
-        {header}
+        {prHeader}
         <div
           data-testid="review-error"
           className="flex items-center gap-2 text-sm text-red-600 bg-red-50 border border-red-200 rounded-lg px-4 py-3"
@@ -291,40 +347,30 @@ function ReviewDetail({
     );
   }
 
-  if (isLoading) {
+  if (streamStatus === "waiting") {
     return (
       <div data-testid="review-detail">
-        {header}
+        {prHeader}
         <div
           data-testid="review-loading"
-          className="flex items-center gap-2 text-sm text-notion-text-secondary px-4 py-8 justify-center"
+          className="flex flex-col items-center gap-3 text-sm text-notion-text-secondary px-4 py-10 border border-dashed border-notion-border rounded-lg"
         >
-          <Loader2 size={15} className="animate-spin" />
-          리뷰 결과 불러오는 중...
+          <Loader2 size={20} className="animate-spin text-blue-400" />
+          <span>GitHub webhook 신호 대기 중...</span>
+          <span className="text-xs text-center">
+            PR을 생성하거나 push하면 실시간으로 분석 흐름이 표시됩니다.
+          </span>
         </div>
       </div>
     );
   }
 
-  if (!review || !review.found) {
-    return (
-      <div data-testid="review-detail">
-        {header}
-        <div
-          data-testid="review-empty"
-          className="text-center text-sm text-notion-text-secondary px-4 py-10 border border-dashed border-notion-border rounded-lg"
-        >
-          아직 분석 결과가 없습니다.
-          <br />
-          PR 분석이 끝나면 판정과 코멘트가 여기에 표시됩니다 (처리 중일 수 있어요).
-        </div>
-      </div>
-    );
-  }
+  // streaming 또는 done 상태
+  const review = streamResult;
 
   return (
     <div data-testid="review-detail" className="space-y-5">
-      {/* verdict + GitHub 링크 */}
+      {/* verdict + GitHub 링크 (done 상태에만 verdict 표시) */}
       <div className="flex items-center justify-between gap-3">
         <h2 className="text-base font-semibold text-notion-text">
           PR #{pr.github_pr_number}{" "}
@@ -333,7 +379,7 @@ function ReviewDetail({
           </span>
         </h2>
         <div className="flex items-center gap-2">
-          {review.verdict && <VerdictBadge verdict={review.verdict} />}
+          {review?.verdict && <VerdictBadge verdict={review.verdict} />}
           {pr.github_pr_url && (
             <a
               href={pr.github_pr_url}
@@ -349,59 +395,68 @@ function ReviewDetail({
         </div>
       </div>
 
-      {/* RAG 파이프라인 타임라인 */}
-      {review.trace && review.trace.length > 0 && (
-        <TraceTimeline trace={review.trace} />
+      {/* 스트리밍 진행 표시 */}
+      {streamStatus === "streaming" && (
+        <div className="flex items-center gap-2 text-xs text-blue-600 px-1">
+          <Loader2 size={13} className="animate-spin" />
+          RAG 파이프라인 실행 중...
+        </div>
       )}
 
-      {/* 이슈 테이블 (행 클릭 → rule_quote + 제안 펼침) */}
-      <div className="bg-white border border-notion-border rounded-lg overflow-hidden">
-        <div className="px-4 py-2.5 border-b border-notion-border">
-          <h3 className="text-sm font-medium text-notion-text">
-            발견된 이슈 {review.issues.length}건
-          </h3>
-        </div>
-        {review.issues.length === 0 ? (
-          <p className="px-4 py-6 text-center text-sm text-notion-text-secondary">
-            지적된 이슈가 없습니다.
-          </p>
-        ) : (
-          <div className="overflow-x-auto">
-            <table
-              data-testid="review-issues"
-              className="w-full text-sm text-left"
-            >
-              <thead className="text-xs text-notion-text-secondary bg-notion-bg-secondary">
-                <tr>
-                  <th className="px-4 py-2 font-medium">심각도</th>
-                  <th className="px-4 py-2 font-medium">위치</th>
-                  <th className="px-4 py-2 font-medium">규칙</th>
-                  <th className="px-4 py-2 font-medium">설명 · 제안</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-notion-border">
-                {review.issues.map((issue, i) => (
-                  <IssueRow key={i} issue={issue} index={i} />
-                ))}
-              </tbody>
-            </table>
-          </div>
-        )}
-      </div>
+      {/* RAG 파이프라인 타임라인 — 노드가 완료될 때마다 실시간으로 추가 */}
+      {streamTrace.length > 0 && <TraceTimeline trace={streamTrace} />}
 
-      {/* LLM 코멘트 본문 */}
-      {review.comment && (
-        <div className="bg-white border border-notion-border rounded-lg">
-          <div className="px-4 py-2.5 border-b border-notion-border">
-            <h3 className="text-sm font-medium text-notion-text">자동 리뷰 코멘트</h3>
+      {/* 분석 완료 후: 이슈 테이블 + 코멘트 */}
+      {review && review.found && (
+        <>
+          <div className="bg-white border border-notion-border rounded-lg overflow-hidden">
+            <div className="px-4 py-2.5 border-b border-notion-border">
+              <h3 className="text-sm font-medium text-notion-text">
+                발견된 이슈 {review.issues.length}건
+              </h3>
+            </div>
+            {review.issues.length === 0 ? (
+              <p className="px-4 py-6 text-center text-sm text-notion-text-secondary">
+                지적된 이슈가 없습니다.
+              </p>
+            ) : (
+              <div className="overflow-x-auto">
+                <table
+                  data-testid="review-issues"
+                  className="w-full text-sm text-left"
+                >
+                  <thead className="text-xs text-notion-text-secondary bg-notion-bg-secondary">
+                    <tr>
+                      <th className="px-4 py-2 font-medium">심각도</th>
+                      <th className="px-4 py-2 font-medium">위치</th>
+                      <th className="px-4 py-2 font-medium">규칙</th>
+                      <th className="px-4 py-2 font-medium">설명 · 제안</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-notion-border">
+                    {review.issues.map((issue, i) => (
+                      <IssueRow key={i} issue={issue} index={i} />
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
           </div>
-          <div
-            data-testid="review-comment"
-            className="px-4 py-3 text-sm text-notion-text whitespace-pre-wrap leading-relaxed"
-          >
-            {review.comment}
-          </div>
-        </div>
+
+          {review.comment && (
+            <div className="bg-white border border-notion-border rounded-lg">
+              <div className="px-4 py-2.5 border-b border-notion-border">
+                <h3 className="text-sm font-medium text-notion-text">자동 리뷰 코멘트</h3>
+              </div>
+              <div
+                data-testid="review-comment"
+                className="px-4 py-3 text-sm text-notion-text whitespace-pre-wrap leading-relaxed"
+              >
+                {review.comment}
+              </div>
+            </div>
+          )}
+        </>
       )}
     </div>
   );
