@@ -266,6 +266,47 @@ def _table_rows_to_markdown(rows_data: list[list[str]]) -> str:
     return "\n".join(md_lines)
 
 
+def _convert_docx_to_pdf_via_libreoffice(file_path: str) -> str:
+    """LibreOffice headless로 DOCX를 PDF로 변환한다.
+
+    반환된 PDF는 임시 디렉토리에 저장된다.
+    사용 후 shutil.rmtree(os.path.dirname(pdf_path)) 로 정리해야 한다.
+
+    Raises:
+        RuntimeError: 변환 실패, 출력 파일 없음, 또는 타임아웃 시
+    """
+    import shutil
+    import subprocess
+    import tempfile
+
+    tmp_dir = tempfile.mkdtemp(prefix="lo_docx2pdf_")
+    try:
+        result = subprocess.run(
+            ["libreoffice", "--headless", "--convert-to", "pdf", "--outdir", tmp_dir, file_path],
+            capture_output=True,
+            timeout=60,
+        )
+        if result.returncode != 0:
+            raise RuntimeError(
+                f"LibreOffice 변환 실패 (exit={result.returncode}): "
+                f"{result.stderr.decode(errors='replace')}"
+            )
+        base_name = os.path.splitext(os.path.basename(file_path))[0]
+        pdf_path = os.path.join(tmp_dir, f"{base_name}.pdf")
+        if not os.path.exists(pdf_path):
+            raise RuntimeError(f"LibreOffice 변환 완료됐지만 PDF 파일 없음: {pdf_path}")
+        return pdf_path
+    except subprocess.TimeoutExpired:
+        shutil.rmtree(tmp_dir, ignore_errors=True)
+        raise RuntimeError("LibreOffice 변환 타임아웃 (60초 초과)")
+    except RuntimeError:
+        shutil.rmtree(tmp_dir, ignore_errors=True)
+        raise
+    except Exception as e:
+        shutil.rmtree(tmp_dir, ignore_errors=True)
+        raise RuntimeError(f"LibreOffice 변환 중 예외: {e}") from e
+
+
 def _extract_textbox_lines_from_para(para_elem) -> list[str]:
     """w:p 요소 안에 중첩된 w:txbxContent에서 텍스트 라인을 추출한다.
 
@@ -876,8 +917,8 @@ PARSER_QUALITY_THRESHOLD = int(os.getenv("PARSER_QUALITY_THRESHOLD", "60"))
 # PDF 파서 시도 순서 (품질 낮을 때 자동 전환)
 _PDF_PARSER_SEQUENCE = ["pymupdf", "unstructured", "gemini_ocr"]
 
-# DOCX 파서 시도 순서 (python_docx 품질 미달 시 unstructured 폴백)
-_DOCX_PARSER_SEQUENCE = ["python_docx", "unstructured"]
+# DOCX 파서 시도 순서 (python_docx 품질 미달 시 LibreOffice PDF 변환 → PyMuPDF → unstructured 폴백)
+_DOCX_PARSER_SEQUENCE = ["python_docx", "libreoffice_pdf", "unstructured"]
 
 
 async def _parse_with_quality_loop(
@@ -912,6 +953,13 @@ async def _parse_with_quality_loop(
                 md, _ = await asyncio.to_thread(_convert_pdf_with_pymupdf, file_path)
             elif parser_name == "python_docx":
                 md = await asyncio.to_thread(_convert_docx_with_python_docx, file_path)
+            elif parser_name == "libreoffice_pdf":
+                import shutil as _shutil
+                pdf_path = await asyncio.to_thread(_convert_docx_to_pdf_via_libreoffice, file_path)
+                try:
+                    md, _ = await asyncio.to_thread(_convert_pdf_with_pymupdf, pdf_path)
+                finally:
+                    _shutil.rmtree(os.path.dirname(pdf_path), ignore_errors=True)
             elif parser_name == "unstructured":
                 md, _ = await asyncio.to_thread(_convert_with_unstructured, file_path, file_type)
             else:  # gemini_ocr
