@@ -11,6 +11,8 @@ dependencies = [
     "uvicorn[standard]>=0.30.0",
     "pydantic>=2.7.0",
     "structlog>=24.2.0",
+    # mini-orchestrator가 m4 /evaluate 호출·PR diff fetch에 사용 (런타임 필수)
+    "httpx>=0.27.0",
     "shared",
 ]
 
@@ -19,6 +21,19 @@ test = [
     "pytest>=8.2.0",
     "pytest-asyncio>=0.23.7",
     "httpx>=0.27.0",
+]
+# 실제 분석 도구 — 미설치 시 analyzer가 graceful skip 한다(빈 결과).
+analysis = [
+    "pylint>=3.2.0",
+    "radon>=6.0.0",
+    "bandit>=1.7.9",
+    "semgrep>=1.79.0; platform_system != 'Windows'",
+]
+# LLM-judge 실제 호출용 — USE_MOCK_LLM=false(통합/데모) 시에만 필요.
+# 미설치여도 mock no-op 경로는 동작(llm_judge가 lazy import).
+llm = [
+    "langchain-anthropic>=0.2.0",
+    "langchain-core>=0.3.0",
 ]
 
 [tool.uv.sources]

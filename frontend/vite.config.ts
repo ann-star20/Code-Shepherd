@@ -65,6 +65,11 @@ export default defineConfig({
         changeOrigin: true,
         rewrite: (path) => path.replace(/^\/m6-api/, ""),
       },
+      "/m2-api": {
+        target: process.env.VITE_M2_PROXY_TARGET ?? "http://m2:8003",
+        changeOrigin: true,
+        rewrite: (path) => path.replace(/^\/m2-api/, ""),
+      },
     },
   },
 });
