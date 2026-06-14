@@ -13,11 +13,12 @@ import {
   CheckCircle2,
   ChevronDown,
   ChevronRight,
-  Circle,
+  ChevronUp,
   ExternalLink,
   GitPullRequest,
   Loader2,
   ShieldAlert,
+  XCircle,
 } from "lucide-react";
 import { reviewApi } from "../../lib/api";
 import { useTeamContext } from "../../contexts/TeamContext";
@@ -109,57 +110,125 @@ function VerdictBadge({ verdict }: { verdict: Verdict }) {
 
 // ── RAG 파이프라인 trace 타임라인 ─────────────────────────────────────────────
 
-function TraceTimeline({ trace }: { trace: TraceNode[] }) {
-  if (!trace || trace.length === 0) return null;
+const PIPELINE_SKELETON_LABELS = [
+  "⓪ 입력 수집",
+  "① 개념 추출",
+  "② KMS 검색",
+  "③ 충분성 판단",
+  "④ 규칙 판정",
+  "⑤ 코멘트 생성",
+];
+
+function TraceTimeline({
+  trace,
+  showSkeleton = false,
+}: {
+  trace: TraceNode[];
+  showSkeleton?: boolean;
+}) {
+  const [open, setOpen] = useState(true);
+
+  if (!showSkeleton && trace.length === 0) return null;
+
+  const doneCount = trace.filter((t) => t.status === "done").length;
+  const total = showSkeleton && trace.length === 0 ? 6 : trace.length;
+
   return (
     <div className="bg-white border border-notion-border rounded-lg overflow-hidden">
-      <div className="px-4 py-2.5 border-b border-notion-border">
+      {/* 헤더: 클릭으로 토글, 완료 카운터 표시 */}
+      <button
+        onClick={() => setOpen((o) => !o)}
+        className="w-full flex items-center justify-between px-4 py-2.5 border-b border-notion-border hover:bg-notion-bg-secondary transition-colors"
+      >
         <h3 className="text-sm font-medium text-notion-text">
           RAG 파이프라인 실행 흐름
         </h3>
-      </div>
-      <ol className="px-4 py-3 space-y-2">
-        {trace.map((step, i) => (
-          <li key={step.node} className="flex items-start gap-3">
-            {/* 인덱스 뱃지 */}
-            <span
-              className={`mt-0.5 flex-shrink-0 w-5 h-5 rounded-full flex items-center justify-center text-[10px] font-bold
-                ${step.status === "done"
-                  ? "bg-green-100 text-green-700"
-                  : step.status === "error"
+        <div className="flex items-center gap-2">
+          <span className="text-xs text-notion-text-secondary">
+            {doneCount} / {total} 완료
+          </span>
+          {open ? (
+            <ChevronUp size={15} className="text-notion-text-secondary" />
+          ) : (
+            <ChevronDown size={15} className="text-notion-text-secondary" />
+          )}
+        </div>
+      </button>
+
+      {open && (
+        <div className="px-4 py-3 space-y-2">
+          {/* waiting 상태: 빈 skeleton 카드 6개 */}
+          {showSkeleton && trace.length === 0
+            ? PIPELINE_SKELETON_LABELS.map((label, i) => (
+                <div
+                  key={i}
+                  className="flex items-center gap-3 px-4 py-3 rounded-lg border border-notion-border bg-notion-bg-secondary"
+                >
+                  <span className="flex-shrink-0 w-7 h-7 rounded-full bg-notion-border flex items-center justify-center text-xs font-bold text-notion-text-secondary">
+                    {i}
+                  </span>
+                  <span className="text-sm text-notion-text-secondary">{label}</span>
+                </div>
+              ))
+            : trace.map((step, i) => {
+                const isRunning = step.status === "running";
+                const isError = step.status === "error";
+                const isDone = step.status === "done";
+                const cardCls = isRunning
+                  ? "bg-blue-50 border-blue-200"
+                  : isError
+                  ? "bg-red-50 border-red-200"
+                  : "bg-white border-notion-border";
+                const badgeCls = isRunning
+                  ? "bg-blue-100 text-blue-700"
+                  : isError
                   ? "bg-red-100 text-red-700"
-                  : "bg-blue-100 text-blue-700"
-                }`}
-            >
-              {i}
-            </span>
+                  : "bg-green-100 text-green-700";
 
-            {/* 라인 커넥터 */}
-            <div className="flex-1 min-w-0">
-              <div className="flex items-center justify-between gap-2 flex-wrap">
-                <span className="text-xs font-medium text-notion-text">
-                  {step.label}
-                </span>
-                <span className="text-[10px] text-notion-text-secondary whitespace-nowrap">
-                  {step.ms > 0 ? `${step.ms}ms` : "—"}
-                </span>
-              </div>
-              <p className="text-[11px] text-notion-text-secondary mt-0.5 truncate">
-                {step.summary}
-              </p>
-            </div>
+                return (
+                  <div
+                    key={step.node}
+                    className={`flex items-start gap-3 px-4 py-3 rounded-lg border ${cardCls}`}
+                  >
+                    {/* 번호 뱃지 */}
+                    <span
+                      className={`mt-0.5 flex-shrink-0 w-7 h-7 rounded-full flex items-center justify-center text-xs font-bold ${badgeCls}`}
+                    >
+                      {i}
+                    </span>
 
-            {/* 성공/실패/진행중 아이콘 */}
-            {step.status === "running" ? (
-              <Loader2 size={14} className="mt-0.5 flex-shrink-0 text-blue-400 animate-spin" />
-            ) : step.status === "done" ? (
-              <CheckCircle2 size={14} className="mt-0.5 flex-shrink-0 text-green-500" />
-            ) : (
-              <Circle size={14} className="mt-0.5 flex-shrink-0 text-red-400" />
-            )}
-          </li>
-        ))}
-      </ol>
+                    {/* 라벨 + summary */}
+                    <div className="flex-1 min-w-0">
+                      <span className="text-sm font-medium text-notion-text">
+                        {step.label}
+                      </span>
+                      {step.summary && step.summary !== "실행 중..." && (
+                        <p className="text-xs text-notion-text-secondary mt-0.5">
+                          {step.summary}
+                        </p>
+                      )}
+                    </div>
+
+                    {/* ms + 상태 아이콘 */}
+                    <div className="flex items-center gap-1.5 flex-shrink-0 mt-0.5">
+                      {step.ms > 0 && (
+                        <span className="text-[10px] text-notion-text-secondary">
+                          {step.ms}ms
+                        </span>
+                      )}
+                      {isRunning && (
+                        <Loader2 size={15} className="text-blue-500 animate-spin" />
+                      )}
+                      {isDone && (
+                        <CheckCircle2 size={15} className="text-green-500" />
+                      )}
+                      {isError && <XCircle size={15} className="text-red-500" />}
+                    </div>
+                  </div>
+                );
+              })}
+        </div>
+      )}
     </div>
   );
 }
@@ -394,7 +463,7 @@ function ReviewDetail({
         </div>
       </div>
 
-      {/* 파이프라인 상태 표시줄 */}
+      {/* 에러 배너 */}
       {streamStatus === "error" && (
         <div
           data-testid="review-error"
@@ -404,28 +473,19 @@ function ReviewDetail({
           리뷰 결과를 불러오지 못했습니다. 잠시 후 다시 시도해 주세요.
         </div>
       )}
-      {streamStatus === "waiting" && (
-        <div
-          data-testid="review-loading"
-          className="flex items-center gap-2 text-sm text-notion-text-secondary px-1"
-        >
-          <Loader2 size={14} className="animate-spin text-blue-400" />
-          <span>파이프라인 시작 대기 중...</span>
-        </div>
-      )}
-      {streamStatus === "streaming" && (
-        <div className="flex items-center gap-2 text-xs text-blue-600 px-1">
-          <Loader2 size={13} className="animate-spin" />
-          RAG 파이프라인 실행 중...
-        </div>
+
+      {/* RAG 파이프라인 타임라인 — waiting: skeleton 6개, streaming/done: 실제 노드 카드 */}
+      {streamStatus !== "error" && (
+        <TraceTimeline
+          trace={streamTrace}
+          showSkeleton={streamStatus === "waiting"}
+        />
       )}
 
-      {/* RAG 파이프라인 타임라인 — 노드가 하나씩 추가됨 */}
-      {streamTrace.length > 0 && <TraceTimeline trace={streamTrace} />}
-
-      {/* 분석 완료 후: 이슈 테이블 + 코멘트 */}
+      {/* 분석 완료 후: 구분선 + 이슈 테이블 + 코멘트 */}
       {streamResult && streamResult.found && (
         <>
+          <hr className="border-notion-border" />
           <div className="bg-white border border-notion-border rounded-lg overflow-hidden">
             <div className="px-4 py-2.5 border-b border-notion-border">
               <h3 className="text-sm font-medium text-notion-text">
