@@ -40,6 +40,16 @@ _KEYWORD_BY_PREFIX = {
     "JS-": "static",
 }
 
+# rule_id → sub_category(m4 RAG 카테고리명). 미매핑 시 rule_id 그대로.
+_SUB_CATEGORY_MAP: dict[str, str] = {
+    # SQL Injection (Bandit)
+    "SEC-B608": "SQL injection",
+    "SEC-B610": "SQL injection",
+    "SEC-B611": "SQL injection",
+    # SQL Injection (Semgrep)
+    "OWASP-A1": "SQL injection",
+}
+
 # 파일 확장자 → programming_language (nullable, 있으면 채움)
 _LANG_BY_EXT = {
     ".py": "python",
@@ -142,7 +152,7 @@ def _issue_params(
         "agent": agent,
         "severity": _SEVERITY_MAP.get(issue.severity, "medium"),
         "keyword": _keyword_for(issue, agent),
-        "sub_category": issue.rule_id,
+        "sub_category": _SUB_CATEGORY_MAP.get(issue.rule_id or "", issue.rule_id),
         "code_context": context,
         "code_snippet": snippet,
         "suggestion": issue.suggestion,
