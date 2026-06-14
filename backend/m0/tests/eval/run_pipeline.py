@@ -202,6 +202,7 @@ def build_output_entry(
     status: str,
     processing_time_ms: float | None = None,
     child_chunk_count: int | None = None,
+    stage5_latency_ms: int | None = None,
 ) -> dict:
     """run_eval.py의 load_results_from_file()이 읽을 수 있는 형식으로 반환한다."""
     return {
@@ -216,6 +217,7 @@ def build_output_entry(
         "status":              status,
         "processing_time_ms":  processing_time_ms,
         "child_chunk_count":   child_chunk_count,
+        "stage5_latency_ms":   stage5_latency_ms,
     }
 
 

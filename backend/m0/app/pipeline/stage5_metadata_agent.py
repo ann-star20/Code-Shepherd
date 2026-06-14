@@ -15,6 +15,7 @@ import json
 import logging
 import os
 import re
+import time
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
@@ -129,9 +130,12 @@ async def stage5_metadata(state: "DocPipelineState") -> dict:
             "status": "failed",
             "error": "Stage5: validated_markdown 없음",
             "current_stage": "stage5_metadata",
+            "stage5_latency_ms": 0,
         }
 
+    t0 = time.perf_counter()
     metadata, entities = await _extract_metadata(markdown, doc_id)
+    stage5_latency_ms = int((time.perf_counter() - t0) * 1000)
     relations = _build_relations(chunks, entities)
 
     logger.info(
@@ -156,6 +160,7 @@ async def stage5_metadata(state: "DocPipelineState") -> dict:
         "category_reasoning": reasoning,
         "category_is_new": is_new,
         "category_alternatives": alternatives,
+        "stage5_latency_ms": stage5_latency_ms,
     }
 
 

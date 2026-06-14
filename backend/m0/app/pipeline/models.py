@@ -119,6 +119,7 @@ class DocPipelineState(TypedDict):
     category_reasoning: Optional[str]
     category_is_new: Optional[bool]
     category_alternatives: Optional[list[str]]
+    stage5_latency_ms: Optional[int]       # Gemini LLM 호출 소요 시간 (ms)
 
     # Stage 5b: 메타데이터 검증 출력
     metadata_valid: Optional[bool]
