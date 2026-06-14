@@ -66,6 +66,12 @@ Thumbs.db
 *.log
 logs/
 
+# 일회성 로컬 테스트 스크립트 및 결과물
+asyncpg_test.py
+db_test.py
+result.txt
+result_all.txt
+
 # Local docs (not for remote)
 prompt.md
 PRD_조직지식관리_온보딩_플랫폼.md
