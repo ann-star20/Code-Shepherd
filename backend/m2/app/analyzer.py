@@ -137,8 +137,25 @@ def _resolve_semgrep() -> list[str] | None:
     return None
 
 
+def _resolve_tool(name: str) -> list[str] | None:
+    """시스템 PATH에서 도구 바이너리를 찾고, 없으면 sys.executable -m 으로 폴백."""
+    exe = shutil.which(name)
+    if exe:
+        return [exe]
+    # venv 외부 시스템 Python으로도 시도
+    try:
+        subprocess.run([sys.executable, "-m", name, "--version"],
+                       capture_output=True, timeout=5)
+        return [sys.executable, "-m", name]
+    except Exception:
+        return None
+
+
 def _run_pylint(paths: list[str], cwd: str) -> list[IssueItem]:
-    out = _run([sys.executable, "-m", "pylint", "--output-format=json", "--score=no", *paths], cwd)
+    cmd = _resolve_tool("pylint")
+    if cmd is None:
+        return []
+    out = _run([*cmd, "--output-format=json", "--score=no", *paths], cwd)
     if not out:
         return []
     try:
@@ -159,7 +176,10 @@ def _run_pylint(paths: list[str], cwd: str) -> list[IssueItem]:
 
 
 def _run_radon(paths: list[str], cwd: str) -> list[IssueItem]:
-    out = _run([sys.executable, "-m", "radon", "cc", "--json", "--min", "B", *paths], cwd)
+    cmd = _resolve_tool("radon")
+    if cmd is None:
+        return []
+    out = _run([*cmd, "cc", "--json", "--min", "B", *paths], cwd)
     if not out:
         return []
     try:
@@ -212,7 +232,10 @@ def _run_eslint(paths: list[str], cwd: str) -> list[IssueItem]:
 
 
 def _run_bandit(paths: list[str], cwd: str) -> list[IssueItem]:
-    out = _run([sys.executable, "-m", "bandit", "-r", "-f", "json", *paths], cwd)
+    cmd = _resolve_tool("bandit")
+    if cmd is None:
+        return []
+    out = _run([*cmd, "-r", "-f", "json", *paths], cwd)
     if out is None:
         return []
     try:

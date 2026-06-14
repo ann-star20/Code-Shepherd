@@ -9,7 +9,8 @@ COPY m2 /app/service
 
 WORKDIR /app/service
 
-RUN uv sync --no-dev --extra analysis
+RUN pip install pylint radon bandit && \
+    uv sync --no-dev --extra analysis
 
 EXPOSE 8003
 

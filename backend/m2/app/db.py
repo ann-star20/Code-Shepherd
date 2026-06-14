@@ -94,13 +94,16 @@ async def insert_scan_execution(
     async with AsyncSessionLocal() as s:
         r = await s.execute(text("""
             INSERT INTO scan_executions (task_id, pr_id, execution_ms, user_id)
-            VALUES (:task_id, :pr_id, :execution_ms, :user_id)
+            VALUES (
+                :task_id, :pr_id, :execution_ms,
+                (SELECT user_id FROM users WHERE github_id = :github_id LIMIT 1)
+            )
             RETURNING id
         """), {
             "task_id": task_id,
             "pr_id": pr_id,
             "execution_ms": execution_ms,
-            "user_id": developer_id,
+            "github_id": developer_id,
         })
         await s.commit()
         return r.scalar()

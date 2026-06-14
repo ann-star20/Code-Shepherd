@@ -111,7 +111,8 @@ async def run_single_agent(payload: M2AnalyzeRequest, agent: Agent) -> AgentResu
     try:
         issues_as_dict = [i.model_dump() for i in issues]
         summary_dict = {"critical": summary.critical, "major": summary.major, "minor": summary.minor}
-        scan_id = await insert_scan_execution(payload.task_id, payload.pr_id, execution_ms)
+        github_id = payload.developer.id if payload.developer else None
+        scan_id = await insert_scan_execution(payload.task_id, payload.pr_id, execution_ms, developer_id=github_id)
         await insert_scan_issues(scan_id, issues_as_dict, agent)
         await insert_scan_summary(scan_id, agent, summary_dict)
     except Exception as exc:  # noqa: BLE001
