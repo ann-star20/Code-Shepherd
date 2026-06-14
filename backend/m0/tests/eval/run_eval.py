@@ -142,6 +142,8 @@ class PipelineResult:
     status: str = "unknown"
     file_type: str = "unknown"
     processing_time_ms: Optional[float] = None
+    child_chunk_count: Optional[int] = None
+    embedded_chunk_count: Optional[int] = None
 
 
 @dataclass
@@ -495,6 +497,38 @@ def compute_neo4j_kpis(all_results: list[PipelineResult]) -> dict:
     }
 
 
+def compute_chunk_embedding_kpis(all_results: list[PipelineResult]) -> dict:
+    """pgVector 임베딩 적재율 proxy KPI — file mode 전용.
+
+    - stored 문서의 child_chunk_count / embedded_chunk_count 합산 비율
+    - embedded_chunk_count 없으면 stored 문서는 proxy: embedded = child_chunk_count
+    - child_chunk_count가 없거나 0인 문서는 집계 제외
+    - chunk 정보 자체가 없으면 rate = None (N/A)
+    """
+    stored = [r for r in all_results if r.status == "stored"]
+    total_child = 0
+    total_embedded = 0
+
+    for r in stored:
+        if r.child_chunk_count is None or r.child_chunk_count == 0:
+            continue
+        total_child += r.child_chunk_count
+        if r.embedded_chunk_count is not None:
+            total_embedded += r.embedded_chunk_count
+        else:
+            # proxy: stored 문서는 임베딩 성공으로 간주
+            total_embedded += r.child_chunk_count
+
+    if total_child == 0:
+        return {"chunk_embedding_rate": None, "total_child_chunks": 0, "total_embedded_chunks": 0}
+
+    return {
+        "chunk_embedding_rate": total_embedded / total_child,
+        "total_child_chunks":   total_child,
+        "total_embedded_chunks": total_embedded,
+    }
+
+
 def compute_maturity_score(automation: dict, accuracy: dict) -> float:
     """
     L1: 파이프라인 성숙도 점수 (0 ~ 100).
@@ -581,6 +615,8 @@ def load_results_from_file(results_path: Path) -> dict[str, PipelineResult]:
             status=item.get("status", "unknown"),
             file_type=item.get("file_type", "unknown"),
             processing_time_ms=item.get("processing_time_ms"),
+            child_chunk_count=item.get("child_chunk_count"),
+            embedded_chunk_count=item.get("embedded_chunk_count"),
         )
         out[item.get("golden_id", r.doc_id)] = r
     return out
@@ -786,6 +822,7 @@ def print_summary(
     automation: dict,
     accuracy: dict,
     neo4j: dict,
+    chunk_emb: dict,
     maturity_score: float,
     ci_result: dict,
 ) -> None:
@@ -821,6 +858,14 @@ def print_summary(
     neo4j_icon = "[OK]" if neo4j_rate >= 0.80 else "[!!]"
     print(f"\n[Neo4j]  stored {neo4j.get('stored_count', 0)}개 기준 (proxy: entities 비어있지 않음)")
     print(f"  {neo4j_icon} neo4j_synced_rate: {neo4j_rate:.1%}  (목표 ≥80%)")
+
+    emb_rate = chunk_emb.get("chunk_embedding_rate")
+    if emb_rate is None:
+        print(f"\n[pgVector]  child_chunk_count 정보 없음 - N/A (Phase 3 재실행 후 확인)")
+    else:
+        emb_icon = "[OK]" if emb_rate >= 0.90 else "[!!]"
+        print(f"\n[pgVector]  child {chunk_emb.get('total_child_chunks', 0)}개 기준 (proxy: stored=embedded)")
+        print(f"  {emb_icon} chunk_embedding_rate: {emb_rate:.1%}  (목표 ≥90%)")
 
     print(f"\n[CI Gate]  {ci_result['overall']}")
     for key, v in ci_result["details"].items():
@@ -875,11 +920,12 @@ def main() -> None:
     accuracy    = compute_accuracy_kpis(eval_results)
     reliability = compute_reliability_kpis(all_results)
     neo4j       = compute_neo4j_kpis(all_results)
+    chunk_emb   = compute_chunk_embedding_kpis(all_results)
     maturity    = compute_maturity_score(automation, accuracy)
     ci_result   = _evaluate_ci_gate(automation, accuracy)
 
     # 출력
-    print_summary(automation, accuracy, neo4j, maturity, ci_result)
+    print_summary(automation, accuracy, neo4j, chunk_emb, maturity, ci_result)
     render_markdown_report(eval_results, automation, accuracy, reliability, maturity, args.output)
     save_json_report(automation, accuracy, reliability, maturity, ci_result, args.json_output)
 
