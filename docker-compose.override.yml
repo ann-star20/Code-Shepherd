@@ -31,3 +31,11 @@ services:
       ENABLE_DB_WRITE: "false"
     # dev3 진입점 — 팀 m3의 app.main:app 대신 src.adapters.http_adapter:app
     command: uvicorn src.adapters.http_adapter:app --host 0.0.0.0 --port 8004
+
+  m0:
+    environment:
+      OLLAMA_BASE_URL: http://host.docker.internal:11434
+
+  m4:
+    environment:
+      OLLAMA_BASE_URL: http://host.docker.internal:11434
