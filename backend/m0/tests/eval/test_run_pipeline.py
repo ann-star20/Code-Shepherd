@@ -181,6 +181,114 @@ async def test_fetch_metadata_returns_title_category_tags():
 
 
 # ---------------------------------------------------------------------------
+# 테스트 6b: fetch_metadata → child_chunk_count (P0 TDD)
+# ---------------------------------------------------------------------------
+
+@pytest.mark.asyncio
+async def test_fetch_metadata_returns_child_chunk_count():
+    """/details 응답의 chunks 목록에서 child 타입 개수를 child_chunk_count로 반환한다."""
+    from tests.eval.run_pipeline import fetch_metadata
+
+    async def mock_get(*args, **kwargs):
+        url = args[0] if args else ""
+        resp = MagicMock()
+        resp.status_code = 200
+        if "/metadata" in url:
+            resp.json.return_value = {
+                "doc_id": "test-doc-id-001",
+                "title": "테스트 문서",
+                "category": "AI_ML",
+                "tags": [],
+                "source": "upload",
+                "file_type": "md",
+            }
+        elif "/entities" in url:
+            resp.json.return_value = {"entities": []}
+        elif "/details" in url:
+            resp.json.return_value = {
+                "quality_score": 0.9,
+                "chunks": [
+                    {"chunk_type": "parent"},
+                    {"chunk_type": "child"},
+                    {"chunk_type": "child"},
+                    {"chunk_type": "child"},
+                ],
+            }
+        else:
+            resp.json.return_value = {}
+        return resp
+
+    with patch("httpx.AsyncClient.get", side_effect=mock_get):
+        meta = await fetch_metadata(
+            base_url="http://localhost:8000",
+            doc_id="test-doc-id-001",
+        )
+
+    assert "child_chunk_count" in meta, (
+        "fetch_metadata()가 'child_chunk_count' 키를 반환하지 않음 — run_pipeline.py 수정 필요"
+    )
+    assert meta["child_chunk_count"] == 3, (
+        f"child 청크 수 불일치: 예상=3, 실제={meta.get('child_chunk_count')}"
+    )
+
+
+@pytest.mark.asyncio
+async def test_fetch_metadata_child_chunk_count_none_when_details_fails():
+    """/details 실패 시 child_chunk_count는 None이어야 한다."""
+    from tests.eval.run_pipeline import fetch_metadata
+
+    async def mock_get(*args, **kwargs):
+        url = args[0] if args else ""
+        resp = MagicMock()
+        if "/metadata" in url:
+            resp.status_code = 200
+            resp.json.return_value = {"title": "T", "category": "C", "tags": []}
+        elif "/entities" in url:
+            resp.status_code = 200
+            resp.json.return_value = {"entities": []}
+        else:
+            resp.status_code = 500
+        return resp
+
+    with patch("httpx.AsyncClient.get", side_effect=mock_get):
+        meta = await fetch_metadata(
+            base_url="http://localhost:8000",
+            doc_id="test-doc-id-001",
+        )
+
+    assert meta.get("child_chunk_count") is None, (
+        f"details 실패 시 child_chunk_count는 None이어야 함. 실제: {meta.get('child_chunk_count')}"
+    )
+
+
+# ---------------------------------------------------------------------------
+# 테스트 6c: build_output_entry → child_chunk_count (P0 TDD)
+# ---------------------------------------------------------------------------
+
+def test_build_output_entry_includes_child_chunk_count():
+    """build_output_entry()가 child_chunk_count를 출력에 포함해야 한다."""
+    from tests.eval.run_pipeline import build_output_entry
+
+    entry = build_output_entry(
+        golden_id="md_01",
+        doc_id="uuid-001",
+        file_type="md",
+        title="테스트",
+        category="AI_ML",
+        tags=[],
+        entities={},
+        quality_score=0.9,
+        status="stored",
+        child_chunk_count=5,
+    )
+
+    assert "child_chunk_count" in entry, (
+        "build_output_entry() 반환값에 'child_chunk_count' 키 없음 — run_pipeline.py 수정 필요"
+    )
+    assert entry["child_chunk_count"] == 5
+
+
+# ---------------------------------------------------------------------------
 # 테스트 7: pipeline_output.json 형식 검증
 # ---------------------------------------------------------------------------
 
