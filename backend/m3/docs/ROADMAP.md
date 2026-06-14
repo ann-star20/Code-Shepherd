@@ -113,6 +113,41 @@ PR 생성됨
 - 1티어의 환각 0% 보장(string-match)이 2티어로 오염되지 않게 분리
 - 추가 시 gap PR(pr_011·012) 라벨이 바뀌므로 게이트1 재확정 필요
 
+## v2-6. m4 curator agent 연동 (review_issue 반복 실수 감지)
+
+### 배경
+m4는 review_issue 테이블을 읽어서 같은 사용자가 같은 keyword+sub_category 실수를
+반복할 때 개인화 설명(curator agent)을 생성한다. 우리가 review_issue에 데이터를
+잘 적재해야 m4가 동작한다.
+
+### m4가 원하는 데이터 패턴
+같은 github_id + 같은 keyword 조합이 3회 이상 반복될 때 curator 트리거.
+
+### 우리가 만들어야 할 시나리오 PR (같은 사용자, 같은 keyword 3회 반복)
+
+| keyword | sub_category | corpus 규칙 | 상태 |
+|---|---|---|---|
+| SQL injection | f-string SQL 조립 | CONV-SQL-008 | ✅ 이미 탐지 가능 |
+| SQL injection | cursor.execute() 오용 | CONV-SQL-008 | ✅ corpus 추가 필요 |
+| SQL injection | ORDER BY 동적 정렬 | 없음 | ❌ corpus 신규 작성 필요 |
+| N+1 쿼리 | ForeignKey 접근 N+1 | CONV-DB-004 | ✅ 이미 탐지 가능 |
+| N+1 쿼리 | ManyToMany 접근 N+1 | CONV-DB-004 | ✅ 이미 탐지 가능 |
+| N+1 쿼리 | 루프 내 개별 save() | CONV-DB-004 | ✅ 이미 탐지 가능 |
+| 시간복잡도 | 이중 반복문 O(N²) | 없음 | ❌ corpus 신규 작성 필요 |
+| 시간복잡도 | 리스트 선형 탐색 O(N) | 없음 | ❌ corpus 신규 작성 필요 |
+| clickjacking | XFrameOptions 미설정 | 없음 | ❌ corpus 신규 작성 필요 |
+
+### 작업 순서
+1. corpus 신규 규칙 작성 (시간복잡도, clickjacking, ORDER BY SQL injection)
+2. make reindex
+3. 같은 사용자로 keyword당 3회 반복 PR 생성 → ENABLE_DB_WRITE=true로 적재
+4. m4 curator agent 트리거 확인
+
+### 전제
+- ENABLE_DB_WRITE=true 로 실제 review_issue 적재
+- 같은 github_id로 PR 3회 반복 (같은 keyword)
+- m4와 연동 테스트는 팀 전체 스택 올린 상태에서
+
 ---
 
 ## 우선순위 요약
