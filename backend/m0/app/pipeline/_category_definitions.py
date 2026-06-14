@@ -15,8 +15,10 @@ from __future__ import annotations
 
 CATEGORY_DEFINITIONS: dict[str, str] = {
     "AI_ML": (
-        "인공지능, 머신러닝, 딥러닝, LLM, RAG, 임베딩, 벡터검색, "
-        "MLOps, 모델 학습·배포·모니터링, 생성형 AI, 프롬프트 엔지니어링"
+        "인공지능, 머신러닝, 딥러닝, LLM, RAG, RAG 시스템 설계, 임베딩, 벡터검색, "
+        "MLOps, 모델 학습·배포·모니터링, 생성형 AI, 프롬프트 엔지니어링, "
+        "검색 품질 평가(Precision@k, Recall@k, NDCG, MRR, SQM), "
+        "파인튜닝, 검색 랭킹, 벡터 인덱스, pgvector, 임베딩 파이프라인"
     ),
     "온보딩": (
         "신입 교육, 온보딩, 입문 가이드, 개발 환경 설정, 취업규칙, "

@@ -147,9 +147,17 @@ async def stage5_metadata(state: "DocPipelineState") -> dict:
         },
     )
 
-    category = metadata.get("category", "기타")
+    raw_category = metadata.get("category", "기타")
     reasoning = metadata.pop("category_reasoning", "")
     alternatives = metadata.pop("category_alternatives", [])
+
+    category = _disambiguate_category(
+        llm_category=raw_category,
+        title=metadata.get("title", ""),
+        tags=metadata.get("tags", []),
+        markdown=markdown,
+    )
+    metadata["category"] = category
     is_new = category not in _cat_defs.VALID_CATEGORIES
 
     return {
@@ -295,6 +303,58 @@ def _extract_h1_title(markdown: str, max_lines: int = 10) -> str | None:
             title = stripped.lstrip("#").strip()
             return _clean_document_title(title) if title else None
     return None
+
+
+# AI/ML 영역 시그널 키워드 — LLM이 다른 카테고리로 오분류할 때 교정 기준으로 사용
+_AI_ML_SIGNAL_KEYWORDS: list[str] = [
+    # RAG / 벡터 검색
+    "rag", "retrieval-augmented generation", "retrieval augmented generation",
+    "벡터검색", "벡터 검색", "벡터db", "벡터 db", "pgvector",
+    "임베딩 파이프라인", "임베딩 설계",
+    # 검색 품질 지표
+    "sqm", "search quality", "검색 품질",
+    "precision@", "recall@", "ndcg", "mrr", "map@",
+    "검색 랭킹", "랭킹 알고리즘", "검색 성능 지표",
+    # ML 학습·배포
+    "mlops", "파인튜닝", "fine-tuning", "모델 학습", "모델 배포",
+    "모델 모니터링", "피처 엔지니어링",
+]
+
+
+def _disambiguate_category(
+    llm_category: str,
+    title: str,
+    tags: list[str],
+    markdown: str,
+) -> str:
+    """
+    LLM이 반환한 카테고리가 부정확할 때 AI/ML 시그널 키워드로 교정한다.
+
+    적용 규칙:
+    1. llm_category 가 VALID_CATEGORIES 에 없으면 잠재적 오분류로 간주
+    2. 제목·태그·본문 앞 500자에 AI_ML 시그널 키워드가 있으면 AI_ML 반환
+    3. 위 조건 모두 해당 없으면 llm_category 그대로 반환
+       (단, VALID_CATEGORIES 에 없는 카테고리는 '기타'로 폴백)
+    """
+    corpus = " ".join([title] + tags + [markdown[:500]]).lower()
+
+    has_ai_ml_signal = any(kw in corpus for kw in _AI_ML_SIGNAL_KEYWORDS)
+
+    if has_ai_ml_signal and llm_category != "AI_ML":
+        logger.info(
+            "Stage 5: 카테고리 교정 AI_ML",
+            extra={"from": llm_category, "title": title},
+        )
+        return "AI_ML"
+
+    if llm_category not in _cat_defs.VALID_CATEGORIES:
+        logger.warning(
+            "Stage 5: 유효하지 않은 카테고리 → '기타' 폴백",
+            extra={"category": llm_category, "title": title},
+        )
+        return "기타"
+
+    return llm_category
 
 
 def _mock_metadata(markdown: str) -> "DocumentMetadata":
