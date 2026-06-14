@@ -198,5 +198,37 @@
     "status_breakdown": {
       "stored": 15
     }
+  },
+  {
+    "label": "docx_libreoffice_parser",
+    "evaluation_date": "2026-06-14T12:51:11.772681",
+    "saved_at": "2026-06-14T13:05:51.077187",
+    "git_commit_hash": "d898e98",
+    "git_commit_full": "d898e987ce0b585fc17027b2f4fec13bd8464b48",
+    "git_branch": "feature/module0-kms",
+    "git_message": "",
+    "dataset_version": "v1",
+    "note": "LibreOffice PDF 우선 파싱 + 텍스트박스(w:txbxContent) 추출 + 표 빈행 필터링",
+    "ci_gate": "FAIL",
+    "metrics": {
+      "maturity_score": 86.5,
+      "total_documents": 15,
+      "stored": 15,
+      "hitl_pending": 0,
+      "error_or_timeout": 0,
+      "completion_rate": 1.0,
+      "hitl_rate": 0.0,
+      "error_rate": 0.0,
+      "title_accuracy": 0.8,
+      "category_accuracy": 0.8666666666666667,
+      "tags_f1": 0.5884810092619424,
+      "entity_name_recall": 0.7515538847117794,
+      "entity_partial_score": 0.6588471177944862,
+      "quality_score": 0.89,
+      "avg_processing_time_ms": 45305
+    },
+    "status_breakdown": {
+      "stored": 15
+    }
   }
 ]
