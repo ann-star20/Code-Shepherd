@@ -115,3 +115,72 @@ def test_missing_tool_is_graceful_skip():
         issues, summary, _ = analyze(PY_DIFF, "static_analysis")
     assert issues == []
     assert summary.major == 0
+
+
+# ── 코드 스니펫 / 함수 / 프레임워크 추출 ──
+
+FW_DIFF = """diff --git a/src/app.py b/src/app.py
+--- a/src/app.py
++++ b/src/app.py
+@@ -0,0 +1,5 @@
++from fastapi import FastAPI
++
++def create_app():
++    app = FastAPI()
++    return app
+"""
+
+
+def test_code_for_issue_extracts_snippet_and_context():
+    code_map = analyzer.extract_code_map(FW_DIFF)
+    snippet, context = analyzer.code_for_issue(code_map, "src/app.py", 4)
+    assert snippet.strip() == "app = FastAPI()"
+    assert "def create_app():" in context  # 전후 문맥 포함
+
+
+def test_code_for_issue_out_of_range_is_none():
+    code_map = analyzer.extract_code_map(FW_DIFF)
+    assert analyzer.code_for_issue(code_map, "src/app.py", 999) == (None, None)
+    assert analyzer.code_for_issue(code_map, "nope.py", 1) == (None, None)
+
+
+def test_function_at_finds_enclosing_def():
+    code_map = analyzer.extract_code_map(FW_DIFF)
+    assert analyzer.function_at(code_map, "src/app.py", 4) == "create_app"
+    assert analyzer.function_at(code_map, "src/app.py", 3) == "create_app"  # def 라인 자신
+
+
+def test_function_at_module_level_is_none():
+    code_map = analyzer.extract_code_map(FW_DIFF)
+    assert analyzer.function_at(code_map, "src/app.py", 1) is None  # import 라인
+
+
+def test_framework_in_detects_fastapi():
+    code_map = analyzer.extract_code_map(FW_DIFF)
+    assert analyzer.framework_in(code_map, "src/app.py") == "FastAPI"
+
+
+def test_pylint_suggestion_maps_to_korean():
+    assert analyzer._pylint_suggestion("missing-module-docstring", "Missing module docstring") == (
+        "모듈 최상단에 docstring을 추가하세요."
+    )
+    # 미등록 심볼 → 한글 폴백 문장
+    fb = analyzer._pylint_suggestion("some-unknown-rule", "Some message")
+    assert fb.endswith("수정하세요.")
+    assert "pylint:" not in fb
+
+
+def test_bandit_suggestion_maps_to_korean():
+    assert "MD5" in analyzer._bandit_suggestion("B324", "Use of weak MD5 hash")
+    assert "파라미터 바인딩" in analyzer._bandit_suggestion("B608", "sql")
+    # 미등록 → 한글 폴백
+    fb = analyzer._bandit_suggestion("B999", "Some risk")
+    assert fb.endswith("수정하세요.")
+
+
+def test_semgrep_suggestion_maps_to_korean():
+    assert "SQL" in analyzer._semgrep_suggestion("python.lang.security.sql-injection", "")
+    assert "XSS" in analyzer._semgrep_suggestion("rules.xss.reflected", "")
+    # 미매칭 → 한글 폴백
+    fb = analyzer._semgrep_suggestion("some.unknown.rule", "Generic finding")
+    assert fb.endswith("수정하세요.")

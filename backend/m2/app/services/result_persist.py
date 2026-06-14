@@ -20,6 +20,7 @@ from pathlib import Path
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncEngine, async_sessionmaker, create_async_engine
 
+from app import analyzer
 from app.contract import AgentResult
 from shared.contracts import IssueItem
 
@@ -58,9 +59,16 @@ _INSERT_SQL = text(
     )
     VALUES (
         :id,
-        (SELECT pr.id FROM pull_requests pr
-         JOIN users u ON u.user_id = pr.user_id
-         WHERE u.github_id = :github_id ORDER BY pr.submitted_at DESC LIMIT 1),
+        COALESCE(
+            (SELECT pr.id FROM pull_requests pr
+             JOIN users u ON u.user_id = pr.user_id
+             WHERE u.github_id = :github_id
+             AND pr.github_pr_number = :pr_number
+             LIMIT 1),
+            (SELECT pr.id FROM pull_requests pr
+             JOIN users u ON u.user_id = pr.user_id
+             WHERE u.github_id = :github_id ORDER BY pr.submitted_at DESC LIMIT 1)
+        ),
         (SELECT user_id FROM users WHERE github_id = :github_id),
         :github_id, :agent, :severity, :keyword, :sub_category, :code_context,
         :code_snippet, :suggestion, :programming_language,
@@ -112,22 +120,37 @@ def _language_for(issue: IssueItem) -> str | None:
     return _LANG_BY_EXT.get(Path(issue.file).suffix.lower())
 
 
-def _issue_params(issue: IssueItem, agent: str, github_id: str) -> dict:
-    """IssueItem → INSERT 바인드 파라미터(m2가 못 만드는 컬럼은 None)."""
+def _issue_params(
+    issue: IssueItem,
+    agent: str,
+    github_id: str,
+    code_map: dict[str, list[str]] | None = None,
+    pr_number: str | None = None,
+) -> dict:
+    """IssueItem → INSERT 바인드 파라미터(m2가 못 만드는 컬럼은 None).
+
+    code_snippet/code_context/name_of_function/framework는 pr_diff post-image에서
+    이슈 라인 기준으로 추출한다(code_map 없으면 해당 컬럼은 None).
+    """
+    code_map = code_map or {}
+    snippet, context = analyzer.code_for_issue(code_map, issue.file, issue.line)
+    framework = analyzer.framework_in(code_map, issue.file)
     return {
         "id": str(uuid.uuid4()),
         "github_id": github_id,
+        "pr_number": int(pr_number) if pr_number and str(pr_number).isdigit() else None,
         "agent": agent,
         "severity": _SEVERITY_MAP.get(issue.severity, "medium"),
         "keyword": _keyword_for(issue, agent),
         "sub_category": issue.rule_id,
-        "code_context": None,
-        "code_snippet": None,
+        "code_context": context,
+        "code_snippet": snippet,
         "suggestion": issue.suggestion,
         "programming_language": _language_for(issue),
-        "framework": None,
-        "framework_version": None,
-        "name_of_function": None,
+        "framework": framework,
+        # diff에 package.json/requirements.txt/pyproject.toml이 포함되면 거기서 추출
+        "framework_version": analyzer.framework_version_in(code_map, framework),
+        "name_of_function": analyzer.function_at(code_map, issue.file, issue.line),
     }
 
 
@@ -135,10 +158,13 @@ async def persist_issues(
     result: AgentResult | None,
     github_id: str | None,
     factory: async_sessionmaker | None = None,
+    pr_diff: str | None = None,
+    pr_id: str | None = None,
 ) -> int:
     """AgentResult의 이슈들을 review_issue에 INSERT. 삽입한 행 수 반환.
 
     비활성·github_id 없음·이슈 없음·DB 오류 시 0(graceful, 비중단).
+    `pr_diff`를 주면 이슈 라인 기준으로 code_snippet/code_context를 채운다.
     `factory`를 주입하면 그것을 사용한다(테스트용).
     """
     if result is None or not result.issues:
@@ -152,7 +178,8 @@ async def persist_issues(
     if factory is None:
         return 0
 
-    params = [_issue_params(i, result.agent, github_id) for i in result.issues]
+    code_map = analyzer.extract_code_map(pr_diff) if pr_diff else {}
+    params = [_issue_params(i, result.agent, github_id, code_map, pr_id) for i in result.issues]
     try:
         async with factory() as session:
             for p in params:

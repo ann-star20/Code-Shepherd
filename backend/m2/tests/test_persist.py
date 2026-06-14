@@ -129,3 +129,93 @@ async def test_disabled_path_does_not_touch_db(monkeypatch):
 def test_severity_map_targets_are_valid_check_values():
     # review_issue CHECK: critical/high/medium/low
     assert set(result_persist._SEVERITY_MAP.values()) <= {"critical", "high", "medium", "low"}
+
+
+# ── code_snippet / code_context / name_of_function / framework 채우기 ──
+
+_FW_DIFF = """diff --git a/src/app.py b/src/app.py
+--- a/src/app.py
++++ b/src/app.py
+@@ -0,0 +1,5 @@
++from fastapi import FastAPI
++
++def create_app():
++    app = FastAPI()
++    return app
+"""
+
+
+_FW_DIFF_WITH_REQS = _FW_DIFF + """diff --git a/requirements.txt b/requirements.txt
+--- a/requirements.txt
++++ b/requirements.txt
+@@ -0,0 +1,2 @@
++fastapi==0.110.1
++uvicorn>=0.29
+"""
+
+_PKG_JSON_DIFF = """diff --git a/package.json b/package.json
+--- a/package.json
++++ b/package.json
+@@ -0,0 +1,6 @@
++{
++  "dependencies": {
++    "react": "^18.2.0",
++    "next": "14.1.0"
++  }
++}
+diff --git a/src/Btn.tsx b/src/Btn.tsx
+--- a/src/Btn.tsx
++++ b/src/Btn.tsx
+@@ -0,0 +1,2 @@
++import React from 'react'
++export const Btn = () => <button/>
+"""
+
+
+@pytest.mark.asyncio
+async def test_persist_fills_code_columns_from_diff():
+    issues = [IssueItem(severity="Major", message="x", rule_id="SA-W", file="src/app.py", line=4)]
+    sink: list = []
+    n = await persist_issues(
+        _result("static_analysis", issues), "alice", factory=_factory(sink), pr_diff=_FW_DIFF
+    )
+    assert n == 1
+    row = sink[0]
+    assert row["code_snippet"].strip() == "app = FastAPI()"
+    assert "def create_app():" in row["code_context"]
+    assert row["name_of_function"] == "create_app"
+    assert row["framework"] == "FastAPI"
+    assert row["framework_version"] is None  # diff에 매니페스트 없음 → None
+
+
+@pytest.mark.asyncio
+async def test_framework_version_from_requirements():
+    issues = [IssueItem(severity="Major", message="x", rule_id="SA-W", file="src/app.py", line=4)]
+    sink: list = []
+    await persist_issues(
+        _result("static_analysis", issues), "alice",
+        factory=_factory(sink), pr_diff=_FW_DIFF_WITH_REQS,
+    )
+    assert sink[0]["framework"] == "FastAPI"
+    assert sink[0]["framework_version"] == "0.110.1"  # requirements.txt에서 추출
+
+
+@pytest.mark.asyncio
+async def test_framework_version_from_package_json():
+    issues = [IssueItem(severity="Minor", message="x", rule_id="JS-W", file="src/Btn.tsx", line=2)]
+    sink: list = []
+    await persist_issues(
+        _result("static_analysis", issues), "alice",
+        factory=_factory(sink), pr_diff=_PKG_JSON_DIFF,
+    )
+    assert sink[0]["framework"] == "React"
+    assert sink[0]["framework_version"] == "18.2.0"  # ^ 제거
+
+
+def test_issue_params_without_code_map_leaves_columns_none():
+    issue = IssueItem(severity="Minor", message="m", rule_id="SA-X", file="a.py", line=1)
+    p = _issue_params(issue, "static_analysis", "u")
+    assert p["code_snippet"] is None
+    assert p["code_context"] is None
+    assert p["name_of_function"] is None
+    assert p["framework"] is None

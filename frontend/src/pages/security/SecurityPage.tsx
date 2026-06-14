@@ -97,7 +97,18 @@ function formatDate(iso: string) {
   return Number.isNaN(d.getTime()) ? iso : d.toLocaleDateString();
 }
 
-const USE_DUMMY = true; // 더미 모드: true=더미데이터, false=실API
+const USE_DUMMY = false; // 더미 모드: true=더미데이터, false=실API
+const M2_URL = "/m2-api"; // m2 직접 호출 (프록시)
+
+// mixed_case 케이스 목록 (pr_id 101~106)
+const MIXED_CASES: TeamPR[] = [
+  { id: "mixed_case_01", author_login: "wooya27", github_pr_number: 101, github_pr_url: null, status: "reviewed", submitted_at: "2026-06-14T00:00:00Z" },
+  { id: "mixed_case_02", author_login: "wooya27", github_pr_number: 102, github_pr_url: null, status: "reviewed", submitted_at: "2026-06-14T00:01:00Z" },
+  { id: "mixed_case_03", author_login: "wooya27", github_pr_number: 103, github_pr_url: null, status: "reviewed", submitted_at: "2026-06-14T00:02:00Z" },
+  { id: "mixed_case_04", author_login: "wooya27", github_pr_number: 104, github_pr_url: null, status: "reviewed", submitted_at: "2026-06-14T00:03:00Z" },
+  { id: "mixed_case_05", author_login: "wooya27", github_pr_number: 105, github_pr_url: null, status: "reviewed", submitted_at: "2026-06-14T00:04:00Z" },
+  { id: "mixed_case_06", author_login: "wooya27", github_pr_number: 106, github_pr_url: null, status: "reviewed", submitted_at: "2026-06-14T00:05:00Z" },
+];
 
 export default function SecurityPage() {
   const { currentTeamId, currentTeam, teamsLoading } = useTeamContext();
@@ -109,8 +120,8 @@ export default function SecurityPage() {
       queryKey: ["security-prs", currentTeamId],
       queryFn: USE_DUMMY
         ? () => Promise.resolve({ prs: DUMMY_PRS })
-        : () => reviewApi.getTeamPRs(currentTeamId as string).then(r => r.data),
-      enabled: USE_DUMMY || !!currentTeamId,
+        : () => Promise.resolve({ prs: MIXED_CASES }),
+      enabled: true,
     });
 
   const prs = prsData?.prs ?? [];
@@ -122,7 +133,7 @@ export default function SecurityPage() {
       queryKey: ["security-review", owner, repo, selectedPr?.id],
       queryFn: USE_DUMMY
         ? () => Promise.resolve(DUMMY_REVIEWS[selectedPr!.id] ?? { found: false, verdict: null, comment: "", issues: [] })
-        : () => reviewApi.getReview(owner, repo, selectedPr!.github_pr_number).then(r => r.data),
+        : () => fetch(`${M2_URL}/scan-results/${selectedPr!.github_pr_number}`).then(r => r.json()),
       enabled: !!selectedPr,
     });
 

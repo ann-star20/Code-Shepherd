@@ -157,8 +157,12 @@ async def run_m2_orchestration(req: M2OrchestrateRequest) -> M2OrchestrateRespon
 
     # review_issue 영속화 (기본 비활성 — opt-in, graceful)
     github_id = req.developer.id if req.developer else None
-    persisted = await result_persist.persist_issues(static_result, github_id)
-    persisted += await result_persist.persist_issues(security_result, github_id)
+    persisted = await result_persist.persist_issues(
+        static_result, github_id, pr_diff=req.pr_diff, pr_id=req.pr_id
+    )
+    persisted += await result_persist.persist_issues(
+        security_result, github_id, pr_diff=req.pr_diff, pr_id=req.pr_id
+    )
 
     # m4 /evaluate (graceful)
     m4_req = result_mapper.build_m4_request(
