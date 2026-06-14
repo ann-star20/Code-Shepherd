@@ -161,7 +161,7 @@ async def _save_document(
                 file_path, markdown_path, storage_synced,
                 neo4j_synced, upload_status, created_at,
                 parser_used, doc_complexity, parsing_time_ms, original_filename,
-                quality_score,
+                quality_score, metadata_score,
                 department_id, user_id, permission_level, visibility,
                 file_hash
             )
@@ -169,7 +169,7 @@ async def _save_document(
                 :doc_id, :title, :source, :category, :file_type,
                 :file_path, :markdown_path, TRUE, FALSE, 'processing', NOW(),
                 :parser_used, :doc_complexity, :parsing_time_ms, :original_filename,
-                :quality_score,
+                :quality_score, :metadata_score,
                 :department_id, :user_id, :permission_level, :visibility,
                 :file_hash
             )
@@ -187,6 +187,7 @@ async def _save_document(
                 parsing_time_ms   = COALESCE(EXCLUDED.parsing_time_ms, documents.parsing_time_ms),
                 original_filename = COALESCE(EXCLUDED.original_filename, documents.original_filename),
                 quality_score     = COALESCE(EXCLUDED.quality_score, documents.quality_score),
+                metadata_score    = COALESCE(EXCLUDED.metadata_score, documents.metadata_score),
                 department_id     = COALESCE(EXCLUDED.department_id, documents.department_id),
                 user_id           = COALESCE(EXCLUDED.user_id, documents.user_id),
                 permission_level  = EXCLUDED.permission_level,
@@ -206,6 +207,7 @@ async def _save_document(
             "parsing_time_ms": state.get("parsing_time_ms"),
             "original_filename": state.get("original_filename"),
             "quality_score": state.get("quality_score"),
+            "metadata_score": state.get("metadata_score"),
             "department_id": state.get("department_id"),
             "user_id": state.get("user_id"),
             "permission_level": state.get("permission_level") or "public",
