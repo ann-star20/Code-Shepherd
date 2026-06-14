@@ -92,7 +92,7 @@
     "severity": "high",
     "domains": ["security"],
     "description_ko": "크로스 사이트 요청 위조(CSRF)는 인증된 사용자의 브라우저를 통해 공격자가 원하는 요청을 서버에 강제로 전송하는 공격. 계정 설정 변경, 결제 등을 피해자 모르게 실행한다.",
-    "aliases": ["Cross-Site Request Forgery", "XSRF", "Sea Surf", "CrossSiteRequestForgery", "CSRFAttack", "CrossSiteRequestForgeryAttack", "CrossSiteRequestForgeryVulnerability", "크로스 사이트 요청 위조", "CSRF Attack"],
+    "aliases": ["Cross-Site Request Forgery", "XSRF", "Sea Surf", "CrossSiteRequestForgery", "CSRFAttack", "CrossSiteRequestForgeryAttack", "CrossSiteRequestForgeryVulnerability", "크로스 사이트 요청 위조", "CSRF Attack",  "CSRFProtection"],
     "root_cause": "missing_request_origin_verification",
     "affected_components": ["form_submission_handler", "state_changing_api", "session_management"],
     "mechanism": [
