@@ -207,6 +207,16 @@ _KO_EN_SYNONYMS: dict[str, str] = {
     # 그래프DB 계열
     "그래프db":         "graphdatabase",
     "그래프데이터베이스": "graphdatabase",
+    # HR / 인사 계열 — docx_02 취업규칙 태그 매칭
+    "hr":               "hrmanagement",
+    "인사":             "hrmanagement",
+    "인사정책":         "hrmanagement",
+    "인사규정":         "hrmanagement",
+    "인사관리":         "hrmanagement",
+    # 임금 / 급여 계열
+    "임금":             "salary",
+    "급여":             "salary",
+    "급여정책":         "salary",
 }
 
 
