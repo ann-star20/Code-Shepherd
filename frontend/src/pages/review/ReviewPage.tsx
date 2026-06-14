@@ -261,25 +261,28 @@ function ReviewDetail({
     const url = `/m3-api/review/stream/${owner}/${repo}/${pr.github_pr_number}`;
     const es = new EventSource(url);
 
-    es.onmessage = (e) => {
-      const data = JSON.parse(e.data as string) as Record<string, unknown>;
-      if (data.type === "waiting") {
-        setStreamStatus("waiting");
-      } else if (data.type === "node_start") {
+    // Events are queued and drained at 180ms intervals so nodes always
+    // appear one-by-one even when the backend sends them all at once (cached result).
+    const queue: Array<Record<string, unknown>> = [];
+    let drainTimer: ReturnType<typeof setTimeout> | null = null;
+    let hasLiveNodes = false;
+
+    const applyEvent = (data: Record<string, unknown>) => {
+      if (data.type === "node_start") {
         setStreamStatus("streaming");
         setStreamTrace((prev) => [
           ...prev,
-          { node: data.node as string, label: data.label as string, ms: 0, summary: "실행 중...", status: "running" },
+          { node: data.node as string, label: data.label as string, ms: 0, summary: "실행 중...", status: "running" as const },
         ]);
       } else if (data.type === "node_done") {
         setStreamTrace((prev) =>
           prev.map((t) =>
             t.node === (data.node as string)
-              ? { ...t, ms: data.ms as number, summary: data.summary as string, status: (data.ok as boolean) ? "done" : "error" }
+              ? { ...t, ms: data.ms as number, summary: data.summary as string, status: (data.ok as boolean) ? "done" as const : "error" as const }
               : t
           )
         );
-      } else if (data.type === "done") {
+      } else if (data.type === "_finish") {
         const r = data.result as Record<string, unknown>;
         const rawTrace = (r.trace as Array<Record<string, unknown>>) ?? [];
         const trace: TraceNode[] = rawTrace.map((t) => ({
@@ -287,9 +290,8 @@ function ReviewDetail({
           label: t.label as string,
           ms: t.ms as number,
           summary: t.summary as string,
-          status: (t.ok as boolean) ? "done" : "error",
+          status: (t.ok as boolean) ? "done" as const : "error" as const,
         }));
-        setStreamTrace(trace);
         setStreamResult({
           found: true,
           verdict: r.verdict as Verdict,
@@ -305,72 +307,69 @@ function ReviewDetail({
       }
     };
 
+    const drainQueue = () => {
+      drainTimer = null;
+      if (queue.length === 0) return;
+      applyEvent(queue.shift()!);
+      if (queue.length > 0) {
+        drainTimer = setTimeout(drainQueue, 180);
+      }
+    };
+
+    const scheduleIfNeeded = () => {
+      if (drainTimer === null) {
+        drainTimer = setTimeout(drainQueue, 50);
+      }
+    };
+
+    es.onmessage = (e) => {
+      const data = JSON.parse(e.data as string) as Record<string, unknown>;
+
+      if (data.type === "waiting") {
+        setStreamStatus("waiting");
+        return;
+      }
+      if (data.type === "node_start") {
+        hasLiveNodes = true;
+        queue.push(data);
+        scheduleIfNeeded();
+        return;
+      }
+      if (data.type === "node_done") {
+        queue.push(data);
+        scheduleIfNeeded();
+        return;
+      }
+      if (data.type === "done") {
+        const r = data.result as Record<string, unknown>;
+        const rawTrace = (r.trace as Array<Record<string, unknown>>) ?? [];
+        if (!hasLiveNodes && rawTrace.length > 0) {
+          // Cached: decompose trace into synthetic animated events
+          for (const t of rawTrace) {
+            queue.push({ type: "node_start", node: t.node, label: t.label });
+            queue.push({ type: "node_done", node: t.node, label: t.label, ms: t.ms, summary: t.summary, ok: t.ok });
+          }
+        }
+        queue.push({ type: "_finish", result: r });
+        scheduleIfNeeded();
+        return;
+      }
+      if (data.type === "error") {
+        queue.push(data);
+        scheduleIfNeeded();
+      }
+    };
+
     es.onerror = () => { setStreamStatus("error"); es.close(); };
-    return () => { es.close(); };
+    return () => {
+      es.close();
+      if (drainTimer !== null) clearTimeout(drainTimer);
+    };
   }, [owner, repo, pr.github_pr_number]);
-
-  const prHeader = (
-    <div className="flex items-center justify-between gap-3 mb-4">
-      <h2 className="text-base font-semibold text-notion-text">
-        PR #{pr.github_pr_number}{" "}
-        <span className="font-normal text-notion-text-secondary">
-          · @{pr.author_login}
-        </span>
-      </h2>
-      {pr.github_pr_url && (
-        <a
-          href={pr.github_pr_url}
-          target="_blank"
-          rel="noopener noreferrer"
-          data-testid="review-github-link"
-          className="inline-flex items-center gap-1 text-xs text-notion-text-secondary hover:text-notion-text"
-        >
-          <ExternalLink size={13} />
-          GitHub에서 보기
-        </a>
-      )}
-    </div>
-  );
-
-  if (streamStatus === "error") {
-    return (
-      <div data-testid="review-detail">
-        {prHeader}
-        <div
-          data-testid="review-error"
-          className="flex items-center gap-2 text-sm text-red-600 bg-red-50 border border-red-200 rounded-lg px-4 py-3"
-        >
-          <AlertTriangle size={15} />
-          리뷰 결과를 불러오지 못했습니다. 잠시 후 다시 시도해 주세요.
-        </div>
-      </div>
-    );
-  }
-
-  if (streamStatus === "waiting") {
-    return (
-      <div data-testid="review-detail">
-        {prHeader}
-        <div
-          data-testid="review-loading"
-          className="flex flex-col items-center gap-3 text-sm text-notion-text-secondary px-4 py-10 border border-dashed border-notion-border rounded-lg"
-        >
-          <Loader2 size={20} className="animate-spin text-blue-400" />
-          <span>GitHub webhook 신호 대기 중...</span>
-          <span className="text-xs text-center">
-            PR을 생성하거나 push하면 실시간으로 분석 흐름이 표시됩니다.
-          </span>
-        </div>
-      </div>
-    );
-  }
-
-  // streaming 또는 done 상태
-  const review = streamResult;
 
   return (
     <div data-testid="review-detail" className="space-y-5">
-      {/* verdict + GitHub 링크 (done 상태에만 verdict 표시) */}
+      {/* PR 헤더 — 상태에 관계없이 항상 표시 */}
       <div className="flex items-center justify-between gap-3">
         <h2 className="text-base font-semibold text-notion-text">
           PR #{pr.github_pr_number}{" "}
@@ -379,7 +378,7 @@ function ReviewDetail({
           </span>
         </h2>
         <div className="flex items-center gap-2">
-          {review?.verdict && <VerdictBadge verdict={review.verdict} />}
+          {streamResult?.verdict && <VerdictBadge verdict={streamResult.verdict} />}
           {pr.github_pr_url && (
             <a
               href={pr.github_pr_url}
@@ -395,7 +394,25 @@ function ReviewDetail({
         </div>
       </div>
 
-      {/* 스트리밍 진행 표시 */}
+      {/* 파이프라인 상태 표시줄 */}
+      {streamStatus === "error" && (
+        <div
+          data-testid="review-error"
+          className="flex items-center gap-2 text-sm text-red-600 bg-red-50 border border-red-200 rounded-lg px-4 py-3"
+        >
+          <AlertTriangle size={15} />
+          리뷰 결과를 불러오지 못했습니다. 잠시 후 다시 시도해 주세요.
+        </div>
+      )}
+      {streamStatus === "waiting" && (
+        <div
+          data-testid="review-loading"
+          className="flex items-center gap-2 text-sm text-notion-text-secondary px-1"
+        >
+          <Loader2 size={14} className="animate-spin text-blue-400" />
+          <span>파이프라인 시작 대기 중...</span>
+        </div>
+      )}
       {streamStatus === "streaming" && (
         <div className="flex items-center gap-2 text-xs text-blue-600 px-1">
           <Loader2 size={13} className="animate-spin" />
@@ -403,19 +420,19 @@ function ReviewDetail({
         </div>
       )}
 
-      {/* RAG 파이프라인 타임라인 — 노드가 완료될 때마다 실시간으로 추가 */}
+      {/* RAG 파이프라인 타임라인 — 노드가 하나씩 추가됨 */}
       {streamTrace.length > 0 && <TraceTimeline trace={streamTrace} />}
 
       {/* 분석 완료 후: 이슈 테이블 + 코멘트 */}
-      {review && review.found && (
+      {streamResult && streamResult.found && (
         <>
           <div className="bg-white border border-notion-border rounded-lg overflow-hidden">
             <div className="px-4 py-2.5 border-b border-notion-border">
               <h3 className="text-sm font-medium text-notion-text">
-                발견된 이슈 {review.issues.length}건
+                발견된 이슈 {streamResult.issues.length}건
               </h3>
             </div>
-            {review.issues.length === 0 ? (
+            {streamResult.issues.length === 0 ? (
               <p className="px-4 py-6 text-center text-sm text-notion-text-secondary">
                 지적된 이슈가 없습니다.
               </p>
@@ -434,7 +451,7 @@ function ReviewDetail({
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-notion-border">
-                    {review.issues.map((issue, i) => (
+                    {streamResult.issues.map((issue, i) => (
                       <IssueRow key={i} issue={issue} index={i} />
                     ))}
                   </tbody>
@@ -443,7 +460,7 @@ function ReviewDetail({
             )}
           </div>
 
-          {review.comment && (
+          {streamResult.comment && (
             <div className="bg-white border border-notion-border rounded-lg">
               <div className="px-4 py-2.5 border-b border-notion-border">
                 <h3 className="text-sm font-medium text-notion-text">자동 리뷰 코멘트</h3>
@@ -452,7 +469,7 @@ function ReviewDetail({
                 data-testid="review-comment"
                 className="px-4 py-3 text-sm text-notion-text whitespace-pre-wrap leading-relaxed"
               >
-                {review.comment}
+                {streamResult.comment}
               </div>
             </div>
           )}
