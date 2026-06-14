@@ -472,7 +472,7 @@ async def search_kms(
                 LEFT JOIN chunks c ON ce.chunk_id = c.chunk_id
                 LEFT JOIN documents d ON c.doc_id = d.doc_id
                 WHERE d.upload_status IN ('stored', 'stored_partial')
-                AND (CAST(:category AS text) IS NULL OR ce.metadata->>'category' = CAST(:category AS text))
+                AND (:category IS NULL OR ce.metadata->>'category' = :category)
                 ORDER BY ce.embedding <=> CAST(:embedding AS vector)
                 LIMIT :limit
             """),
