@@ -162,6 +162,29 @@ async def stage5b_metadata_validate(state: "DocPipelineState") -> dict:
             "category_alternatives": category_alternatives,
         }
 
+    # (c) Gemini 불확실성 신호: 대안 카테고리 ≥ 2 (Phase 2)
+    # 키워드 리스트에 없는 신규 도메인도 Gemini의 불확실성 신호로 탐지
+    if len(category_alternatives) >= 2:
+        issues = [
+            f"Gemini 불확실성 신호: 대안 카테고리 {len(category_alternatives)}개 제시",
+            f"선택 카테고리: '{category}', 대안: {', '.join(category_alternatives[:3])}",
+            f"AI 추론 근거: {category_reasoning}" if category_reasoning else "근거 없음",
+        ]
+        logger.warning(
+            "Stage 5b: Gemini 대안 카테고리 ≥ 2 — 불확실성 HITL 등록",
+            extra={"doc_id": doc_id, "alternatives": category_alternatives, "category": category},
+        )
+        return {
+            "metadata_valid":        False,
+            "metadata_score":        0.0,
+            "metadata_issues":       issues,
+            "hitl_required":         True,
+            "status":                "hitl_pending",
+            "current_stage":         "stage5b_metadata_validate",
+            "category_reasoning":    category_reasoning,
+            "category_alternatives": category_alternatives,
+        }
+
     # (b) 신규 도메인 키워드 감지 — Stage 5가 기존 카테고리로 분류했더라도
     if detect_emerging_domain_keywords(title=title, tags=tags, markdown=markdown):
         detected = [kw for kw in _EMERGING_DOMAIN_KEYWORDS
