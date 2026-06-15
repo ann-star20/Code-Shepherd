@@ -174,7 +174,7 @@ def _normalize_etag(raw: str | None) -> str | None:
 
 async def _fetch_meta(url: str) -> tuple[str | None, str, str]:
     etag: str | None = None
-    content_lang = "ko"  # 기본값은 한국어로 간주 - HEAD 실패 시에도 정의되어야 함
+    content_lang = ""  # 기본값은 한국어로 간주 - HEAD 실패 시에도 정의되어야 함
     async with httpx.AsyncClient(timeout=30, follow_redirects=True) as client:
         try:
             head = await client.head(url)
@@ -184,6 +184,8 @@ async def _fetch_meta(url: str) -> tuple[str | None, str, str]:
             # 헤더에 언어 설정이 있다면 1차 획득
             if "en" in header_lang:
                 content_lang = "en"
+            elif "ko" in header_lang:
+                content_lang = "ko"
         except Exception:
             etag = None
         try:
@@ -282,6 +284,9 @@ async def _extract_text(url: str) -> str:
 
 _HEADER_PATTERN = re.compile(r"(?m)^#{1,3} ")
 
+# 정책 2: RELATED_TO 판정 시 방어책/해결책 명칭 감지 → transplant_as_mechanism 트리거
+_DEFENSE_NAME_PATTERN = re.compile(r"(Protection|Defense|Mitigation|Guard|Filter|Handler)$")
+
 
 def _chunk_text(
     text: str,
@@ -359,7 +364,7 @@ def extract_task(self, ctx: dict) -> dict:
         return result
     except Exception as exc:
         _set_failed_sync(session_id)
-        raise self.retry(exc=exc, countdown=15) from exc
+        raise self.retry(exc=exc, countdown=60) from exc
 
 
 async def _extract_async(ctx: dict) -> dict:
@@ -520,18 +525,32 @@ def _mock_extract(chunk: str, ctx: dict, metadata: dict | None = None) -> list[d
     domains = [allowed_domains[0]] if allowed_domains else [ctx.get("source_prefix", "external")]
     return [{
         "concept_name": f"{fw_pascal}Concept{short_hash.capitalize()}",
-        "concept_type": "mechanism",
-        "domains": domains,
-        "description_ko": chunk[:200],
-        "aliases": [],
-        "severity": None,
-        "cwe_id": None,
+        "concept_type": "antipattern",  # ◄ 형님의 결정 반영 (antipattern 고정)
+        "cwe_id": "CWE-000",
         "owasp_id": None,
-        "root_cause": "",
-        "mechanism": [],
-        "affected_components": [],
+        "severity": "medium",
+        "domains": domains,
+        "description_ko": chunk[:200] if chunk else "모크 데이터 설명 본문입니다.",
+        "aliases": [f"{fw_pascal} Antipattern"],
+        "root_cause": "mock_root_cause",
+        "affected_components": ["mock_component"],
+        "mechanism": [
+            {
+                "mechanism_name": "mock_defense_mechanism",
+                "code_examples": [
+                    {
+                        "lang": ctx.get("lang", "python"),
+                        "lang_version": "*",
+                        "framework": fw.lower(),
+                        "framework_version": "*",
+                        "code": "# Mock Code Example\npass",
+                        "description": "모크 구현 코드 설명입니다."
+                    }
+                ]
+            }
+        ],
+        "config_properties": []  # ◄ 스키마 구조 싱크용 추가
     }]
-
 
 async def _gemini_extract(chunk: str, ctx: dict, metadata: dict | None = None) -> list[dict]:
     metadata = metadata or {}
@@ -539,34 +558,35 @@ async def _gemini_extract(chunk: str, ctx: dict, metadata: dict | None = None) -
     domain_hint = ", ".join(allowed_domains) if allowed_domains else "general"
     prompt = (
         "다음 문서 텍스트를 4-Layer 온톨로지 구조"
-        "(Layer0 Domain - Layer1 Concept - Layer2 Mechanism/Property/RootCause/Component - "
+        "(Layer0 Domain - Layer1 Concept[문제/취약점 중심] - Layer2 Mechanism/Property/RootCause/Component[종속 속성] - "
         "Layer3 CodeExample)에 맞춰 JSON 배열로 추출하라.\n"
         f"- framework: {metadata.get('framework') or ctx.get('framework')}\n"
         f"- language: {metadata.get('language') or ctx.get('lang')}\n"
         f"- allowed_domains (Layer0, 이 중에서만 분류): [{domain_hint}]\n"
-        "각 항목 필드: concept_name, concept_type, domains(allowed_domains 중에서 선택), description_ko, "
+        "각 항목은 하나의 최상위 Concept(Layer2)을 기준으로 하며, 하위 필드로 명시된 명사들을 추출한다"
+        "필드 구성: concept_name, concept_type, domains(allowed_domains 중에서 선택), description_ko, "
         "aliases, root_cause, affected_components, "
         "mechanism(mechanism_name, code_examples[{lang, framework, code, description}]).\n\n"
         "## [절대 엄수 제약 조건 - 위반 시 검증 실패로 적재가 차단된다]\n"
         "1. 노이즈 차단: 'This page is also available as Markdown', 'Was this helpful?', "
         "'Last updated', 'llms.txt', 메뉴/내비게이션/배너 등 기술 본문과 무관한 웹사이트 "
         "레이아웃 텍스트는 description_ko에서 절대 인용하지 말고 철저히 무시하라.\n"
-        "2. 명명 규칙 강제: concept_name은 'concept_' 접두사나 해시 접미사(예: _b6ce44), "
-        "프레임워크 이름을 절대 포함하지 않는 순수 파스칼케이스(PascalCase) 명사여야 한다. "
-        "올바른 예: CsrfProtection, MemoryLeak. 잘못된 예: concept_Next.js_b6ce44.\n"
-        "3. concept_type은 'concept', 'mechanism', 'property', 'root_cause', 'component', "
-        "'performance_antipattern' 중 하나여야 한다.\n"
-        "4. Null 처리: 해당 정보가 본문에 없는 메타 필드는 키를 누락시키지 말고 "
-        "null 또는 빈 배열([])로 명시하라.\n\n"
+        "2. 명명 규칙 강제: concept_name은 'concept_' 접두사나 해시 접미사, 프레임워크 이름을 절대 포함하지 않는 순수 파스칼케이스(PascalCase) 명사여야 한다"
+        "또한, 방어/해결책 명칭(예: CsrfProtection, XssDefense)을 최상위 concept_name으로 삼는 것을 절대 금지하며, "
+        "반드시 문제 본질이나 안티패턴 명칭을 써야 한다. 올바른 예: CsrfAttack, MemoryLeak. 잘못된 예: CsrfProtection.\nn"
+        "3.타입 제한: 최상위 객체의 concept_type은 'concept'(보안 취약점 등 일반 개념) 또는 'antipattern' 중 하나로만 분류하라."
+        "4. 4. 문제 중심 역산 추출: 입력 문서가 'CsrfProtection'이나 'csrf-csrf 미들웨어 설정'처럼 오직 방어 기법/해결책만 설명하고 있더라도, "
+"해당 방어 기술이 막고자 하는 '본질적인 취약점/안티패턴 이름'(예: CSRF)을 역산하여 최상위 concept_name(Layer1)으로 반드시 추출하라. "
+"그리고 문서에 나온 패키지 설정이나 미들웨어 코드는 그 아래의 mechanism(mechanism_name: 'double_csrf_protection' 등) 배열로 밀어 넣어라."
+        "5. Null 처리: 해당 정보가 본문에 없는 메타 필드는 키를 누락시키지 말고 null 또는 빈 배열([])로 명시하라.\n\n"
         "## 모범 출력 예시 (Few-Shot)\n"
         "입력된 텍스트가 메모리 누수에 관한 것이라면 아래와 같이 출력해야 한다:\n"
         "[\n"
         "  {\n"
         '    "concept_name": "MemoryLeak",\n'
-        '    "concept_type": "performance_antipattern",\n'
+        '    "concept_type": "antipattern",\n'
         '    "domains": ["performance"],\n'
-        '    "description_ko": "메모리 누수는 더 이상 사용하지 않는 메모리를 해제하지 않아 '
-        '힙이 지속 증가하는 안티패턴이다.",\n'
+        '    "description_ko": "메모리 누수는 더 이상 사용하지 않는 메모리를 해제하지 않아 힙이 지속 증가하는 안티패턴이다.",\n'
         '    "aliases": ["Memory Leak", "OOM"],\n'
         '    "root_cause": "object_reference_retained_preventing_gc",\n'
         '    "affected_components": ["long_running_worker"],\n'
@@ -576,7 +596,7 @@ async def _gemini_extract(chunk: str, ctx: dict, metadata: dict | None = None) -
         "마크다운 래핑 기호 외에 어떠한 부연 설명 텍스트도 출력하지 마라.\n\n"
         + _FORMAT_INSTRUCTIONS
         + "\n\n"
-        + chunk[:3000]
+        + chunk[:30000]
     )
     
     logger.debug("%s gemini_raw_request START %s", "=" * 10, "=" * 10)
@@ -648,18 +668,26 @@ async def _write_graph_async(session_id: str) -> dict:
                     row["id"],
                 )
 
-                await repo.merge_concept(concept)
-
-                if action == "RELATED_TO" and row["target_concept_name"]:
-                    await merge_related_to(
-                        driver, concept.concept_name,
-                        row["target_concept_name"], get_database()
-                    )
-
                 if action == "MERGE" and row["target_concept_name"]:
+                    await repo.absorb_into_target(concept, row["target_concept_name"])
                     await resolver.do_centroid_shift(
                         row["target_concept_name"], concept.aliases
                     )
+                else:
+                    if (
+                        action == "RELATED_TO"
+                        and row["target_concept_name"]
+                        and _DEFENSE_NAME_PATTERN.search(concept.concept_name)
+                    ):
+                        # 정책 2: 방어책 오기출 → target의 L3 Mechanism으로 격하 이식
+                        await repo.transplant_as_mechanism(concept, row["target_concept_name"])
+                    else:
+                        await repo.merge_concept(concept)
+                        if action == "RELATED_TO" and row["target_concept_name"]:
+                            await merge_related_to(
+                                driver, concept.concept_name,
+                                row["target_concept_name"], get_database()
+                            )
 
                 summary[action] = summary.get(action, 0) + 1
 
