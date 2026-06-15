@@ -236,8 +236,8 @@ def _jaro_winkler_max(
     existing_aliases: list[str],
 ) -> float:
     """JaroWinkler 최고점 — 대소문자 무시, alias 1:1 전수 비교."""
-    pool_a = [name.lower()] + [a.lower() for a in aliases]
-    pool_b = [existing_name.lower()] + [a.lower() for a in existing_aliases]
+    pool_a = [name.lower().replace(" ", "")] + [a.lower().replace(" ", "") for a in aliases]
+    pool_b = [existing_name.lower().replace(" ", "")] + [a.lower().replace(" ", "") for a in existing_aliases]
     best = 0.0
     for a in pool_a:
         for b in pool_b:
