@@ -14,9 +14,12 @@ State(contracts — 동결)는 건드리지 않는다. run_review_traced() 로�
 from __future__ import annotations
 
 import functools
+import logging
 import time
 from collections.abc import Callable
 from contextvars import ContextVar
+
+logger = logging.getLogger("m3.graph")
 
 from langgraph.graph import END, START, StateGraph
 from langgraph.types import Command
@@ -81,24 +84,30 @@ def _traced(name: str, fn):
         try:
             result = fn(state)
         except Exception as exc:
+            ms = int((time.perf_counter() - t0) * 1000)
             entry = {
                 "type": "node_done",
                 "node": name, "label": _NODE_LABELS.get(name, name),
-                "ms": int((time.perf_counter() - t0) * 1000),
+                "ms": ms,
                 "summary": f"{type(exc).__name__}: {exc}", "ok": False,
             }
+            logger.error("[node=%-20s] FAIL %dms | %s: %s",
+                         name, ms, type(exc).__name__, exc)
             if trace is not None:
                 trace.append({k: v for k, v in entry.items() if k != "type"})
             if emit is not None:
                 emit(entry)
             raise
         update = result.update if isinstance(result, Command) else (result or {})
+        ms = int((time.perf_counter() - t0) * 1000)
+        summary = _summarize(name, update or {})
         entry = {
             "type": "node_done",
             "node": name, "label": _NODE_LABELS.get(name, name),
-            "ms": int((time.perf_counter() - t0) * 1000),
-            "summary": _summarize(name, update or {}), "ok": True,
+            "ms": ms,
+            "summary": summary, "ok": True,
         }
+        logger.info("[node=%-20s] OK   %dms | %s", name, ms, summary)
         if trace is not None:
             trace.append({k: v for k, v in entry.items() if k != "type"})
         if emit is not None:
@@ -164,9 +173,20 @@ def run_review_traced(
         gap_report=state.get("gap_report"),
     )
 
-    question = " ".join(state.get("queries", [])[:2]) or inp.diff[:300]
+    findings = state.get("findings") or []
+    violations = [f for f in findings if f.verdict == "violation"]
+    if violations:
+        question = " ".join(
+            f"{f.rule_id}: {f.rule_quote}" for f in violations[:3]
+        )
+    else:
+        question = " ".join(state.get("queries", [])[:2]) or inp.diff[:300]
+
     answer = state.get("comment_md", "")
-    contexts = [c.text for c in (state.get("chunks") or []) if hasattr(c, "text")]
+    all_chunks = [c for c in (state.get("chunks") or []) if hasattr(c, "text")]
+    violated_ids = {f.rule_id for f in violations}
+    relevant = [c for c in all_chunks if c.rule_id in violated_ids]
+    contexts = [c.text for c in (relevant or all_chunks)]
     ragas_scores = evaluate_ragas(question, answer, contexts)
 
     return output, trace, ragas_scores
