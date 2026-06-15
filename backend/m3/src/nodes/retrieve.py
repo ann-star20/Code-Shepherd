@@ -23,7 +23,7 @@ log = logging.getLogger(__name__)
 
 # ── pgVector 경로 설정 ────────────────────────────────────────────────────────
 
-_KMS_CATEGORIES = ["보안", "코드성능검증"]
+_KMS_CATEGORIES = ["보안", "코드성능검증", "코딩컨벤션"]
 
 _PATH_RULE_MAP: dict[str, tuple[str, str]] = {
     "sql_binding":     ("CONV-SQL-008",  "Major"),
