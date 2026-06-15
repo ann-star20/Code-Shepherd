@@ -26,7 +26,7 @@ from fastapi import APIRouter, BackgroundTasks, Depends, File, Form, HTTPExcepti
 from app.dependencies import get_current_kms_user
 from app.pipeline.graph_sync import sync_old_document_version
 from pydantic import BaseModel
-from sqlalchemy import text
+from sqlalchemy import String, bindparam, text
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from app.pipeline.models import DocPipelineState
@@ -39,6 +39,42 @@ logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/kms", tags=["KMS"])
 
 SUPPORTED_EXTENSIONS = {"pdf", "docx", "pptx", "txt", "md"}
+
+
+def _normalize_category(category: str | None) -> str | None:
+    """None, 빈 문자열, 공백 전용 문자열을 None으로 정규화."""
+    if not isinstance(category, str) or not category.strip():
+        return None
+    return category.strip()
+
+
+def _build_search_sql() -> text:
+    """category bindparam에 String 타입을 명시한 검색 SQL TextClause 반환.
+
+    asyncpg는 None 값을 untyped NULL(OID 0)로 전송한다. PostgreSQL은
+    ':category IS NULL' 컨텍스트만으로 타입을 추론할 수 없어 파싱 단계에서
+    AmbiguousParameterError를 발생시킨다. bindparam(type_=String)으로 해결.
+    """
+    return text("""
+        SELECT
+            ce.chunk_id::text,
+            ce.content,
+            1 - (ce.embedding <=> CAST(:embedding AS vector)) AS score,
+            ce.metadata,
+            d.title AS doc_title
+        FROM chunk_embeddings ce
+        LEFT JOIN chunks c ON ce.chunk_id = c.chunk_id
+        LEFT JOIN documents d ON c.doc_id = d.doc_id
+        WHERE d.upload_status IN ('stored', 'stored_partial')
+        AND (:category IS NULL OR ce.metadata->>'category' = :category)
+        AND (
+            d.permission_level = 'public'
+            OR d.department_id = :user_team
+            OR d.user_id = :user_id
+        )
+        ORDER BY ce.embedding <=> CAST(:embedding AS vector)
+        LIMIT :limit
+    """).bindparams(bindparam("category", type_=String))
 MAX_UPLOAD_BYTES = 50 * 1024 * 1024  # 50 MB
 
 ALLOWED_DOC_STATUSES = {
@@ -564,30 +600,12 @@ async def search_kms(
         raise HTTPException(status_code=503, detail=f"임베딩 서비스 오류: {e}")
 
     embedding_str = f"[{','.join(str(v) for v in query_embedding)}]"
+    category = _normalize_category(category)
 
     session_factory = _get_session_factory()
     async with session_factory() as session:
         result = await session.execute(
-            text("""
-                SELECT
-                    ce.chunk_id::text,
-                    ce.content,
-                    1 - (ce.embedding <=> CAST(:embedding AS vector)) AS score,
-                    ce.metadata,
-                    d.title AS doc_title
-                FROM chunk_embeddings ce
-                LEFT JOIN chunks c ON ce.chunk_id = c.chunk_id
-                LEFT JOIN documents d ON c.doc_id = d.doc_id
-                WHERE d.upload_status IN ('stored', 'stored_partial')
-                AND (:category IS NULL OR ce.metadata->>'category' = :category)
-                AND (
-                    d.permission_level = 'public'
-                    OR d.department_id = :user_team
-                    OR d.user_id = :user_id
-                )
-                ORDER BY ce.embedding <=> CAST(:embedding AS vector)
-                LIMIT :limit
-            """),
+            _build_search_sql(),
             {
                 "embedding": embedding_str,
                 "limit": limit,
