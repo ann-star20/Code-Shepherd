@@ -138,7 +138,7 @@ def test_post_review_rework(monkeypatch):
     monkeypatch.setattr("src.adapters.http_adapter._fetch_pr_diff", mock_fetch_diff)
     monkeypatch.setattr("src.adapters.http_adapter._post_github_comment", mock_post_comment)
     monkeypatch.setattr("src.adapters.http_adapter.run_review_traced",
-                        lambda _: (violation_output, fake_trace))
+                        lambda *_: (violation_output, fake_trace, {}))
 
     r = client.post("/review", json=_make_payload())
     assert r.status_code == 200
@@ -164,7 +164,7 @@ def test_post_review_lgtm(monkeypatch):
     monkeypatch.setattr("src.adapters.http_adapter._fetch_pr_diff", mock_fetch_diff)
     monkeypatch.setattr("src.adapters.http_adapter._post_github_comment", mock_post_comment)
     monkeypatch.setattr("src.adapters.http_adapter.run_review_traced",
-                        lambda _: (clean_output, []))
+                        lambda *_: (clean_output, [], {}))
 
     r = client.post("/review", json=_make_payload(pr_number=2))
     assert r.status_code == 200
@@ -189,7 +189,7 @@ def test_post_review_escalate(monkeypatch):
     monkeypatch.setattr("src.adapters.http_adapter._fetch_pr_diff", mock_fetch_diff)
     monkeypatch.setattr("src.adapters.http_adapter._post_github_comment", mock_post_comment)
     monkeypatch.setattr("src.adapters.http_adapter.run_review_traced",
-                        lambda _: (gap_output, []))
+                        lambda *_: (gap_output, [], {}))
 
     r = client.post("/review", json=_make_payload(pr_number=3))
     assert r.status_code == 200
@@ -209,7 +209,7 @@ def test_post_review_diff_fetch_failure_continues(monkeypatch):
     monkeypatch.setattr("src.adapters.http_adapter._fetch_pr_diff", mock_fetch_diff)
     monkeypatch.setattr("src.adapters.http_adapter._post_github_comment", mock_post_comment)
     monkeypatch.setattr("src.adapters.http_adapter.run_review_traced",
-                        lambda _: (clean_output, []))
+                        lambda *_: (clean_output, [], {}))
 
     r = client.post("/review", json=_make_payload(pr_number=99))
     assert r.status_code == 200
@@ -295,7 +295,7 @@ def test_post_review_passes_github_id_to_db(monkeypatch):
     monkeypatch.setattr("src.adapters.http_adapter._post_github_comment", mock_post_comment)
     monkeypatch.setattr("src.adapters.http_adapter._fetch_pr_author", mock_fetch_author)
     monkeypatch.setattr("src.adapters.http_adapter.run_review_traced",
-                        lambda _: (violation_output, []))
+                        lambda *_: (violation_output, [], {}))
     monkeypatch.setattr("src.adapters.http_adapter.insert_review_issues", mock_insert)
 
     r = client.post("/review", json=_make_payload(pr_number=50))
@@ -327,7 +327,7 @@ def test_post_review_author_none_on_fetch_failure(monkeypatch):
     monkeypatch.setattr("src.adapters.http_adapter._post_github_comment", mock_post_comment)
     monkeypatch.setattr("src.adapters.http_adapter._fetch_pr_author", mock_fetch_author)
     monkeypatch.setattr("src.adapters.http_adapter.run_review_traced",
-                        lambda _: (clean_output, []))
+                        lambda *_: (clean_output, [], {}))
     monkeypatch.setattr("src.adapters.http_adapter.insert_review_issues", mock_insert)
 
     r = client.post("/review", json=_make_payload(pr_number=51))

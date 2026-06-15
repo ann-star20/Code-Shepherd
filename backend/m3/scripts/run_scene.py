@@ -23,7 +23,7 @@ def main() -> None:
         print("usage: python scripts/run_scene.py <diff-file>")
         sys.exit(1)
     diff = Path(sys.argv[1]).read_text(encoding="utf-8")
-    out, trace = run_review_traced(ReviewInput(diff=diff, file_paths=[], repo_meta={}))
+    out, trace, _ragas = run_review_traced(ReviewInput(diff=diff, file_paths=[], repo_meta={}))
 
     print("=== 실행 흐름 ===")
     for r in trace:

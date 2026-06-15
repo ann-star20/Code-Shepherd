@@ -133,12 +133,14 @@ _app = None
 
 def run_review_traced(
     inp: ReviewInput, emit_fn: Callable | None = None
-) -> tuple[ReviewOutput, list[dict]]:
-    """run_review + 노드 실행 trace. http_adapter·Streamlit 타임라인용.
+) -> tuple[ReviewOutput, list[dict], dict]:
+    """run_review + 노드 실행 trace + RAGAS 품질 점수. http_adapter·Streamlit 타임라인용.
 
     emit_fn: 노드 이벤트마다 호출되는 콜백(dict) — SSE 스트리밍용.
              asyncio.to_thread 에서 실행되므로 thread-safe 하게 구현해야 한다.
     """
+    from src.ragas_eval import evaluate_ragas
+
     global _app
     if _app is None:
         _app = build_graph()
@@ -161,7 +163,13 @@ def run_review_traced(
         comment_md=state.get("comment_md", ""),
         gap_report=state.get("gap_report"),
     )
-    return output, trace
+
+    question = " ".join(state.get("queries", [])[:2]) or inp.diff[:300]
+    answer = state.get("comment_md", "")
+    contexts = [c.text for c in (state.get("chunks") or []) if hasattr(c, "text")]
+    ragas_scores = evaluate_ragas(question, answer, contexts)
+
+    return output, trace, ragas_scores
 
 
 def run_review(inp: ReviewInput) -> ReviewOutput:

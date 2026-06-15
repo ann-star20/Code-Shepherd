@@ -60,6 +60,7 @@ interface ReviewResult {
   comment: string;
   issues: ReviewIssue[];
   trace?: TraceNode[];
+  ragas?: Record<string, number>;
 }
 
 const VERDICT_STYLE: Record<
@@ -233,6 +234,44 @@ function TraceTimeline({
   );
 }
 
+// ── RAGAS 품질 평가 패널 ──────────────────────────────────────────────────────
+
+function RagasPanel({ scores }: { scores: Record<string, number> }) {
+  const metrics: Array<{ key: string; label: string; color: string }> = [
+    { key: "context_precision", label: "Context Precision", color: "bg-blue-500" },
+    { key: "faithfulness",      label: "Faithfulness",      color: "bg-green-500" },
+  ];
+  const visible = metrics.filter((m) => m.key in scores);
+  if (visible.length === 0) return null;
+
+  return (
+    <div className="bg-white border border-notion-border rounded-lg overflow-hidden">
+      <div className="px-4 py-2.5 border-b border-notion-border">
+        <h3 className="text-sm font-medium text-notion-text">RAG 품질 평가 (RAGAS)</h3>
+      </div>
+      <div className="px-4 py-3 space-y-3">
+        {visible.map(({ key, label, color }) => {
+          const pct = Math.round((scores[key] ?? 0) * 100);
+          return (
+            <div key={key}>
+              <div className="flex justify-between text-xs mb-1">
+                <span className="text-notion-text-secondary">{label}</span>
+                <span className="font-medium text-notion-text">{pct}%</span>
+              </div>
+              <div className="h-2 bg-notion-bg-secondary rounded-full overflow-hidden">
+                <div
+                  className={`h-full rounded-full ${color}`}
+                  style={{ width: `${pct}%` }}
+                />
+              </div>
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
 // ── issue 행 (펼침 가능) ──────────────────────────────────────────────────────
 
 function IssueRow({ issue, index }: { issue: ReviewIssue; index: number }) {
@@ -367,6 +406,7 @@ function ReviewDetail({
           comment: (r.comment as string) ?? "",
           issues: (r.issues as ReviewIssue[]) ?? [],
           trace,
+          ragas: (r.ragas as Record<string, number>) ?? {},
         });
         setStreamStatus("done");
         es.close();
@@ -482,10 +522,13 @@ function ReviewDetail({
         />
       )}
 
-      {/* 분석 완료 후: 구분선 + 이슈 테이블 + 코멘트 */}
+      {/* 분석 완료 후: 구분선 + RAGAS + 이슈 테이블 + 코멘트 */}
       {streamResult && streamResult.found && (
         <>
           <hr className="border-notion-border" />
+          {streamResult.ragas && Object.keys(streamResult.ragas).length > 0 && (
+            <RagasPanel scores={streamResult.ragas} />
+          )}
           <div className="bg-white border border-notion-border rounded-lg overflow-hidden">
             <div className="px-4 py-2.5 border-b border-notion-border">
               <h3 className="text-sm font-medium text-notion-text">

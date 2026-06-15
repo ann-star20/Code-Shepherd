@@ -16,8 +16,8 @@ def review(diff: str, file_paths: list[str], repo_meta: dict | None = None) -> R
 
 def review_traced(
     diff: str, file_paths: list[str], repo_meta: dict | None = None,
-) -> tuple[ReviewOutput, list[dict]]:
-    """review() + 노드 실행 trace — D5 타임라인 표시용. review() 계약은 불변."""
+) -> tuple[ReviewOutput, list[dict], dict]:
+    """review() + 노드 실행 trace + RAGAS 점수 — D5 타임라인 표시용. review() 계약은 불변."""
     from src.graph import run_review_traced
 
     return run_review_traced(

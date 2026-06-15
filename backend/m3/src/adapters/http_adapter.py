@@ -207,7 +207,8 @@ def _findings_to_rich(findings: list[Finding]) -> list[dict]:
 
 
 def _store_result(owner: str, repo: str, pr_number: int, output: ReviewOutput,
-                  trace: list[dict] | None = None) -> None:
+                  trace: list[dict] | None = None,
+                  ragas_scores: dict | None = None) -> None:
     verdict = _map_verdict(output)
     key = f"{owner}/{repo}/{pr_number}"
     _result_store[key] = {
@@ -217,6 +218,7 @@ def _store_result(owner: str, repo: str, pr_number: int, output: ReviewOutput,
         "issues": _findings_to_issues(output.findings or []),
         "rich_issues": _findings_to_rich(output.findings or []),
         "trace": trace or [],
+        "ragas": ragas_scores or {},
     }
 
 
@@ -307,11 +309,11 @@ async def post_review(payload: M3ReviewRequest) -> M3ReviewResponse:
         loop.call_soon_threadsafe(stream.push, event)
 
     github_id = await _fetch_pr_author(owner, repo, payload.pr_number)
-    output, trace = await asyncio.to_thread(run_review_traced, inp, emit)
+    output, trace, ragas_scores = await asyncio.to_thread(run_review_traced, inp, emit)
 
     posted, comment_url = await _post_github_comment(owner, repo, payload.pr_number, output.comment_md)
-    _store_result(owner, repo, payload.pr_number, output, trace)
-    insert_review_issues(output.findings or [], payload.pr_number, payload.repository, github_id=github_id)
+    _store_result(owner, repo, payload.pr_number, output, trace, ragas_scores)
+    insert_review_issues(output.findings or [], payload.pr_number, payload.repository, github_id=github_id, diff=diff)
 
     stored = _result_store[key]
     stream.push({
@@ -322,6 +324,7 @@ async def post_review(payload: M3ReviewRequest) -> M3ReviewResponse:
             "comment": stored["comment"],
             "issues": stored["issues"],
             "trace": stored.get("trace", []),
+            "ragas": stored.get("ragas", {}),
         },
     })
 
@@ -401,13 +404,13 @@ async def _run_with_stream(
         repo_meta={"pr_number": pr_number, "repository": full_name},
     )
     try:
-        output, trace = await asyncio.to_thread(run_review_traced, inp, emit)
+        output, trace, ragas_scores = await asyncio.to_thread(run_review_traced, inp, emit)
     except Exception as exc:
         stream.push({"type": "error", "message": f"pipeline: {exc}"})
         return
 
     posted, _ = await _post_github_comment(owner, repo, pr_number, output.comment_md)
-    _store_result(owner, repo, pr_number, output, trace)
+    _store_result(owner, repo, pr_number, output, trace, ragas_scores)
     insert_review_issues(output.findings or [], pr_number, full_name, github_id=pr_author)
 
     stored = _result_store[key]
@@ -419,6 +422,7 @@ async def _run_with_stream(
             "comment": stored["comment"],
             "issues": stored["issues"],
             "trace": stored.get("trace", []),
+            "ragas": stored.get("ragas", {}),
         },
     })
     log.info("webhook: pipeline done pr=%s/%s#%s posted=%s", owner, repo, pr_number, posted)

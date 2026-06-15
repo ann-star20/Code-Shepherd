@@ -34,7 +34,7 @@ from src.graph import run_review_traced
 from src.adapters.db_adapter import insert_review_issues
 
 diff = Path("fixtures/demo/scene1_violation.txt").read_text(encoding="utf-8")
-out, trace = run_review_traced(ReviewInput(
+out, trace, _ragas = run_review_traced(ReviewInput(
     diff=diff,
     file_paths=["services/payment.py"],
     repo_meta={"repo": "kskt1234-netizen/-dev3-demo"},
