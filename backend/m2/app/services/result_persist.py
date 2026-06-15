@@ -48,8 +48,6 @@ _SUB_CATEGORY_MAP: dict[str, str] = {
     "SEC-B611": "SQL injection",
     # SQL Injection (Semgrep)
     "OWASP-A1": "SQL injection",
-    # Clickjacking (m2 휴리스틱 — Django 보안 설정/미들웨어 누락, OWASP A05)
-    "SEC-CLICKJACK": "clickjacking",
 }
 
 # 파일 확장자 → programming_language (nullable, 있으면 채움)
