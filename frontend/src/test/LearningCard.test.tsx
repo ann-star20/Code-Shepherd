@@ -3,6 +3,7 @@
  */
 
 import { render, screen } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import LearningCard from "../pages/learning/components/LearningCard";
@@ -51,12 +52,17 @@ describe("LearningCard", () => {
     vi.mocked(m4Api.post).mockClear();
   });
 
-  it("완료된 카드의 핵심 내용(헤더, before/after 코드, 설명, 핵심 요약)을 표시한다", () => {
+  it("완료된 카드의 핵심 내용(헤더, before/after 코드, 설명, 핵심 요약)을 표시한다", async () => {
+    const user = userEvent.setup();
     render(<LearningCard issue={COMPLETED_ISSUE} />);
 
     expect(screen.getByText(/\[SQL Injection\]/)).toBeInTheDocument();
-    expect(screen.getByText(/vulnerable_query/, { selector: "code" })).toBeInTheDocument();
-    expect(screen.getByText(/safe_query/, { selector: "code" })).toBeInTheDocument();
+    expect(screen.queryByText(/vulnerable_query/)).not.toBeInTheDocument();
+
+    await user.click(screen.getByRole("button"));
+
+    expect(screen.getByText(/vulnerable_query/)).toBeInTheDocument();
+    expect(screen.getByText(/safe_query/)).toBeInTheDocument();
     expect(screen.getByText(/사용자 입력을 직접 SQL에 삽입하면/)).toBeInTheDocument();
     expect(screen.getByText(/Parameterized Query로만 처리한다/)).toBeInTheDocument();
   });
@@ -68,7 +74,8 @@ describe("LearningCard", () => {
     expect(m4Api.post).toHaveBeenCalledTimes(1);
   });
 
-  it("before_code가 null이면 Before 패널을 숨기고 After 코드만 표시한다", () => {
+  it("before_code가 null이면 Before 패널을 숨기고 After 코드만 표시한다", async () => {
+    const user = userEvent.setup();
     const issueWithoutBeforeCode: IssueWithPlan = {
       ...COMPLETED_ISSUE,
       plan: {
@@ -81,11 +88,12 @@ describe("LearningCard", () => {
     };
 
     render(<LearningCard issue={issueWithoutBeforeCode} />);
+    await user.click(screen.getByRole("button"));
 
     expect(screen.queryByText("Before (문제 코드)")).not.toBeInTheDocument();
-    expect(screen.queryByText(/vulnerable_query/, { selector: "code" })).not.toBeInTheDocument();
+    expect(screen.queryByText(/vulnerable_query/)).not.toBeInTheDocument();
     expect(screen.getByText("After (수정 코드)")).toBeInTheDocument();
-    expect(screen.getByText(/safe_query/, { selector: "code" })).toBeInTheDocument();
+    expect(screen.getByText(/safe_query/)).toBeInTheDocument();
   });
 
   it("framework 정보가 없으면 framework/version 없이 language만 표시하고 군더더기 구분자를 남기지 않는다", () => {

@@ -1,5 +1,6 @@
 """structlog JSON 설정 + 요청별 trace_id 주입 미들웨어."""
 
+import os
 import uuid
 from collections.abc import Awaitable, Callable
 
@@ -11,6 +12,8 @@ from starlette.responses import Response
 
 def configure_logging() -> None:
     """서비스 startup 시 한 번 호출해 structlog를 JSON 출력으로 설정."""
+    log_level = int(os.getenv("LOG_LEVEL", 20))
+    
     structlog.configure(
         processors=[
             structlog.contextvars.merge_contextvars,
@@ -20,7 +23,7 @@ def configure_logging() -> None:
             structlog.processors.format_exc_info,
             structlog.processors.JSONRenderer(),
         ],
-        wrapper_class=structlog.make_filtering_bound_logger(20),  # INFO
+        wrapper_class=structlog.make_filtering_bound_logger(log_level),  # INFO
         context_class=dict,
         logger_factory=structlog.PrintLoggerFactory(),
         cache_logger_on_first_use=True,

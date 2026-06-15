@@ -5,6 +5,7 @@ import os
 from abc import ABC, abstractmethod
 
 import httpx
+from langsmith import traceable
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -76,7 +77,7 @@ class SearchAdapter(ABC):
     """RAG 검색 백엔드 인터페이스 (D33). Phase 1: PgvectorAdapter, 추후 FTS/Hybrid로 교체 가능 (pipeline 코드 변경 없음)."""
 
     @abstractmethod
-    async def search(self, embedding: list[float], category: str | None = None, limit: int = 5) -> list[dict]:
+    async def search(self, embedding: list[float], category: str | None = None, limit: int = 3) -> list[dict]:
         ...
 
 
@@ -86,20 +87,25 @@ class PgvectorAdapter(SearchAdapter):
     def __init__(self, session: AsyncSession):
         self._session = session
 
-    async def search(self, embedding: list[float], category: str | None = None, limit: int = 5) -> list[dict]:
+    async def search(self, embedding: list[float], category: str | None = None, limit: int = 2) -> list[dict]:
+        if not embedding:
+            return []
         vector_literal = "[" + ",".join(str(v) for v in embedding) + "]"
         params: dict = {"embedding": vector_literal, "limit": limit}
         category_clause = ""
         if category:
-            category_clause = "WHERE metadata @> CAST(:category_filter AS JSONB)"
+            category_clause = "WHERE ce.metadata @> CAST(:category_filter AS JSONB)"
             params["category_filter"] = json.dumps({"category": category})
 
         stmt = text(
             f"""
-            SELECT content, metadata, 1 - (embedding <=> CAST(:embedding AS vector)) AS similarity
-            FROM chunk_embeddings
+            SELECT ce.content, ce.metadata, parent.content AS parent_content,
+                   1 - (ce.embedding <=> CAST(:embedding AS vector)) AS similarity
+            FROM chunk_embeddings ce
+            LEFT JOIN chunks c ON c.chunk_id = ce.chunk_id
+            LEFT JOIN chunks parent ON parent.chunk_id = c.parent_chunk_id
             {category_clause}
-            ORDER BY embedding <=> CAST(:embedding AS vector)
+            ORDER BY ce.embedding <=> CAST(:embedding AS vector)
             LIMIT :limit
             """
         )
@@ -107,6 +113,7 @@ class PgvectorAdapter(SearchAdapter):
         return [dict(row) for row in result.mappings().all()]
 
 
+@traceable(run_type="retriever", name="rag_search")
 async def rag_search(adapter: SearchAdapter, embedding: list[float], category: str) -> list[dict] | None:
     """D15 — category 필터 검색 결과가 2개 미만이면 필터를 제거하고 1회 재시도한다.
 

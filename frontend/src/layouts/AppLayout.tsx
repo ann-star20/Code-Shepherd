@@ -14,6 +14,7 @@ import {
   Home,
   LayoutDashboard,
   LogOut,
+  Network,
   Plus,
   Search,
   Settings,
@@ -90,6 +91,14 @@ const LEAD_NAV: NavItem[] = [
     leadOnly: true,
     requiresTeam: true,
     testId: "nav-item-kms-manage",
+  },
+  {
+    label: "지식 그래프",
+    path: "/graph",
+    icon: <Network size={16} />,
+    leadOnly: true,
+    requiresTeam: true,
+    testId: "nav-item-graph",
   },
 ];
 
