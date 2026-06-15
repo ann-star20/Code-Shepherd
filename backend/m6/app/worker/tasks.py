@@ -344,6 +344,22 @@ def _chunk_text(
 _NO_CONCEPTS_FOUND_MESSAGE = "해당 페이지의 본문에서 분석 가능한 핵심 개념(안티패턴/약점)을 찾지 못했습니다."
 
 
+def _classify_error(exc: Exception) -> str:
+    """Celery 태스크 예외를 사용자 친화적 메시지로 변환."""
+    if isinstance(exc, httpx.HTTPStatusError):
+        code = exc.response.status_code
+        if code == 503:
+            return f"Gemini API 일시 과부하 ({code}) — 잠시 후 자동 재시도합니다."
+        if code == 429:
+            return f"Gemini API 요청 한도 초과 ({code}) — 잠시 후 자동 재시도합니다."
+        return f"Gemini API 오류 ({code}) — 자동 재시도합니다."
+    if isinstance(exc, httpx.TimeoutException):
+        return "Gemini API 응답 시간 초과 — 자동 재시도합니다."
+    if isinstance(exc, httpx.HTTPError):
+        return "Gemini API 통신 오류 — 자동 재시도합니다."
+    return f"LLM 추출 단계 오류 ({type(exc).__name__}) — 재시도 버튼으로 다시 시도해 주세요."
+
+
 @celery_app.task(name="m6.extract", bind=True, max_retries=3, queue="m6_graph")
 def extract_task(self, ctx: dict) -> dict:
     """LLM 개념 추출 + 벡터 임베딩 + staging DRAFT 적재."""
@@ -363,7 +379,14 @@ def extract_task(self, ctx: dict) -> dict:
         _emit(session_id, {"type": "finished"})
         return result
     except Exception as exc:
+        is_final = self.request.retries >= self.max_retries
+        reason = _classify_error(exc)
+        _emit(session_id, {
+            "type": "step_update", "step": "Extractor", "status": "FAILED", "reason": reason,
+        })
         _set_failed_sync(session_id)
+        if is_final:
+            _emit(session_id, {"type": "finished"})
         raise self.retry(exc=exc, countdown=60) from exc
 
 
@@ -412,7 +435,8 @@ async def _extract_async(ctx: dict) -> dict:
         _emit(session_id, {"type": "step_update", "step": "Resolver", "status": "RUNNING"})
         resolver = HybridResolver()
         staged = 0
-        for concept in concepts:
+        for idx, concept in enumerate(concepts):
+            _log(session_id, "Resolver", f"[{idx + 1}/{len(concepts)}] '{concept['concept_name']}' 벡터 임베딩 중... (CPU, 30초~2분 소요)")
             name_vec = await _embed_async(
                 " ".join([concept["concept_name"]] + concept.get("aliases", []))
             )

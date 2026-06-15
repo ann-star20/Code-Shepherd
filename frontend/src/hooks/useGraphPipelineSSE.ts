@@ -38,6 +38,7 @@ export function useGraphPipelineSSE({
   const [stepStatuses, setStepStatuses] = useState<StepStatuses>(DEFAULT_STATUSES);
   const [isConnected, setIsConnected]   = useState(false);
   const esRef = useRef<EventSource | null>(null);
+  const finishedRef = useRef(false);
 
   const reset = useCallback(() => {
     setStepStatuses({ ...DEFAULT_STATUSES });
@@ -53,6 +54,7 @@ export function useGraphPipelineSSE({
 
     const es = graphPipelineApi.subscribeSSE(sessionId);
     esRef.current = es;
+    finishedRef.current = false;
 
     es.onopen = () => setIsConnected(true);
 
@@ -87,6 +89,7 @@ export function useGraphPipelineSSE({
           }
           break;
         case "finished":
+          finishedRef.current = true;
           setIsConnected(false);
           onFinished();
           es.close();
@@ -108,6 +111,7 @@ export function useGraphPipelineSSE({
     };
 
     es.onerror = () => {
+      if (finishedRef.current) return;
       setIsConnected(false);
       onError("SSE 연결 오류가 발생했습니다.");
       es.close();
