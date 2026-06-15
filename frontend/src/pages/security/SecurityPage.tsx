@@ -11,7 +11,6 @@ import { useTeamContext } from "../../contexts/TeamContext";
 import { M2PipelineFlow, M2StageTrace } from "../../components/M2PipelineFlow";
 
 const PIPELINE_STAGES: M2StageTrace["key"][] = ["run_tools", "vector_search", "llm_judge", "store"];
-const STAGE_MS = [1200, 800, 1500, 400]; // 각 단계 소요 시간 시뮬레이션
 
 // ── 더미 데이터 (mixed_case 데이터셋 기반) ─────────────────────────────────
 const DUMMY_PRS: TeamPR[] = [
@@ -113,7 +112,6 @@ const MIXED_CASES: TeamPR[] = [
 export default function SecurityPage() {
   const { currentTeamId, currentTeam, teamsLoading } = useTeamContext();
   const [selectedPr, setSelectedPr] = useState<TeamPR | null>(null);
-  const [owner, repo] = (currentTeam?.github_repo ?? "").split("/");
 
   const { data: prsData, isLoading: prsLoading, isError: prsError } =
     useQuery<{ prs: TeamPR[] }>({
@@ -128,42 +126,65 @@ export default function SecurityPage() {
 
   useEffect(() => { setSelectedPr(null); }, [currentTeamId]);
 
-  const { data: review, isLoading: reviewLoading } =
-    useQuery<ReviewResult>({
-      queryKey: ["security-review", owner, repo, selectedPr?.id],
-      queryFn: USE_DUMMY
-        ? () => Promise.resolve(DUMMY_REVIEWS[selectedPr!.id] ?? { found: false, verdict: null, comment: "", issues: [] })
-        : () => fetch(`${M2_URL}/scan-results/${selectedPr!.github_pr_number}`).then(r => r.json()),
-      enabled: !!selectedPr,
-    });
-
   const [activeTab, setActiveTab] = useState<"static" | "security">("static");
   const [pipelineStages, setPipelineStages] = useState<M2StageTrace[]>([]);
   const [pipelineRunning, setPipelineRunning] = useState(false);
-  const timerRef = useRef<ReturnType<typeof setTimeout>[]>([]);
+  const [taskId, setTaskId] = useState<string | null>(null);
+  const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
-  // PR 선택 시 파이프라인 애니메이션 실행
+  // 분석 완료(progress done) 후에만 결과를 task_id로 조회한다.
+  const { data: review, isLoading: reviewLoading } =
+    useQuery<ReviewResult>({
+      queryKey: ["security-review", taskId],
+      queryFn: USE_DUMMY
+        ? () => Promise.resolve(DUMMY_REVIEWS[selectedPr!.id] ?? { found: false, verdict: null, comment: "", issues: [] })
+        : () => fetch(`${M2_URL}/scan-results/task/${taskId}`).then(r => r.json()),
+      enabled: USE_DUMMY ? !!selectedPr : (!!taskId && !pipelineRunning),
+    });
+
+  // PR 선택 시 실제 분석 실행(run-case) + 진행상태 폴링(실시간 시각화)
   useEffect(() => {
-    timerRef.current.forEach(clearTimeout);
-    timerRef.current = [];
-    if (!selectedPr) { setPipelineStages([]); setPipelineRunning(false); return; }
+    if (pollRef.current) { clearInterval(pollRef.current); pollRef.current = null; }
+    if (!selectedPr) { setPipelineStages([]); setPipelineRunning(false); setTaskId(null); return; }
 
+    if (USE_DUMMY) {
+      setPipelineRunning(false);
+      setPipelineStages(PIPELINE_STAGES.map(key => ({ key, status: "success" as const })));
+      setTaskId(selectedPr.id);
+      return;
+    }
+
+    let cancelled = false;
     setPipelineRunning(true);
+    setTaskId(null);
     setPipelineStages(PIPELINE_STAGES.map(key => ({ key, status: "pending" as const })));
 
-    let elapsed = 0;
-    PIPELINE_STAGES.forEach((key, i) => {
-      // running 시작
-      timerRef.current.push(setTimeout(() => {
-        setPipelineStages(prev => prev.map(s => s.key === key ? { ...s, status: "running" } : s));
-      }, elapsed));
-      elapsed += STAGE_MS[i];
-      // success
-      timerRef.current.push(setTimeout(() => {
-        setPipelineStages(prev => prev.map(s => s.key === key ? { ...s, status: "success", ms: STAGE_MS[i] } : s));
-        if (i === PIPELINE_STAGES.length - 1) setPipelineRunning(false);
-      }, elapsed));
-    });
+    fetch(`${M2_URL}/orchestrate/run-case/${selectedPr.id}`, { method: "POST" })
+      .then(r => r.json())
+      .then((data: { task_id?: string }) => {
+        if (cancelled || !data.task_id) { setPipelineRunning(false); return; }
+        const tid = data.task_id;
+        setTaskId(tid);
+        pollRef.current = setInterval(() => {
+          fetch(`${M2_URL}/orchestrate/status/${tid}`)
+            .then(r => r.json())
+            .then((st: { status: string; stages?: M2StageTrace[] }) => {
+              if (cancelled) return;
+              if (st.stages) setPipelineStages(st.stages);
+              if (st.status === "done" || st.status === "error") {
+                if (pollRef.current) { clearInterval(pollRef.current); pollRef.current = null; }
+                setPipelineRunning(false);
+              }
+            })
+            .catch(() => {});
+        }, 1000);
+      })
+      .catch(() => { if (!cancelled) setPipelineRunning(false); });
+
+    return () => {
+      cancelled = true;
+      if (pollRef.current) { clearInterval(pollRef.current); pollRef.current = null; }
+    };
   }, [selectedPr]);
 
   const isStatic = (i: ReviewIssue) => i.rule_id?.startsWith("SA-") || i.rule_id?.startsWith("JS-");
@@ -352,11 +373,11 @@ export default function SecurityPage() {
                 result={!pipelineRunning && review?.found ? { staticIssues, securityIssues } : undefined}
               />
 
-              {/* 이슈 테이블 */}
-              {reviewLoading ? (
+              {/* 이슈 테이블 — 파이프라인 애니메이션이 끝난 뒤에만 결과 노출 */}
+              {pipelineRunning || reviewLoading ? (
                 <div className="flex items-center justify-center gap-2 text-sm text-notion-text-secondary py-10">
                   <Loader2 size={15} className="animate-spin" />
-                  분석 결과 불러오는 중...
+                  파이프라인 분석 진행 중...
                 </div>
               ) : !review?.found ? (
                 <div className="text-center text-sm text-notion-text-secondary px-4 py-10 border border-dashed border-notion-border rounded-lg">
