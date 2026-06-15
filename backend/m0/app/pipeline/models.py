@@ -119,6 +119,7 @@ class DocPipelineState(TypedDict):
     category_reasoning: Optional[str]
     category_is_new: Optional[bool]
     category_alternatives: Optional[list[str]]
+    stage5_latency_ms: Optional[int]       # Gemini LLM 호출 소요 시간 (ms)
 
     # Stage 5b: 메타데이터 검증 출력
     metadata_valid: Optional[bool]
@@ -129,6 +130,14 @@ class DocPipelineState(TypedDict):
     stored: bool
     neo4j_stored: Optional[bool]        # None=미실행, True=성공, False=실패(stored_partial)
     storage_paths: Optional[StoragePaths]
+
+    # RBAC 권한 메타데이터 (업로드 시 선택적으로 전달 — 없으면 Stage 6에서 기본값 적용)
+    department_id: Optional[str]
+    user_id: Optional[str]
+    permission_level: Optional[str]     # 'public' | 'team' | 'private'
+    visibility: Optional[str]           # 'all' | 'department' | 'owner'
+    # SHA256 hex digest — 중복 감지용 (프론트에서 계산 후 전달)
+    file_hash: Optional[str]
 
     # 파이프라인 제어
     status: str                         # "processing|validated|stored|stored_partial|failed|hitl_pending"

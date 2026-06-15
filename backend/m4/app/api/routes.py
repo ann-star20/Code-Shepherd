@@ -7,24 +7,32 @@ from datetime import UTC, datetime
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, status
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel
-from sqlalchemy import case, func, select, text
+from sqlalchemy import case, func, select
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.kms.search_adapter import PgvectorAdapter
 from app.models.curriculum_plan import CurriculumPlan
 from app.models.review_issue import ReviewIssue
+from app.pipeline.curator_agent import DeveloperProfile, GEMINI_TIMEOUT_SECONDS
 from app.pipeline.learn_pipeline import generate_card
 from shared.auth import get_current_user
 from shared.db import get_session
+from shared.harness import AgentHarness
+from shared.trace import new_sub_trace
 
 router = APIRouter(prefix="/api", tags=["learning"])
 
 PR_NOT_FOUND_DETAIL = "제출된 PR이 없습니다. PR을 먼저 제출해 주세요."
 PLAN_NOT_FOUND_DETAIL = "curriculum_plan을 찾을 수 없습니다."
 
+# generate_card()의 D26 재시도 루프(최대 3회, 회차마다 curator_agent+build_card에서 최대 2회의
+# Gemini 호출 = GEMINI_TIMEOUT_SECONDS, Bug A)를 모두 감당할 수 있는 AgentHarness 타임아웃
+GENERATE_CARD_TIMEOUT_SECONDS = GEMINI_TIMEOUT_SECONDS * 2 * 3
+
 # severity는 TEXT 컬럼이라 알파벳 순으로는 critical > high > low > medium이 되어버림
-# → CASE로 숫자 우선순위를 매겨 critical, high, medium, low 순으로 정렬한다 (D19 top 3 선정 기준)
+# → CASE로 숫자 우선순위를 매겨 critical, high, medium, low 순으로 정렬한다.
+# D38 — created_at DESC가 1차 정렬이라 이 랭킹은 created_at이 동일한 row끼리의 tiebreaker로만 쓰인다.
 _SEVERITY_RANK = case(
     (ReviewIssue.severity == "critical", 1),
     (ReviewIssue.severity == "high", 2),
@@ -42,12 +50,15 @@ def _parse_user_id(payload: dict) -> uuid.UUID:
     return uuid.UUID(payload["sub"])
 
 
-# pull_requests는 m4 Base.metadata에 등록되어 있지 않은 타 모듈 소유 테이블이라
-# ORM select(PullRequest) 대신 파라미터 바인딩된 raw SQL로 조회한다 (review_issue의 cross-module FK 이슈와 동일 구조)
+# D19 — "최신 PR"은 review_issue.created_at(m4 소유, ORM 등록) 기준으로 판단한다.
+# pull_requests.submitted_at(타 모듈 소유) 기준이면 PR은 제출됐지만 리뷰가 아직 끝나지
+# 않아 review_issue가 0건인 PR이 "최신"으로 잡혀 top3 이슈가 0개가 되는 문제가 생길 수 있다.
 async def _find_latest_pr_id(session: AsyncSession, user_id: uuid.UUID) -> uuid.UUID | None:
     result = await session.execute(
-        text("SELECT id FROM pull_requests WHERE user_id = :user_id ORDER BY submitted_at DESC LIMIT 1"),
-        {"user_id": user_id},
+        select(ReviewIssue.pull_request_id)
+        .where(ReviewIssue.user_id == user_id, ReviewIssue.pull_request_id.is_not(None))
+        .order_by(ReviewIssue.created_at.desc())
+        .limit(1)
     )
     row = result.first()
     return row[0] if row else None
@@ -57,7 +68,7 @@ async def _find_top3_issues(session: AsyncSession, pr_id: uuid.UUID) -> list[Rev
     result = await session.execute(
         select(ReviewIssue)
         .where(ReviewIssue.pull_request_id == pr_id)
-        .order_by(_SEVERITY_RANK, ReviewIssue.created_at)
+        .order_by(ReviewIssue.created_at.desc(), _SEVERITY_RANK)
         .limit(3)
     )
     return list(result.scalars().all())
@@ -104,7 +115,31 @@ async def _count_user_mistakes(session: AsyncSession, *, user_id: uuid.UUID | No
     return result.scalar_one()
 
 
-async def _run_card_generation(plan_issue_pairs: list[tuple[uuid.UUID, ReviewIssue]]) -> None:
+async def _build_developer_profile(session: AsyncSession, user_id: uuid.UUID | None) -> DeveloperProfile:
+    """이 개발자의 review_issue 이력에서 curator_agent(D22)에 전달할 프로필을 만든다.
+
+    past_mistakes: 최근 keyword 5개. weak_categories: 2회 이상 반복된 sub_category.
+    """
+    if user_id is None:
+        return {"weak_categories": [], "past_mistakes": []}
+    result = await session.execute(
+        select(ReviewIssue.keyword, ReviewIssue.sub_category)
+        .where(ReviewIssue.user_id == user_id)
+        .order_by(ReviewIssue.created_at.desc())
+    )
+    rows = result.all()
+    past_mistakes = [keyword for keyword, _ in rows[:5]]
+    category_counts: dict[str, int] = {}
+    for _, sub_category in rows:
+        if sub_category:
+            category_counts[sub_category] = category_counts.get(sub_category, 0) + 1
+    weak_categories = [category for category, count in category_counts.items() if count >= 2]
+    return {"weak_categories": weak_categories, "past_mistakes": past_mistakes}
+
+
+async def _run_card_generation(
+    plan_issue_pairs: list[tuple[uuid.UUID, ReviewIssue]],
+) -> None:
     """BackgroundTask — pending 상태로 미리 만들어둔 plan row를 generate_card 결과로 갱신한다 (D2: "202 즉시 응답 후 비동기 생성").
 
     generate_card()는 새 CurriculumPlan 인스턴스를 반환할 뿐 기존 row를 갱신하지 않으므로
@@ -128,11 +163,28 @@ async def _run_card_generation(plan_issue_pairs: list[tuple[uuid.UUID, ReviewIss
                 await session.commit()
 
                 mistake_count = await _count_user_mistakes(session, user_id=issue.user_id, keyword=issue.keyword)
-                generated = await generate_card(issue, adapter, mistake_count=mistake_count)
+                profile = await _build_developer_profile(session, issue.user_id)
+                async with AgentHarness(
+                    trace_id=new_sub_trace(f"pr_{issue.pull_request_id}", "generate_card"),
+                    agent_name="generate_card",
+                    db_session_factory=session_factory,
+                    task_id=str(plan_id),
+                    timeout=GENERATE_CARD_TIMEOUT_SECONDS,
+                ) as harness:
+                    generated = await harness.run(
+                        generate_card,
+                        issue,
+                        adapter,
+                        mistake_count=mistake_count,
+                        profile=profile,
+                    )
                 plan.status = generated.status
                 plan.llm_fallback = generated.llm_fallback
                 plan.error_message = generated.error_message
                 plan.card_content = generated.card_content
+                plan.ragas_reason = generated.ragas_reason
+                plan.curator_instruction = generated.curator_instruction
+                plan.attempt_count = generated.attempt_count
                 await session.commit()
             except Exception as exc:
                 plan.status = "failed"
@@ -161,7 +213,21 @@ async def post_learn(
     existing_plans = await _find_existing_plans(session, issue_ids)
 
     if existing_plans:
-        # D4 — 동일 PR에 대한 재요청은 새로 만들지 않고 기존 plan을 그대로 반환
+        # D4 — 동일 PR에 대한 재요청은 새로 만들지 않고 기존 plan을 그대로 반환.
+        # 단, status='failed'인 plan은 'pending'으로 되돌리고 review_issue를 다시 넘겨
+        # 카드 생성을 재트리거한다 — 실패 기록이 영구적으로 재시도를 막아서는 안 된다.
+        failed_plans = [plan for plan in existing_plans if plan.status == "failed"]
+        if failed_plans:
+            issues_by_id = {issue.id: issue for issue in issues}
+            for plan in failed_plans:
+                plan.status = "pending"
+                plan.error_message = None
+            await session.commit()
+            background_tasks.add_task(
+                _run_card_generation,
+                [(plan.id, issues_by_id[plan.issue_id]) for plan in failed_plans],
+            )
+
         return JSONResponse(
             status_code=status.HTTP_200_OK,
             content={"scan_id": str(pr_id), "plan_ids": [str(plan.id) for plan in existing_plans]},
@@ -190,7 +256,7 @@ async def _load_issues_with_plans(
         select(ReviewIssue, CurriculumPlan)
         .join(CurriculumPlan, CurriculumPlan.issue_id == ReviewIssue.id)
         .where(ReviewIssue.pull_request_id == scan_id)
-        .order_by(_SEVERITY_RANK, ReviewIssue.created_at)
+        .order_by(ReviewIssue.created_at.desc(), _SEVERITY_RANK)
     )
     return [(issue, plan) for issue, plan in result.all()]
 
@@ -204,11 +270,9 @@ def _plan_json(plan: CurriculumPlan | None) -> dict | None:
         "llm_fallback": plan.llm_fallback,
         "error_message": plan.error_message,
         "card_content": plan.card_content,
-        # ragas_reason/attempt_count/curator_instruction: Phase 2(T12/T13/T14/T16) 전까지는
-        # curriculum_plan에 컬럼 자체가 없음 — ragas_eval.reason의 "Phase 1엔 항상 None" 전례를 따라 placeholder 반환
-        "ragas_reason": None,
-        "attempt_count": None,
-        "curator_instruction": None,
+        "ragas_reason": plan.ragas_reason,
+        "attempt_count": plan.attempt_count,
+        "curator_instruction": plan.curator_instruction,
     }
 
 

@@ -9,12 +9,12 @@ import {
   BookOpen,
   ChevronLeft,
   ChevronRight,
-  ClipboardCheck,
   FileText,
   GitPullRequest,
   Home,
   LayoutDashboard,
   LogOut,
+  Network,
   Plus,
   Search,
   Settings,
@@ -77,14 +77,6 @@ const MEMBER_NAV: NavItem[] = [
 
 const LEAD_NAV: NavItem[] = [
   {
-    label: "승인 대기",
-    path: "/approvals",
-    icon: <ClipboardCheck size={16} />,
-    leadOnly: true,
-    requiresTeam: true,
-    testId: "nav-item-approvals",
-  },
-  {
     label: "팀 현황판",
     path: "/",
     icon: <Home size={16} />,
@@ -99,6 +91,14 @@ const LEAD_NAV: NavItem[] = [
     leadOnly: true,
     requiresTeam: true,
     testId: "nav-item-kms-manage",
+  },
+  {
+    label: "지식 그래프",
+    path: "/graph",
+    icon: <Network size={16} />,
+    leadOnly: true,
+    requiresTeam: true,
+    testId: "nav-item-graph",
   },
 ];
 

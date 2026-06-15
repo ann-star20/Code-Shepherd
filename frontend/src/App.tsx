@@ -28,6 +28,7 @@ import ReviewPage from "./pages/review/ReviewPage";
 import LearningPage from "./pages/learning/LearningPage";
 import YoutubePlaceholder from "./pages/youtube/Placeholder";
 import ApprovalsPlaceholder from "./pages/approvals/Placeholder";
+import GraphPlaceholder from "./pages/graph/Placeholder";
 
 function ProtectedRoute() {
   const { isAuthenticated, isLoading } = useAuth();
@@ -82,6 +83,7 @@ function AppRoutes() {
           <Route path="/learning" element={<LearningPage />} />
           <Route path="/youtube" element={<YoutubePlaceholder />} />
           <Route path="/approvals" element={<ApprovalsPlaceholder />} />
+          <Route path="/graph" element={<GraphPlaceholder />} />
         </Route>
       </Route>
 

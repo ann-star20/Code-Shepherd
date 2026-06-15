@@ -1,0 +1,67 @@
+클라우드 인프라 아키텍처 가이드
+
+작성일: 2025-03-10
+담당팀: 인프라팀
+버전: 1.2
+
+== 개요 ==
+
+본 문서는 사내 클라우드 인프라 운영 원칙과 표준 아키텍처 패턴을 정의한다.
+모든 서비스는 GCP(Google Cloud Platform) 기반으로 운영되며,
+Terraform을 통한 IaC(Infrastructure as Code) 방식으로 관리한다.
+
+== 핵심 원칙 ==
+
+1. 불변 인프라 (Immutable Infrastructure)
+   - 서버 직접 수정 금지
+   - 변경 시 새 이미지 빌드 후 교체
+   - Golden AMI 패턴 적용
+
+2. 최소 권한 원칙 (Least Privilege)
+   - IAM 역할은 업무에 필요한 최소 권한만 부여
+   - 90일 주기 권한 재검토
+   - 서비스 계정별 독립 키 관리
+
+3. 다중 가용영역 (Multi-AZ)
+   - 핵심 서비스는 3개 리전 이상 분산 배포
+   - RTO 4시간 / RPO 1시간 목표
+
+== 표준 아키텍처 ==
+
+[웹 계층]
+Cloud Load Balancing → Cloud Armor (WAF) → Cloud Run (컨테이너)
+
+[데이터 계층]
+Cloud SQL (PostgreSQL 15) → 읽기 복제본 3개
+Cloud Spanner → 글로벌 트랜잭션 (결제 시스템)
+BigQuery → 분석 및 리포팅
+
+[캐시 계층]
+Memorystore (Redis 7.0) → 세션 / API 캐시
+TTL: 기본 3600초, 민감 데이터 300초
+
+[저장소]
+Cloud Storage → 문서, 이미지, 백업
+Object Lifecycle → 30일 후 Nearline, 90일 후 Coldline
+
+== 배포 파이프라인 ==
+
+1. 코드 푸시 → Cloud Build 트리거
+2. 단위 테스트 + 보안 스캔 (Snyk)
+3. 컨테이너 이미지 빌드 → Artifact Registry
+4. 스테이징 배포 → 통합 테스트
+5. 프로덕션 배포 → 카나리 10% → 롤아웃
+
+== 모니터링 ==
+
+Cloud Monitoring: CPU / 메모리 / 디스크 사용률
+Cloud Trace: 분산 추적 (p50/p95/p99 레이턴시)
+Cloud Logging: 애플리케이션 + 감사 로그 90일 보관
+PagerDuty: 임계값 초과 시 온콜 알림 (응답 목표 15분)
+
+== 보안 요구사항 ==
+
+- 모든 데이터 전송: TLS 1.3 이상
+- 저장 데이터: AES-256 암호화
+- 비밀번호 관리: Secret Manager 사용
+- 취약점 스캔: 주 1회 자동 실행

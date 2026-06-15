@@ -168,7 +168,7 @@ async def test_lifespan_updates_valid_categories_from_db():
 # ─── 테스트 4: 기존 기본 카테고리는 항상 유효 ──────────────────────────────────
 
 def test_default_categories_always_valid():
-    """기존 6개 카테고리는 변경 전후 항상 VALID_CATEGORIES 에 포함되어야 한다."""
+    """DB 기본 6개 한국어 카테고리는 항상 VALID_CATEGORIES 에 포함되어야 한다."""
     defaults = {"코딩컨벤션", "아키텍처", "온보딩", "보안", "배포", "기타"}
     assert defaults.issubset(_cat_defs.VALID_CATEGORIES), (
         f"기본 카테고리가 VALID_CATEGORIES 에 없음: "

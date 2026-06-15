@@ -52,7 +52,6 @@ describe("AppLayout sidebar", () => {
   it("shows lead-only nav when member role is lead", async () => {
     renderAppLayout();
     expect(await screen.findByTestId("team-switcher")).toBeInTheDocument();
-    expect(await screen.findByTestId("nav-item-approvals")).toBeInTheDocument();
     expect(screen.getByTestId("nav-item-kms-manage")).toBeInTheDocument();
     expect(screen.queryByTestId("nav-item-home-member")).not.toBeInTheDocument();
   });
@@ -78,7 +77,6 @@ describe("AppLayout sidebar", () => {
     );
     renderAppLayout();
     expect(await screen.findByTestId("nav-item-home-member")).toBeInTheDocument();
-    expect(screen.queryByTestId("nav-item-approvals")).not.toBeInTheDocument();
     expect(screen.queryByTestId("nav-item-kms-manage")).not.toBeInTheDocument();
   });
 

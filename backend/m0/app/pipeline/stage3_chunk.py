@@ -300,11 +300,54 @@ def _hard_split_words(
 # Child 청크 생성
 # ---------------------------------------------------------------------------
 
+CHILD_COMPLIANCE_MIN = 100  # eval 준수 기준 하한 (CHILD_MIN_TOKENS=300과 별개)
+
+
+def _merge_small_children(children: list["ChunkItem"]) -> list["ChunkItem"]:
+    """
+    100 토큰 미만 child를 인접 child와 병합한다.
+
+    trailing 단락이 CHILD_MAX_TOKENS 초과로 인해 단독 flush될 때
+    60 토큰 안팎의 비준수 child가 생기는 문제를 해소한다.
+    병합 후 token_count가 CHILD_MAX_TOKENS * 3 (=1500) 이하이면 항상 준수 범위.
+    """
+    if len(children) <= 1:
+        return children
+
+    result: list["ChunkItem"] = []
+    for child in children:
+        if result and child["token_count"] < CHILD_COMPLIANCE_MIN:
+            prev = result[-1]
+            combined_tokens = prev["token_count"] + child["token_count"]
+            # 1500 토큰(CHILD_COMPLIANCE_MAX) 이내면 병합
+            if combined_tokens <= CHILD_MAX_TOKENS * 3:
+                result[-1] = {
+                    **prev,
+                    "content": prev["content"] + "\n\n" + child["content"],
+                    "token_count": combined_tokens,
+                }
+                continue
+        result.append(child)
+
+    # 첫 번째 child가 여전히 작으면 다음 child에 병합
+    if len(result) >= 2 and result[0]["token_count"] < CHILD_COMPLIANCE_MIN:
+        first = result.pop(0)
+        combined_tokens = first["token_count"] + result[0]["token_count"]
+        result[0] = {
+            **result[0],
+            "content": first["content"] + "\n\n" + result[0]["content"],
+            "token_count": combined_tokens,
+        }
+
+    return result
+
+
 def _make_child_chunks(
     parent: "ChunkItem",
 ) -> list["ChunkItem"]:
     """
     Parent 청크를 CHILD_MIN_TOKENS ~ CHILD_MAX_TOKENS 단위로 분할하여 Child 청크 생성.
+    분할 후 100 토큰 미만 child는 인접 child와 병합한다.
     """
     content = parent["content"]
     parent_id = parent["chunk_id"]
@@ -345,7 +388,7 @@ def _make_child_chunks(
         buffer_tokens += tokens
 
     _flush()
-    return children
+    return _merge_small_children(children)
 
 
 # ---------------------------------------------------------------------------

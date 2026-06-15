@@ -1,0 +1,202 @@
+[
+  {
+    "concept_name": "N+1Query",
+    "concept_type": "antipattern",
+    "cwe_id": "CWE-1048",
+    "owasp_id": null,
+    "severity": "medium",
+    "domains": ["performance"],
+    "description_ko": "N+1 쿼리 문제는 루프 내에서 관련 객체를 개별 쿼리로 지연 로딩(Lazy Loading)하여 DB 쿼리가 N+1회 실행되는 성능 안티패턴. 데이터 건수가 늘수록 응답 시간이 선형 증가한다.",
+    "aliases": ["N+1 Query Problem", "NPlusOneQuery", "NPlusOneQueryProblem", "NPlus1Query", "NPlus1QueryProblem", "NPlusOneQueryAntipattern", "NPlus1QueryAntipattern", "LazyLoadingLoop", "LazyLoadingLoopAntipattern", "LazyLoadingAntipattern", "LazyLoadingProblem", "N+1 쿼리 문제", "Lazy Loading Loop"],
+    "root_cause": "lazy_loading_in_iteration_loop",
+    "affected_components": ["orm_layer", "database_query_layer", "api_list_endpoint"],
+    "mechanism": [
+      {
+        "mechanism_name": "eager_loading",
+        "code_examples": [
+          {
+            "lang": "python",
+            "lang_version": ">=3.10",
+            "framework": "django",
+            "framework_version": ">=4.0",
+            "code": "# 문제: 루프마다 추가 쿼리 발생 (N+1)\n# posts = Post.objects.all()\n# for p in posts: print(p.author.name)\n\n# 해결: select_related\nposts = Post.objects.select_related('author').all()\nfor p in posts:\n    print(p.author.name)  # 단일 JOIN 쿼리",
+            "description": "Django select_related로 외래키 관계를 JOIN으로 미리 로딩"
+          },
+          {
+            "lang": "python",
+            "lang_version": ">=3.10",
+            "framework": "sqlalchemy",
+            "framework_version": ">=2.0",
+            "code": "from sqlalchemy.orm import selectinload\nfrom sqlalchemy import select\n\nstmt = select(Post).options(selectinload(Post.comments))\nposts = session.scalars(stmt).all()",
+            "description": "SQLAlchemy selectinload로 1:N 관계 일괄 로딩"
+          }
+        ]
+      },
+      {
+        "mechanism_name": "batch_fetching",
+        "code_examples": [
+          {
+            "lang": "python",
+            "lang_version": ">=3.10",
+            "framework": "django",
+            "framework_version": ">=4.0",
+            "code": "from django.db.models import Prefetch\n\nposts = Post.objects.prefetch_related(\n    Prefetch('tags', queryset=Tag.objects.only('name'))\n).all()",
+            "description": "Prefetch로 M2M 관계 효율적 일괄 로딩 및 컬럼 선택 최소화"
+          }
+        ]
+      }
+    ],
+    "config_properties": []
+  },
+  {
+    "concept_name": "MissingIndex",
+    "concept_type": "antipattern",
+    "cwe_id": "CWE-1089",
+    "owasp_id": null,
+    "severity": "medium",
+    "domains": ["performance"],
+    "description_ko": "누락된 인덱스는 WHERE·ORDER BY·JOIN 절 컬럼에 인덱스가 없어 테이블 풀스캔(Full Scan)이 반복 발생하는 성능 안티패턴. 데이터 증가에 따라 응답 시간이 급격히 악화된다.",
+    "aliases": ["Missing Database Index", "Full Table Scan", "MissingDatabaseIndex", "MissingIndexAntipattern", "MissingDatabaseIndexAntipattern", "FullTableScan", "FullTableScanAntipattern", "SequentialScan", "SeqScan", "DatabaseIndexMissing", "누락된 인덱스", "Seq Scan"],
+    "root_cause": "unindexed_frequently_filtered_column",
+    "affected_components": ["database_query_layer", "api_list_endpoint", "reporting_layer"],
+    "mechanism": [
+      {
+        "mechanism_name": "composite_index",
+        "code_examples": [
+          {
+            "lang": "sql",
+            "lang_version": "*",
+            "framework": "postgresql",
+            "framework_version": ">=14",
+            "code": "-- 단일 컬럼 인덱스\nCREATE INDEX CONCURRENTLY idx_orders_user_id\n    ON orders (user_id);\n\n-- 부분 복합 인덱스 (조건 조합 최적화)\nCREATE INDEX CONCURRENTLY idx_orders_user_pending\n    ON orders (user_id, created_at)\n    WHERE status = 'pending';",
+            "description": "CONCURRENTLY 옵션으로 운영 중 무중단 인덱스 생성"
+          },
+          {
+            "lang": "python",
+            "lang_version": ">=3.10",
+            "framework": "django",
+            "framework_version": ">=4.0",
+            "code": "class Order(models.Model):\n    user = models.ForeignKey(User, on_delete=models.CASCADE)\n    status = models.CharField(max_length=20)\n\n    class Meta:\n        indexes = [\n            models.Index(\n                fields=['user', 'status'],\n                name='idx_order_user_status'\n            ),\n        ]",
+            "description": "Django Meta.indexes로 복합 인덱스 선언적 관리"
+          }
+        ]
+      },
+      {
+        "mechanism_name": "query_plan_analysis",
+        "code_examples": [
+          {
+            "lang": "sql",
+            "lang_version": "*",
+            "framework": "postgresql",
+            "framework_version": ">=14",
+            "code": "EXPLAIN (ANALYZE, BUFFERS, FORMAT TEXT)\nSELECT * FROM orders\nWHERE user_id = 123 AND status = 'pending'\nORDER BY created_at DESC;",
+            "description": "EXPLAIN ANALYZE로 Seq Scan 탐지 및 인덱스 효율성 검증"
+          }
+        ]
+      }
+    ],
+    "config_properties": []
+  },
+  {
+    "concept_name": "ConnPoolExhaustion",
+    "concept_type": "antipattern",
+    "cwe_id": "CWE-400",
+    "owasp_id": null,
+    "severity": "high",
+    "domains": ["performance", "security"],
+    "description_ko": "커넥션 풀 고갈은 DB·외부 서비스 커넥션이 반납되지 않거나 동시 요청이 풀 크기를 초과할 때 전체 시스템이 응답 불능에 빠지는 안티패턴. DoS와 동일한 결과를 초래한다.",
+    "aliases": ["Connection Pool Exhaustion", "DB Connection Leak", "ConnectionPoolExhaustion", "DbConnectionLeak", "ConnectionLeak", "PoolExhaustion", "ConnectionPoolLeakAntipattern", "ConnectionPoolExhaustionAntipattern", "DbConnectionLeakAntipattern", "ConnectionLeakAntipattern", "커넥션 풀 고갈"],
+    "root_cause": "connection_not_returned_to_pool_or_pool_undersized",
+    "affected_components": ["database_connection_pool", "http_client_pool", "api_gateway"],
+    "mechanism": [
+      {
+        "mechanism_name": "connection_pool_sizing",
+        "code_examples": [
+          {
+            "lang": "python",
+            "lang_version": ">=3.10",
+            "framework": "fastapi",
+            "framework_version": ">=0.100",
+            "code": "import asyncpg\nfrom contextlib import asynccontextmanager\nfrom fastapi import FastAPI\n\n@asynccontextmanager\nasync def lifespan(app: FastAPI):\n    app.state.pool = await asyncpg.create_pool(\n        dsn,\n        min_size=2,\n        max_size=10,\n        max_inactive_connection_lifetime=300,\n        command_timeout=30,\n    )\n    yield\n    await app.state.pool.close()",
+            "description": "asyncpg 풀 max_size·타임아웃 명시 설정으로 자원 한도 보장"
+          }
+        ]
+      },
+      {
+        "mechanism_name": "context_manager_connection",
+        "code_examples": [
+          {
+            "lang": "python",
+            "lang_version": ">=3.10",
+            "framework": "fastapi",
+            "framework_version": ">=0.100",
+            "code": "# 위험: 예외 시 release 누락 가능\n# conn = await pool.acquire()\n\n# 안전: async with 로 자동 반환 보장\nasync with pool.acquire() as conn:\n    result = await conn.fetch(query)",
+            "description": "async with acquire()로 예외 발생 시에도 커넥션 자동 반환 보장"
+          }
+        ]
+      }
+    ],
+    "config_properties": [
+      {"key": "pool_max_size", "value": "10", "type": "tuning"},
+      {"key": "pool_min_size", "value": "2", "type": "tuning"},
+      {"key": "command_timeout", "value": "30", "type": "tuning"}
+    ]
+  },
+  {
+    "concept_name": "MemoryLeak",
+    "concept_type": "antipattern",
+    "cwe_id": "CWE-401",
+    "owasp_id": null,
+    "severity": "high",
+    "domains": ["performance", "security"],
+    "description_ko": "메모리 누수는 더 이상 사용하지 않는 메모리를 해제하지 않아 힙이 지속 증가하는 안티패턴. 장기 운영 시 OOM 크래시 또는 DoS로 이어진다.",
+    "aliases": ["Memory Leak", "Heap Growth", "MemoryLeakAntipattern", "HeapGrowth", "HeapGrowthAntipattern", "OutOfMemory", "OutOfMemoryError", "OomCrash", "OomError", "메모리 누수", "OOM"],
+    "root_cause": "object_reference_retained_preventing_gc",
+    "affected_components": ["long_running_worker", "cache_layer", "event_listener_registry"],
+    "mechanism": [
+      {
+        "mechanism_name": "bounded_cache_eviction",
+        "code_examples": [
+          {
+            "lang": "python",
+            "lang_version": ">=3.10",
+            "framework": "fastapi",
+            "framework_version": ">=0.100",
+            "code": "from functools import lru_cache\nfrom cachetools import TTLCache\n\n# LRU 크기 제한 캐시\n@lru_cache(maxsize=512)\ndef expensive(key: str) -> str:\n    ...\n\n# TTL 만료 캐시\n_ttl: TTLCache = TTLCache(maxsize=1000, ttl=300)",
+            "description": "maxsize 제한 + TTL 만료로 캐시 무한 증가 차단"
+          }
+        ]
+      },
+      {
+        "mechanism_name": "weak_reference_cache",
+        "code_examples": [
+          {
+            "lang": "python",
+            "lang_version": ">=3.10",
+            "framework": "fastapi",
+            "framework_version": ">=0.100",
+            "code": "import weakref\n\n_cache: dict[str, weakref.ref] = {}\n\nasync def get_or_create(key: str):\n    ref = _cache.get(key)\n    obj = ref() if ref else None\n    if obj is None:\n        obj = await _build(key)\n        _cache[key] = weakref.ref(obj)\n    return obj",
+            "description": "weakref로 캐시 참조를 약하게 유지하여 GC 자동 수거 허용"
+          }
+        ]
+      },
+      {
+        "mechanism_name": "explicit_resource_release",
+        "code_examples": [
+          {
+            "lang": "python",
+            "lang_version": ">=3.10",
+            "framework": "fastapi",
+            "framework_version": ">=0.100",
+            "code": "import aiofiles\n\nasync def read_file(path: str) -> str:\n    async with aiofiles.open(path, 'r') as f:\n        return await f.read()\n    # f 자동 close → 파일 핸들 누수 없음",
+            "description": "컨텍스트 매니저로 파일·소켓 핸들 누수를 구조적으로 차단"
+          }
+        ]
+      }
+    ],
+    "config_properties": [
+      {"key": "cache_max_size", "value": "512", "type": "tuning"},
+      {"key": "cache_ttl_seconds", "value": "300", "type": "tuning"}
+    ]
+  }
+]

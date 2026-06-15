@@ -1,9 +1,15 @@
-/// <reference types="vitest/config" />
+﻿/// <reference types="vitest/config" />
 import { defineConfig } from "vite";
 import react from "@vitejs/plugin-react";
+import path from "path";
 
 export default defineConfig({
   plugins: [react()],
+  resolve: {
+    alias: {
+      "@": path.resolve(__dirname, "./src"),
+    },
+  },
   test: {
     globals: true,
     environment: "jsdom",
@@ -17,6 +23,10 @@ export default defineConfig({
   server: {
     host: "0.0.0.0",
     port: 5173,
+    watch: {
+      usePolling: true,
+      interval: 1000,
+    },
     proxy: {
       "/api": {
         // 로컬 풀스택은 VITE_PROXY_TARGET=http://localhost:8000 로 덮어쓴다(기본은 compose 호스트).
@@ -25,7 +35,7 @@ export default defineConfig({
         rewrite: (path) => path.replace(/^\/api/, ""),
       },
       "/kms": {
-        target: "http://m0:8002",
+        target: process.env.VITE_M0_PROXY_TARGET ?? "http://m0:8002",
         changeOrigin: true,
         bypass: (req) => {
           // text/html 요청(페이지 네비게이션)은 프록시하지 않고 SPA로 서빙
@@ -33,14 +43,14 @@ export default defineConfig({
         },
       },
       "/hitl": {
-        target: "http://m0:8002",
+        target: process.env.VITE_M0_PROXY_TARGET ?? "http://m0:8002",
         changeOrigin: true,
         bypass: (req) => {
           if (req.headers["accept"]?.includes("text/html")) return req.url;
         },
       },
       "/chat": {
-        target: "http://m0:8002",
+        target: process.env.VITE_M0_PROXY_TARGET ?? "http://m0:8002",
         changeOrigin: true,
         bypass: (req) => {
           if (req.headers["accept"]?.includes("text/html")) return req.url;
@@ -53,6 +63,16 @@ export default defineConfig({
         target: process.env.VITE_M3_PROXY_TARGET ?? "http://m3:8004",
         changeOrigin: true,
         rewrite: (path) => path.replace(/^\/m3-api/, ""),
+      },
+      "/m6-api": {
+        target: process.env.VITE_M6_PROXY_TARGET ?? "http://m6:8007",
+        changeOrigin: true,
+        rewrite: (path) => path.replace(/^\/m6-api/, ""),
+      },
+      "/m2-api": {
+        target: process.env.VITE_M2_PROXY_TARGET ?? "http://m2:8003",
+        changeOrigin: true,
+        rewrite: (path) => path.replace(/^\/m2-api/, ""),
       },
     },
   },
