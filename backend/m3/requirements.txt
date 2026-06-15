@@ -17,4 +17,5 @@ pandas==3.0.3
 psycopg2-binary==2.9.10
 pgvector
 langchain-anthropic
+langchain-google-vertexai
 ragas>=0.2.0

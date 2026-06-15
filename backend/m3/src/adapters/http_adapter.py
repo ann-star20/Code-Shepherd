@@ -37,6 +37,19 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+
+@app.on_event("startup")
+async def _warmup_embedding() -> None:
+    from src.embeddings import embed_texts
+    try:
+        await asyncio.to_thread(embed_texts, ["warmup"])
+        print("http_adapter: embedding model warmed up", flush=True)
+        log.info("http_adapter: embedding model warmed up")
+    except Exception as exc:
+        print(f"http_adapter: warmup failed (non-fatal): {exc}", flush=True)
+        log.warning("http_adapter: warmup failed (non-fatal): %s", exc)
+
+
 # ── 인메모리 결과 저장소 — GET /review가 읽는다 ──────────────────────────────
 _result_store: dict[str, dict[str, Any]] = {}
 
