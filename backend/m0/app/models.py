@@ -64,6 +64,17 @@ class Document(Base):
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False, server_default=func.now()
     )
+    # RBAC 권한 메타데이터 — 향후 접근 제어 확장용 (현재는 저장만)
+    department_id: Mapped[str | None] = mapped_column(String(100), nullable=True)
+    user_id: Mapped[str | None] = mapped_column(String(100), nullable=True)
+    permission_level: Mapped[str] = mapped_column(String(20), nullable=False, default="public")
+    visibility: Mapped[str] = mapped_column(String(20), nullable=False, default="all")
+    # 중복 감지용 SHA256 해시 (기존 문서는 NULL)
+    file_hash: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    # Stage 5b 메타데이터 검증 품질 점수 (0.0~1.0)
+    metadata_score: Mapped[float | None] = mapped_column(Float, nullable=True)
+    # Stage 5 Gemini LLM 호출 소요 시간 (ms) — 파이프라인 성능 분석용
+    stage5_latency_ms: Mapped[int | None] = mapped_column(Integer, nullable=True)
 
     chunks: Mapped[list["Chunk"]] = relationship(
         "Chunk", back_populates="document", cascade="all, delete-orphan"
@@ -98,6 +109,9 @@ class Chunk(Base):
     page_number: Mapped[int | None] = mapped_column(Integer, nullable=True)
     section_header: Mapped[str | None] = mapped_column(Text, nullable=True)
     chunk_index: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    # RBAC 비정규화 — pgVector 필터링 시 documents JOIN 없이 바로 사용
+    department_id: Mapped[str | None] = mapped_column(String(100), nullable=True)
+    permission_level: Mapped[str] = mapped_column(String(20), nullable=False, default="public")
 
     document: Mapped["Document"] = relationship("Document", back_populates="chunks")
     embedding: Mapped["ChunkEmbedding | None"] = relationship(

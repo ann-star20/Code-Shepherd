@@ -100,9 +100,10 @@ export function HitlQueue() {
   };
 
   // ── KB Evolution ──────────────────────────────────────────────────────────
+  const KB_EVOLUTION_TRIGGERS = ["새 카테고리", "Gemini 불확실성", "신규 기술 도메인", "대안 카테고리"];
   const isKbEvolution = (item: HitlQueueItem | null) =>
     item?.stage === "stage5b_metadata_validate" &&
-    (item?.reason ?? "").includes("새 카테고리");
+    KB_EVOLUTION_TRIGGERS.some(t => (item?.reason ?? "").includes(t));
 
   const handleKbSuggest = async (item: HitlQueueItem) => {
     setKbLoading(true);

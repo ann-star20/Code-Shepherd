@@ -71,7 +71,7 @@ def _get_gemini_llm_quality() -> Any:
         init_kwargs: dict = {
             "model": GEMINI_MODEL,
             "google_api_key": GEMINI_API_KEY,
-            "temperature": 0.5,
+            "temperature": 0.1,
         }
         if "2.5" in GEMINI_MODEL:
             init_kwargs["thinking_budget"] = GEMINI_THINKING_BUDGET

@@ -167,22 +167,75 @@ def _elements_to_markdown(elements: list) -> str:
     return "\n\n".join(lines)
 
 
+_CODE_FONTS = frozenset({
+    "Courier New", "Courier", "Consolas", "Monaco",
+    "Lucida Console", "Source Code Pro", "DejaVu Sans Mono",
+})
+
+
+def _para_text_from_runs(para) -> str:
+    """run 단위로 텍스트를 재조립한다. runs가 없으면 para.text로 폴백."""
+    runs = getattr(para, "runs", None)
+    if runs:
+        return "".join(r.text for r in runs if r.text)
+    return para.text or ""
+
+
+def _get_outline_level(para) -> int | None:
+    """단락 XML의 outlineLvl 값을 반환한다. 없으면 None."""
+    try:
+        pPr = para._element.pPr
+        if pPr is not None and pPr.outlineLvl is not None:
+            return int(pPr.outlineLvl.val)
+    except Exception:
+        pass
+    return None
+
+
+def _is_code_paragraph(para, style_name: str) -> bool:
+    """코드 블록으로 처리해야 할 단락인지 판별한다."""
+    style_lower = style_name.lower()
+    if "code" in style_lower or "preformat" in style_lower:
+        return True
+    runs = getattr(para, "runs", None)
+    if runs:
+        for run in runs:
+            font_name = getattr(getattr(run, "font", None), "name", None) or ""
+            if font_name in _CODE_FONTS:
+                return True
+    return False
+
+
 def _paragraph_to_markdown_line(para) -> str | None:
     """python-docx Paragraph → Markdown 라인. 빈 단락은 None 반환."""
-    text = para.text.strip() if para.text else ""
+    text = _para_text_from_runs(para).strip()
     if not text:
         return None
 
     style_name: str = (para.style.name if para.style else "") or ""
 
-    # "Heading 1"~N (영문) / "제목 1"~N (한글 Word) → #~####
-    if style_name.startswith(("Heading ", "제목 ")):
-        level_token = style_name.split()[-1]
+    # Bug 1 fix: 코드 블록 감지 (스타일명 "Code"/"Preformatted" 또는 모노스페이스 폰트)
+    if _is_code_paragraph(para, style_name):
+        return f"```\n{text}\n```"
+
+    # Bug 2 fix: 헤딩 감지 — 스타일명 대소문자 무관 + XML outline level 폴백
+    style_lower = style_name.lower()
+    heading_level: int | None = None
+
+    if style_lower.startswith(("heading", "제목")):
+        tokens = style_name.split()
         try:
-            level = min(int(level_token), 4)
-            return f"{'#' * level} {text}"
-        except ValueError:
+            heading_level = min(int(tokens[-1]), 4)
+        except (ValueError, IndexError):
             pass
+
+    if heading_level is None:
+        outline = _get_outline_level(para)
+        if outline is not None:
+            heading_level = min(outline + 1, 4)
+
+    if heading_level is not None:
+        return f"{'#' * heading_level} {text}"
 
     if style_name in ("Title", "제목"):
         return f"# {text}"
@@ -193,8 +246,89 @@ def _paragraph_to_markdown_line(para) -> str | None:
     return text
 
 
+def _table_rows_to_markdown(rows_data: list[list[str]]) -> str:
+    """cell 텍스트 2D 배열 → Markdown 파이프 표 문자열.
+
+    - 헤더 행(index 0)은 항상 포함
+    - 이후 행 중 모든 셀이 비어있는 행은 제외 (이미지-셀로 인한 빈 행 노이즈 방지)
+    """
+    if not rows_data:
+        return ""
+    md_lines: list[str] = []
+    for i, row in enumerate(rows_data):
+        is_header = i == 0
+        all_empty = all(cell.strip() == "" for cell in row)
+        if not is_header and all_empty:
+            continue  # 완전 빈 데이터 행 제외
+        md_lines.append("| " + " | ".join(row) + " |")
+        if is_header:
+            md_lines.append("| " + " | ".join(["---"] * len(row)) + " |")
+    return "\n".join(md_lines)
+
+
+def _convert_docx_to_pdf_via_libreoffice(file_path: str) -> str:
+    """LibreOffice headless로 DOCX를 PDF로 변환한다.
+
+    반환된 PDF는 임시 디렉토리에 저장된다.
+    사용 후 shutil.rmtree(os.path.dirname(pdf_path)) 로 정리해야 한다.
+
+    Raises:
+        RuntimeError: 변환 실패, 출력 파일 없음, 또는 타임아웃 시
+    """
+    import shutil
+    import subprocess
+    import tempfile
+
+    tmp_dir = tempfile.mkdtemp(prefix="lo_docx2pdf_")
+    try:
+        result = subprocess.run(
+            ["libreoffice", "--headless", "--convert-to", "pdf", "--outdir", tmp_dir, file_path],
+            capture_output=True,
+            timeout=60,
+        )
+        if result.returncode != 0:
+            raise RuntimeError(
+                f"LibreOffice 변환 실패 (exit={result.returncode}): "
+                f"{result.stderr.decode(errors='replace')}"
+            )
+        base_name = os.path.splitext(os.path.basename(file_path))[0]
+        pdf_path = os.path.join(tmp_dir, f"{base_name}.pdf")
+        if not os.path.exists(pdf_path):
+            raise RuntimeError(f"LibreOffice 변환 완료됐지만 PDF 파일 없음: {pdf_path}")
+        return pdf_path
+    except subprocess.TimeoutExpired:
+        shutil.rmtree(tmp_dir, ignore_errors=True)
+        raise RuntimeError("LibreOffice 변환 타임아웃 (60초 초과)")
+    except RuntimeError:
+        shutil.rmtree(tmp_dir, ignore_errors=True)
+        raise
+    except Exception as e:
+        shutil.rmtree(tmp_dir, ignore_errors=True)
+        raise RuntimeError(f"LibreOffice 변환 중 예외: {e}") from e
+
+
+def _extract_textbox_lines_from_para(para_elem) -> list[str]:
+    """w:p 요소 안에 중첩된 w:txbxContent에서 텍스트 라인을 추출한다.
+
+    텍스트 박스는 앵커 단락(`<w:p>`)에 묶여 있으므로,
+    이 함수로 추출한 내용을 해당 단락 직후에 삽입하면 문서 순서가 유지된다.
+
+    실제 DOCX 구조:
+      w:p > w:r > w:drawing > wp:anchor > a:graphic > ... > wps:txbx > w:txbxContent
+    iter()는 깊이 무관하게 탐색하므로 중간 경로에 무관하게 동작한다.
+    """
+    from docx.oxml.ns import qn as _qn
+    lines: list[str] = []
+    for txbx_content in para_elem.iter(_qn("w:txbxContent")):
+        for p_elem in txbx_content.findall(_qn("w:p")):
+            text = "".join(t.text for t in p_elem.iter(_qn("w:t")) if t.text)
+            if text.strip():
+                lines.append(text.strip())
+    return lines
+
+
 def _convert_docx_with_python_docx(file_path: str) -> str:
-    """python-docx로 DOCX를 Markdown으로 변환. 단락과 표를 문서 순서대로 처리한다."""
+    """python-docx로 DOCX를 Markdown으로 변환. 단락·텍스트박스·표를 문서 순서대로 처리한다."""
     from docx import Document
     from docx.text.paragraph import Paragraph as DocxParagraph
     from docx.table import Table as DocxTable
@@ -210,11 +344,14 @@ def _convert_docx_with_python_docx(file_path: str) -> str:
             line = _paragraph_to_markdown_line(para)
             if line:
                 blocks.append(line)
+            # 텍스트 박스: 앵커 단락 직후 삽입 → 문서 순서 유지
+            for tb_line in _extract_textbox_lines_from_para(child):
+                blocks.append(tb_line)
 
         elif tag == "tbl":
             table = DocxTable(child, doc)
-            rows: list[str] = []
-            for i, row in enumerate(table.rows):
+            rows_data: list[list[str]] = []
+            for row in table.rows:
                 # row.cells는 병합 셀을 중복 반환한다 (_tc 기준 중복 제거)
                 seen: set[int] = set()
                 unique_cells: list[str] = []
@@ -223,11 +360,10 @@ def _convert_docx_with_python_docx(file_path: str) -> str:
                     if tc_id not in seen:
                         seen.add(tc_id)
                         unique_cells.append(cell.text.strip().replace("\n", " "))
-                rows.append("| " + " | ".join(unique_cells) + " |")
-                if i == 0:
-                    rows.append("| " + " | ".join(["---"] * len(unique_cells)) + " |")
-            if rows:
-                blocks.append("\n".join(rows))
+                rows_data.append(unique_cells)
+            tbl_md = _table_rows_to_markdown(rows_data)
+            if tbl_md:
+                blocks.append(tbl_md)
 
     return "\n\n".join(blocks)
 
@@ -781,20 +917,24 @@ PARSER_QUALITY_THRESHOLD = int(os.getenv("PARSER_QUALITY_THRESHOLD", "60"))
 # PDF 파서 시도 순서 (품질 낮을 때 자동 전환)
 _PDF_PARSER_SEQUENCE = ["pymupdf", "unstructured", "gemini_ocr"]
 
+# DOCX 파서 시도 순서: LibreOffice PDF 렌더링 우선 → python_docx → unstructured 폴백
+# LibreOffice가 표/이미지/텍스트박스를 PDF로 완전 렌더링하므로 복잡한 DOCX에 최적.
+_DOCX_PARSER_SEQUENCE = ["libreoffice_pdf", "python_docx", "unstructured"]
+
 
 async def _parse_with_quality_loop(
     file_path: str,
     file_type: str,
 ) -> tuple[str, str, int]:
     """
-    PDF 품질 기반 파서 자율 전환 루프 (Stage 1 Agent 핵심).
+    품질 기반 파서 자율 전환 루프 (Stage 1 Agent 핵심).
 
-    pymupdf → unstructured → gemini_ocr 순서로 시도.
+    PDF: pymupdf → unstructured → gemini_ocr
+    DOCX: python_docx → unstructured
+
     각 결과를 _calculate_quality_score()로 관찰하고
     PARSER_QUALITY_THRESHOLD 달성 시 즉시 반환한다.
     전부 실패하면 ("", "hitl_required", 0)을 반환한다.
-
-    gemini_ocr는 GOOGLE_API_KEY 환경변수가 있을 때만 시도한다.
 
     Returns:
         (markdown, parser_used, quality_score)
@@ -802,7 +942,8 @@ async def _parse_with_quality_loop(
     threshold = int(os.getenv("PARSER_QUALITY_THRESHOLD", str(PARSER_QUALITY_THRESHOLD)))
     best_md, best_parser, best_score = "", "hitl_required", 0
 
-    for parser_name in _PDF_PARSER_SEQUENCE:
+    sequence = _DOCX_PARSER_SEQUENCE if file_type == "docx" else _PDF_PARSER_SEQUENCE
+    for parser_name in sequence:
         # gemini_ocr는 API 키가 있어야 시도
         if parser_name == "gemini_ocr" and not os.getenv("GOOGLE_API_KEY", ""):
             logger.info("GOOGLE_API_KEY 없음 — gemini_ocr 건너뜀")
@@ -811,6 +952,15 @@ async def _parse_with_quality_loop(
         try:
             if parser_name == "pymupdf":
                 md, _ = await asyncio.to_thread(_convert_pdf_with_pymupdf, file_path)
+            elif parser_name == "python_docx":
+                md = await asyncio.to_thread(_convert_docx_with_python_docx, file_path)
+            elif parser_name == "libreoffice_pdf":
+                import shutil as _shutil
+                pdf_path = await asyncio.to_thread(_convert_docx_to_pdf_via_libreoffice, file_path)
+                try:
+                    md, _ = await asyncio.to_thread(_convert_pdf_with_pymupdf, pdf_path)
+                finally:
+                    _shutil.rmtree(os.path.dirname(pdf_path), ignore_errors=True)
             elif parser_name == "unstructured":
                 md, _ = await asyncio.to_thread(_convert_with_unstructured, file_path, file_type)
             else:  # gemini_ocr
@@ -1102,6 +1252,18 @@ async def document_parser_agent(
             return _make_hitl_result(
                 "hitl_required", complexity, has_tables, has_images, page_count,
                 parsing_time_ms, ["모든 파서 품질 기준 미달"],
+            )
+
+    elif parser_name == "python_docx":
+        # DOCX Agent 루프: python_docx → unstructured 품질 자율 전환
+        markdown, parser_name, quality_loop_score = await _parse_with_quality_loop(
+            file_path, file_type
+        )
+        if parser_name == "hitl_required":
+            parsing_time_ms = int((time.monotonic() - t0) * 1000)
+            return _make_hitl_result(
+                "hitl_required", complexity, has_tables, has_images, page_count,
+                parsing_time_ms, ["DOCX 모든 파서 품질 기준 미달"],
             )
 
     else:
