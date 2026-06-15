@@ -124,14 +124,16 @@ services:
       - "8006:8006"
     env_file: .env
     environment:
-      NEO4J_URI: bolt://neo4j:7687
+      NEO4J_URI: bolt://neo4j_m6:7687
+      NEO4J_USER: neo4j
+      NEO4J_PASSWORD: ${NEO4J_PASSWORD:-codeshepherd}
     volumes:
       - ./backend/_shared:/app/_shared:ro
       - ./backend/m5:/app/service
     networks:
       - code-shepherd
     depends_on:
-      - neo4j
+      - neo4j_m6
     restart: unless-stopped
     command: uv run uvicorn app.main:app --host 0.0.0.0 --port 8006 --reload
 
