@@ -171,3 +171,80 @@ export const memberHandlers = [
     HttpResponse.json({ scope: "self", prs: [] })
   ),
 ];
+
+const M6_BASE = "/m6-api";
+
+export const m6Handlers = [
+  http.post(`${M6_BASE}/documents/check-duplicate`, () =>
+    HttpResponse.json({ is_duplicate: false, doc_id: "doc-123" })
+  ),
+  http.post(`${M6_BASE}/pipeline/trigger`, () =>
+    HttpResponse.json({ session_id: "sess-123", message: "started" }, { status: 202 })
+  ),
+  http.get(`${M6_BASE}/staging/:sessionId`, () =>
+    HttpResponse.json({ items: [] })
+  ),
+  http.get(`${M6_BASE}/staging/:sessionId/diff`, () =>
+    HttpResponse.json({ draft: 0, approved: 0, committed: 0 })
+  ),
+  http.post(`${M6_BASE}/staging/:sessionId/approve`, () =>
+    HttpResponse.json({ ok: true })
+  ),
+  http.post(`${M6_BASE}/staging/:sessionId/reject`, () =>
+    HttpResponse.json({ ok: true })
+  ),
+  http.post(`${M6_BASE}/staging/:sessionId/commit`, () =>
+    HttpResponse.json({ ok: true })
+  ),
+  http.post(`${M6_BASE}/staging/:id/approve`, () =>
+    HttpResponse.json({ ok: true })
+  ),
+  http.post(`${M6_BASE}/staging/:id/reject`, () =>
+    HttpResponse.json({ ok: true })
+  ),
+  http.get(`${M6_BASE}/graph/topology`, () =>
+    HttpResponse.json({
+      nodes: [
+        { id: "domain:security", name: "security", node_type: "Domain", layer: "L1", status: "COMMITTED" },
+        {
+          id: "XSS",
+          name: "XSS",
+          node_type: "Concept",
+          layer: "L2",
+          status: "COMMITTED",
+          domains: ["security"],
+          cwe_id: "CWE-79",
+          owasp_id: "A03:2021",
+          severity: "high",
+          description_ko: "설명",
+          aliases: ["Cross-Site Scripting"],
+          root_cause: "unsanitized_input",
+        },
+        { id: "mechanism:output_encoding", name: "output_encoding", node_type: "Mechanism", layer: "L3", status: "COMMITTED" },
+        { id: "rootcause:unsanitized_input", name: "unsanitized_input", node_type: "RootCause", layer: "L3", status: "COMMITTED" },
+        { id: "component:template_rendering_layer", name: "template_rendering_layer", node_type: "Component", layer: "L3", status: "COMMITTED" },
+        {
+          id: "codeexample:output_encoding_python_3.11_django_4.2",
+          name: "output_encoding_python_3.11_django_4.2",
+          node_type: "CodeExample",
+          layer: "L4",
+          status: "COMMITTED",
+          lang: "python",
+          lang_version: "3.11",
+          framework: "django",
+          framework_version: "4.2",
+        },
+      ],
+      edges: [
+        { source: "domain:security", target: "XSS", type: "BELONGS_TO" },
+        { source: "XSS", target: "mechanism:output_encoding", type: "MITIGATED_BY" },
+        { source: "XSS", target: "rootcause:unsanitized_input", type: "CAUSED_BY" },
+        { source: "XSS", target: "component:template_rendering_layer", type: "AFFECTS" },
+        { source: "mechanism:output_encoding", target: "codeexample:output_encoding_python_3.11_django_4.2", type: "HAS_EXAMPLE" },
+      ],
+    })
+  ),
+  http.post(`${M6_BASE}/documents/metadata/learn`, () =>
+    HttpResponse.json({ ok: true })
+  ),
+];

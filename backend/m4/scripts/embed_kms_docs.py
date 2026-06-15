@@ -44,6 +44,13 @@ DOCUMENTS_CATEGORY = {
     "learning_resource": "기타",
 }
 
+# 폴더명 → chunk_embeddings.metadata.category (RAG 검색 필터 — learn_pipeline.py의 rag_search() category와 일치해야 함)
+METADATA_CATEGORY = {
+    "security_guide":    "보안",
+    "coding_convention": "코딩컨벤션",
+    "learning_resource": "코드성능검증",
+}
+
 
 # --- Text extraction ---
 
@@ -123,9 +130,9 @@ async def insert_file(conn: asyncpg.Connection, file_path: Path, category: str) 
         file_path.suffix.lstrip("."),
     )
 
-    # metadata JSONB — category 값이 RAG 검색 필터 기준 (영문)
+    # metadata JSONB — category 값이 RAG 검색 필터 기준
     metadata = json.dumps({
-        "category": category,       # RAG 검색에서 사용: security_guide / coding_convention / learning_resource
+        "category": METADATA_CATEGORY[category],  # RAG 검색 필터: 보안 / 코딩컨벤션 / 코드성능검증
         "source":   "m4-kms-seed",
         "file":     file_path.name,
     })

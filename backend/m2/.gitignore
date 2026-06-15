@@ -72,6 +72,9 @@ db_test.py
 result.txt
 result_all.txt
 
+# 문서 PDF (대용량, git 불필요)
+*.pdf
+
 # Local docs (not for remote)
 prompt.md
 PRD_조직지식관리_온보딩_플랫폼.md

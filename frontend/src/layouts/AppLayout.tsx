@@ -15,7 +15,7 @@ import {
   Home,
   LayoutDashboard,
   LogOut,
-  ShieldAlert,
+  Network,
   Plus,
   Search,
   Settings,
@@ -49,13 +49,6 @@ const COMMON_NAV: NavItem[] = [
     icon: <GitPullRequest size={16} />,
     requiresTeam: true,
     testId: "nav-item-review",
-  },
-  {
-    label: "정적 분석 · 보안",
-    path: "/security",
-    icon: <ShieldAlert size={16} />,
-    requiresTeam: false,
-    testId: "nav-item-security",
   },
   {
     label: "커리큘럼 추천",
@@ -107,6 +100,14 @@ const LEAD_NAV: NavItem[] = [
     leadOnly: true,
     requiresTeam: true,
     testId: "nav-item-kms-manage",
+  },
+  {
+    label: "지식 그래프",
+    path: "/graph",
+    icon: <Network size={16} />,
+    leadOnly: true,
+    requiresTeam: true,
+    testId: "nav-item-graph",
   },
 ];
 

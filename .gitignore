@@ -57,7 +57,7 @@ playwright-report/
 Thumbs.db
 
 # Docker
-*.dockerignore
+# *.dockerignore  ← .dockerignore는 팀 공유 필요, git 추적 대상
 
 # Alembic
 # (alembic.ini는 커밋, 실제 migrations만 커밋)
@@ -83,8 +83,3 @@ frontend/vite.config.d.ts
 
 # KMS 사내문서 (git 제외)
 backend/m4/data/kms/
-
-# 로컬 전용 파일
-.claude/settings.local.json
-backend/m2/pj3_data/
-backend/m2/sub2_new/.claude/settings.local.json

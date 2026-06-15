@@ -112,6 +112,7 @@ const MIXED_CASES: TeamPR[] = [
 export default function SecurityPage() {
   const { currentTeamId, currentTeam, teamsLoading } = useTeamContext();
   const [selectedPr, setSelectedPr] = useState<TeamPR | null>(null);
+  const [taskId, setTaskId] = useState<string | null>(null);
 
   const { data: prsData, isLoading: prsLoading, isError: prsError } =
     useQuery<{ prs: TeamPR[] }>({
@@ -129,48 +130,51 @@ export default function SecurityPage() {
   const [activeTab, setActiveTab] = useState<"static" | "security">("static");
   const [pipelineStages, setPipelineStages] = useState<M2StageTrace[]>([]);
   const [pipelineRunning, setPipelineRunning] = useState(false);
-  const [taskId, setTaskId] = useState<string | null>(null);
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
-  // 분석 완료(progress done) 후에만 결과를 task_id로 조회한다.
+  // 분석 완료(파이프라인 종료) 후 task_id로 실제 저장된 이슈를 조회한다.
   const { data: review, isLoading: reviewLoading } =
     useQuery<ReviewResult>({
-      queryKey: ["security-review", taskId],
+      queryKey: ["security-review", USE_DUMMY ? selectedPr?.id : taskId],
       queryFn: USE_DUMMY
         ? () => Promise.resolve(DUMMY_REVIEWS[selectedPr!.id] ?? { found: false, verdict: null, comment: "", issues: [] })
         : () => fetch(`${M2_URL}/scan-results/task/${taskId}`).then(r => r.json()),
       enabled: USE_DUMMY ? !!selectedPr : (!!taskId && !pipelineRunning),
     });
 
-  // PR 선택 시 실제 분석 실행(run-case) + 진행상태 폴링(실시간 시각화)
+  // PR 선택 시 실제 분석을 트리거하고 진행상태를 폴링해 단계를 실시간 반영한다.
   useEffect(() => {
     if (pollRef.current) { clearInterval(pollRef.current); pollRef.current = null; }
     if (!selectedPr) { setPipelineStages([]); setPipelineRunning(false); setTaskId(null); return; }
 
+    // 더미 모드: 트리거 없이 전 단계를 즉시 success 처리.
     if (USE_DUMMY) {
       setPipelineRunning(false);
       setPipelineStages(PIPELINE_STAGES.map(key => ({ key, status: "success" as const })));
-      setTaskId(selectedPr.id);
       return;
     }
 
     let cancelled = false;
-    setPipelineRunning(true);
     setTaskId(null);
+    setPipelineRunning(true);
     setPipelineStages(PIPELINE_STAGES.map(key => ({ key, status: "pending" as const })));
 
     fetch(`${M2_URL}/orchestrate/run-case/${selectedPr.id}`, { method: "POST" })
       .then(r => r.json())
-      .then((data: { task_id?: string }) => {
-        if (cancelled || !data.task_id) { setPipelineRunning(false); return; }
-        const tid = data.task_id;
-        setTaskId(tid);
+      .then(({ task_id }) => {
+        if (cancelled || !task_id) { setPipelineRunning(false); return; }
+        setTaskId(task_id);
         pollRef.current = setInterval(() => {
-          fetch(`${M2_URL}/orchestrate/status/${tid}`)
+          fetch(`${M2_URL}/orchestrate/status/${task_id}`)
             .then(r => r.json())
-            .then((st: { status: string; stages?: M2StageTrace[] }) => {
-              if (cancelled) return;
-              if (st.stages) setPipelineStages(st.stages);
+            .then(st => {
+              if (cancelled || !st?.stages) return;
+              setPipelineStages(
+                PIPELINE_STAGES.map(key => {
+                  const s = st.stages.find((x: M2StageTrace) => x.key === key);
+                  return s ? { key, status: s.status, ms: s.ms } : { key, status: "pending" as const };
+                })
+              );
               if (st.status === "done" || st.status === "error") {
                 if (pollRef.current) { clearInterval(pollRef.current); pollRef.current = null; }
                 setPipelineRunning(false);
@@ -373,11 +377,11 @@ export default function SecurityPage() {
                 result={!pipelineRunning && review?.found ? { staticIssues, securityIssues } : undefined}
               />
 
-              {/* 이슈 테이블 — 파이프라인 애니메이션이 끝난 뒤에만 결과 노출 */}
-              {pipelineRunning || reviewLoading ? (
+              {/* 이슈 테이블 */}
+              {reviewLoading ? (
                 <div className="flex items-center justify-center gap-2 text-sm text-notion-text-secondary py-10">
                   <Loader2 size={15} className="animate-spin" />
-                  파이프라인 분석 진행 중...
+                  분석 결과 불러오는 중...
                 </div>
               ) : !review?.found ? (
                 <div className="text-center text-sm text-notion-text-secondary px-4 py-10 border border-dashed border-notion-border rounded-lg">
