@@ -31,6 +31,8 @@ export function GraphPipelineContainer({ onToast }: GraphPipelineContainerProps)
   const [selectedConceptId, setSelectedConceptId] = useState<string | null>(null);
   const [duplicateUrl, setDuplicateUrl]   = useState<string | null>(null);
   const [prescanResult, setPrescanResult] = useState<PrescanResult | null>(null);
+  const [errorMessage, setErrorMessage]   = useState<string | null>(null);
+  const errorMessageRef = useRef<string | null>(null);
 
   const addLog = useCallback((line: string) => {
     setLogs((prev) => [...prev, line]);
@@ -58,7 +60,10 @@ export function GraphPipelineContainer({ onToast }: GraphPipelineContainerProps)
   const handleFinished = useCallback(() => {
     if (skippedRef.current) {
       skippedRef.current = false;
-      setPipelineState("IDLE");
+      // 에러가 있으면 ERROR 상태 유지 (handleStepFailed가 이미 설정)
+      if (!errorMessageRef.current) {
+        setPipelineState("IDLE");
+      }
       return;
     }
     setPipelineState("WAITING_APPROVAL");
@@ -77,9 +82,10 @@ export function GraphPipelineContainer({ onToast }: GraphPipelineContainerProps)
   }, [onToast]);
 
   const handleStepFailed = useCallback((step: StepName, reason: string) => {
-    if (step === "Extractor") {
-      skippedRef.current = true;
-    }
+    skippedRef.current = true;
+    errorMessageRef.current = reason;
+    setErrorMessage(reason);
+    setPipelineState("ERROR");
     onToast("error", reason);
   }, [onToast]);
 
@@ -115,8 +121,10 @@ export function GraphPipelineContainer({ onToast }: GraphPipelineContainerProps)
 
   const handlePipelineStarted = useCallback((sid: string) => {
     skippedRef.current = false;
+    errorMessageRef.current = null;
     setSessionId(sid);
     setLogs([]);
+    setErrorMessage(null);
     resetSSE();
     setPipelineState("RUNNING");
     onToast("info", "파이프라인 시작됨");
@@ -199,6 +207,28 @@ export function GraphPipelineContainer({ onToast }: GraphPipelineContainerProps)
 
   return (
     <div className="flex h-full flex-col gap-4 p-4">
+      {/* 에러 배너 */}
+      {pipelineState === "ERROR" && errorMessage && (
+        <div className="flex items-center gap-3 rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm">
+          <span className="flex-1 text-red-700">{errorMessage}</span>
+          <button
+            type="button"
+            onClick={() => void handleSubmit()}
+            className="rounded-md bg-red-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-red-700 active:bg-red-800"
+          >
+            재시도
+          </button>
+          <button
+            type="button"
+            aria-label="에러 닫기"
+            onClick={() => { errorMessageRef.current = null; setErrorMessage(null); setPipelineState("IDLE"); }}
+            className="text-red-400 hover:text-red-600"
+          >
+            ✕
+          </button>
+        </div>
+      )}
+
       {/* URL 입력 바 */}
       <div className="flex gap-2">
         <input
