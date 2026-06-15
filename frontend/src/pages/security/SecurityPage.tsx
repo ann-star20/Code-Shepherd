@@ -107,6 +107,7 @@ const MIXED_CASES: TeamPR[] = [
   { id: "mixed_case_04", author_login: "wooya27", github_pr_number: 104, github_pr_url: null, status: "reviewed", submitted_at: "2026-06-14T00:03:00Z" },
   { id: "mixed_case_05", author_login: "wooya27", github_pr_number: 105, github_pr_url: null, status: "reviewed", submitted_at: "2026-06-14T00:04:00Z" },
   { id: "mixed_case_06", author_login: "wooya27", github_pr_number: 106, github_pr_url: null, status: "reviewed", submitted_at: "2026-06-14T00:05:00Z" },
+  { id: "clickjacking_case", author_login: "wooya27", github_pr_number: 107, github_pr_url: null, status: "reviewed", submitted_at: "2026-06-14T00:06:00Z" },
 ];
 
 export default function SecurityPage() {

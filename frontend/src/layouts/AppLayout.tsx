@@ -18,6 +18,7 @@ import {
   Plus,
   Search,
   Settings,
+  ShieldCheck,
   Users,
   Youtube,
 } from "lucide-react";
@@ -48,6 +49,13 @@ const COMMON_NAV: NavItem[] = [
     icon: <GitPullRequest size={16} />,
     requiresTeam: true,
     testId: "nav-item-review",
+  },
+  {
+    label: "정적 분석 · 보안 스캔",
+    path: "/security",
+    icon: <ShieldCheck size={16} />,
+    requiresTeam: true,
+    testId: "nav-item-security",
   },
   {
     label: "커리큘럼 추천",
