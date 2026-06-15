@@ -36,6 +36,7 @@ _PATH_RULE_MAP: dict[str, tuple[str, str]] = {
     "logging":         ("CONV-LOG-003",  "Minor"),
     "time_complexity": ("CONV-PERF-009", "Minor"),
     "time_handling":   ("CONV-TIME-002", "Minor"),
+    "memory_leak":     ("CONV-MEM-011",  "Major"),
 }
 
 _RULE_SEVERITY: dict[str, str] = {r: s for r, s in _PATH_RULE_MAP.values()}
@@ -63,6 +64,10 @@ _KMS_KEYWORD_MAP: list[tuple[list[str], str, str]] = [
      "CONV-DEP-005", "Major"),
     (["O(N²)", "시간복잡도", "sorted()", "set 변환", "time complexity"],
      "CONV-PERF-009", "Minor"),
+    (["Memory Leak", "메모리 누수", "Unbounded Collection", "무한히 커지는",
+      "캐시 무한 증가", "Python GC", "자료구조 증가", "CONV-MEM-011",
+      "unbounded", "maxsize 없음", "TTL 없음"],
+     "CONV-MEM-011", "Major"),
 ]
 
 

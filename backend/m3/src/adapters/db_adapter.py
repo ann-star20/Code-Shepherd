@@ -42,6 +42,7 @@ _RULE_MAP: dict[str, tuple[str, str]] = {
     "CONV-SQL-008": ("security",              "SQL Injection"),
     "CONV-SEC-010": ("security",              "Clickjacking"),
     "CONV-PERF-009": ("performance",          "Time Complexity"),
+    "CONV-MEM-011": ("memory_leak",           "Unbounded Collection Growth"),
 }
 
 # backward-compat: test_all_8_rules_in_keyword_map
@@ -58,6 +59,7 @@ _SUGGESTION_MAP: dict[str, str] = {
     "CONV-SQL-008": "[CONV-SQL-008] f-string SQL 조립 대신 파라미터 바인딩(%s 또는 ?)을 사용하세요.",
     "CONV-SEC-010": "[CONV-SEC-010] XFrameOptionsMiddleware를 MIDDLEWARE에 등록하고 X_FRAME_OPTIONS='DENY'를 설정하세요.",
     "CONV-PERF-009": "[CONV-PERF-009] O(N²) 직접 구현 대신 sorted()/set 변환 또는 DB ORDER BY를 사용하세요.",
+    "CONV-MEM-011": "[CONV-MEM-011] 무한히 커지는 자료구조(list/dict/cache/queue)에 maxsize/TTL/eviction 정책을 추가하세요. deque(maxlen=N), lru_cache(maxsize=N), Queue(maxsize=N), TTLCache 등을 활용하세요.",
 }
 
 _PLACEHOLDER_MARKERS = ("password@host", "@host:", "user:password", "YOUR_PASSWORD",

@@ -105,6 +105,9 @@ _KEYWORD_MAP: dict[str, str] = {
     "CONV-ERR-006": "예외 무음 처리",
     "CONV-CFG-007": "환경변수 직접 접근",
     "CONV-SQL-008": "SQL 인젝션 위험",
+    "CONV-SEC-010": "클릭재킹 취약점",
+    "CONV-PERF-009": "시간복잡도 위반",
+    "CONV-MEM-011": "메모리 누수 (Unbounded Collection)",
 }
 
 

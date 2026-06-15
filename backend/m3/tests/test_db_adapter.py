@@ -339,6 +339,7 @@ def test_all_8_rules_in_keyword_map():
     expected = {
         "CONV-API-001", "CONV-TIME-002", "CONV-LOG-003", "CONV-DB-004",
         "CONV-DEP-005", "CONV-ERR-006", "CONV-CFG-007", "CONV-SQL-008",
+        "CONV-SEC-010", "CONV-PERF-009", "CONV-MEM-011",
     }
     assert expected == set(_KEYWORD_MAP.keys())
 
