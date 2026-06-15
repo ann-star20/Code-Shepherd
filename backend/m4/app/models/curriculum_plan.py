@@ -2,7 +2,7 @@ import uuid
 from datetime import datetime
 from typing import Any, Optional
 
-from sqlalchemy import Boolean, CheckConstraint, ForeignKey, Text, func
+from sqlalchemy import Boolean, CheckConstraint, ForeignKey, Integer, Text, func
 from sqlalchemy.dialects.postgresql import JSONB, UUID
 from sqlalchemy.orm import Mapped, mapped_column
 
@@ -22,6 +22,8 @@ class CurriculumPlan(Base):
     error_message: Mapped[Optional[str]] = mapped_column(Text)
     card_content: Mapped[Optional[dict[str, Any]]] = mapped_column(JSONB)  # status=completed일 때 채워짐
     completed_at: Mapped[Optional[datetime]] = mapped_column()  # 사용자가 카드를 학습 완료한 시각 (POST /api/complete, D11) — status='completed'(카드 생성 성공)와 무관한 별개 개념
-    ragas_reason: Mapped[Optional[str]] = mapped_column(Text)  # RAGAS 평가 마지막 시도의 실패 원인 — "low_faithfulness" | "low_relevancy" | None (T12)
+    ragas_reason: Mapped[Optional[str]] = mapped_column(Text)  # RAGAS 평가 마지막 시도의 실패 원인 — "low_faithfulness" | "low_relevancy" | "ragas_timeout" | None (T12)
+    curator_instruction: Mapped[Optional[dict[str, Any]]] = mapped_column(JSONB)  # 카드 생성에 사용된 마지막 Curator 지시 (D22, T16)
+    attempt_count: Mapped[int] = mapped_column(Integer, nullable=False, server_default="0")  # build_card 시도 횟수 (T16)
     created_at: Mapped[datetime] = mapped_column(nullable=False, server_default=func.now())
     updated_at: Mapped[datetime] = mapped_column(nullable=False, server_default=func.now(), onupdate=func.now())

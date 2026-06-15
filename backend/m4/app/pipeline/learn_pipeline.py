@@ -7,9 +7,12 @@ import re
 
 import google.generativeai as genai
 import httpx
+from langsmith import traceable
+from langsmith.run_helpers import tracing_context
 
 from app.kms.search_adapter import (
     SearchAdapter,
+    build_search1_text,
     embed_query,
     rag_search,
 )
@@ -36,7 +39,8 @@ _CARD_PROMPT_BODY = (
     "- why_dangerous: e-commerce 환경에서 이 취약점이 실제로 어떤 피해를 줄 수 있는지 최대 한 단락으로 구체적으로 설명\n"
     "- core_summary: 핵심 한 줄 요약 (마크다운 없이 평문)\n"
     "- after_code: 위의 '리뷰 대상 코드'를 keyword와 sub_category 기준의 이슈를 직접 수정한 코드. 새로운 예시 코드 작성 금지. 코드펜스 기호 없이 순수 코드만. 핵심 변경사항에는 해당 코드 바로 윗줄에 별도 줄로 코멘트 추가 (인라인 코멘트 금지)\n"
-    "- learning_recommendations: 학습 추천 최대 7개, 각각 title(짧은 제목)과 description(한 문장)\n"
+    "- learning_recommendations: 학습 추천 최대 7개, 각각 title(짧은 제목)과 description(한 문장). "
+    "리뷰 대상 코드의 구체적인 문제(예: 어떤 메서드/패턴을 썼는지)와 연결해서 추천해줘\n"
     '{{"explanation": string, "why_dangerous": string, "core_summary": string, "after_code": string|null, "learning_recommendations": [{{"title": string, "description": string}}]}}'
 )
 
@@ -78,7 +82,13 @@ def _parse_llm_json(text: str) -> dict:
 def _format_docs(docs: list[dict] | None) -> str:
     if not docs:
         return "(검색된 참고 문서 없음 — 자체 지식 기반으로 작성)"
-    return "\n".join(f"- {doc.get('content', '')}" for doc in docs)
+    lines = []
+    for doc in docs:
+        lines.append(f"- {doc.get('content', '')}")
+        parent_content = doc.get("parent_content")
+        if parent_content:
+            lines.append(f"  (관련 맥락: {parent_content})")
+    return "\n".join(lines)
 
 
 def _format_curator_guidance(curator_instruction: dict | None) -> str:
@@ -94,6 +104,7 @@ def _format_curator_guidance(curator_instruction: dict | None) -> str:
     )
 
 
+@traceable(run_type="llm", name="build_card")
 async def build_card(
     *,
     issue: ReviewIssue,
@@ -169,6 +180,7 @@ _RETRY_HINT_BY_REASON = {
 }
 
 
+@traceable(run_type="chain", name="ragas_eval")
 async def ragas_eval(card: dict, docs: list[dict]) -> dict:
     """Validator Agent (gemini-2.5-pro + RAGAS) — faithfulness/answer_relevancy ≥ 0.7 통과 여부를 판정한다 (Section 6).
 
@@ -190,18 +202,39 @@ async def ragas_eval(card: dict, docs: list[dict]) -> dict:
     answer_relevancy.embeddings = LangchainEmbeddingsWrapper(
         GoogleGenerativeAIEmbeddings(model=JUDGE_EMBEDDING_MODEL_NAME)
     )
+    retrieved_contexts: list[str] = []
+    for doc in docs:
+        retrieved_contexts.append(doc.get("content", ""))
+        parent_content = doc.get("parent_content")
+        if parent_content:
+            retrieved_contexts.append(parent_content)
+
     sample = SingleTurnSample(
         user_input=card.get("explanation", ""),
         response=f"{card.get('explanation', '')}\n{card.get('core_summary', '')}",
-        retrieved_contexts=[doc.get("content", "") for doc in docs],
+        retrieved_contexts=retrieved_contexts,
     )
-    faithfulness_score = await faithfulness.single_turn_ascore(sample)
-    relevancy_score = await answer_relevancy.single_turn_ascore(sample)
+    try:
+        faithfulness_score, relevancy_score = await asyncio.wait_for(
+            asyncio.gather(
+                faithfulness.single_turn_ascore(sample),
+                answer_relevancy.single_turn_ascore(sample),
+            ),
+            timeout=GEMINI_TIMEOUT_SECONDS,
+        )
+    except TimeoutError as exc:
+        raise TimeoutError(f"ragas_eval: RAGAS judge LLM 응답 시간 초과 ({GEMINI_TIMEOUT_SECONDS}s)") from exc
     passed = faithfulness_score >= RAGAS_PASS_THRESHOLD and relevancy_score >= RAGAS_PASS_THRESHOLD
     return {"passed": passed, "reason": _ragas_reason(faithfulness_score, relevancy_score)}
 
 
-async def fallback_card(*, issue: ReviewIssue, depth: str, card_type: str, curator_instruction: dict | None = None) -> dict:
+async def fallback_card(
+    *,
+    issue: ReviewIssue,
+    depth: str,
+    card_type: str,
+    curator_instruction: dict | None = None,
+) -> dict:
     """RAGAS 평가 3회 실패 시 — RAG 컨텍스트 없이 LLM 자체 지식만으로 카드를 생성한다 (D30, "LLM 자체 생성" fallback)."""
     return await build_card(
         issue=issue,
@@ -214,6 +247,7 @@ async def fallback_card(*, issue: ReviewIssue, depth: str, card_type: str, curat
     )
 
 
+@traceable(run_type="retriever", name="embed_query_fields")
 async def _embed_query_fields(query_fields: dict[str, str]) -> tuple[list[float], list[float], list[float]]:
     """query_fields(보안/코딩컨벤션/코드성능검증) 3개를 동시에 임베딩한다 — 지연시간을 합산이 아닌 최대값으로 줄인다."""
     return await asyncio.gather(
@@ -223,7 +257,53 @@ async def _embed_query_fields(query_fields: dict[str, str]) -> tuple[list[float]
     )
 
 
+def _concept_search_params(
+    issue: ReviewIssue,
+    query_fields: dict[str, str],
+    embedding1: list[float],
+    embedding3: list[float],
+) -> tuple[list[float], str]:
+    """D37 — query_fields["보안"]이 D15 fallback(build_search1_text)과 동일하면 Gemini가 이
+    이슈를 보안과 무관하다고 판단해 비워뒀다는 뜻이므로, "개념 설명" 참고자료(docs_concept)는
+    "코드성능검증" 카테고리에서 검색한다."""
+    if query_fields["보안"] == build_search1_text(issue):
+        return embedding3, "코드성능검증"
+    return embedding1, "보안"
+
+
+def _recommend_search_params(
+    query_fields: dict[str, str],
+    embedding1: list[float],
+    embedding3: list[float],
+) -> tuple[list[float], str]:
+    """D37 — query_fields["코드성능검증"]이 비어 있으면(fallback 없음) Gemini가 이 이슈를
+    성능과 무관하다고 판단했다는 뜻이므로, "학습 추천" 참고자료(docs_recommend)는 "보안"
+    카테고리에서 검색한다."""
+    if not query_fields["코드성능검증"]:
+        return embedding1, "보안"
+    return embedding3, "코드성능검증"
+
+
+@traceable(name="generate_card")
 async def generate_card(
+    issue: ReviewIssue,
+    adapter: SearchAdapter,
+    mistake_count: int = 0,
+    profile: DeveloperProfile | None = None,
+    config: dict | None = None,
+) -> CurriculumPlan:
+    """이슈 1건을 받아 RAG 검색 3종 → 카드 빌드 → curriculum_plan 레코드를 생성한다.
+
+    config["metadata"]["trace_id"](AgentHarness.run()이 주입)를 tracing_context로 전파해,
+    내부에서 호출되는 curator_agent/rag_search/build_card/ragas_eval의 LangSmith run이
+    모두 같은 trace_id로 묶여 "카드 생성 전체 과정"을 한 그룹으로 볼 수 있게 한다.
+    """
+    meta = (config or {}).get("metadata") or {}
+    with tracing_context(metadata=meta):
+        return await _generate_card_impl(issue, adapter, mistake_count, profile)
+
+
+async def _generate_card_impl(
     issue: ReviewIssue,
     adapter: SearchAdapter,
     mistake_count: int = 0,
@@ -250,21 +330,27 @@ async def generate_card(
             llm_fallback=False,
             error_message=f"embed_query timeout: {exc}",
             card_content=None,
+            curator_instruction=curator_instruction,
+            attempt_count=0,
         )
 
-    docs_concept = await rag_search(adapter, embedding1, category="보안")
+    concept_embedding, concept_category = _concept_search_params(issue, query_fields, embedding1, embedding3)
+    recommend_embedding, recommend_category = _recommend_search_params(query_fields, embedding1, embedding3)
+    docs_concept = await rag_search(adapter, concept_embedding, category=concept_category)
     docs_example = await rag_search(adapter, embedding2, category="코딩컨벤션")
-    docs_recommend = await rag_search(adapter, embedding3, category="코드성능검증")
+    docs_recommend = await rag_search(adapter, recommend_embedding, category=recommend_category)
 
     llm_fallback = docs_concept is None or docs_example is None
     depth = determine_depth(issue, mistake_count=mistake_count)
     card_type = route_card_type(issue)
 
     ragas_reason: str | None = None
+    attempt_count = 0
     try:
         if llm_fallback or _skip_ragas_eval():
             # llm_fallback=True면 docs가 없어 faithfulness 측정 대상이 없음(D30) → RAGAS 스킵
             # SKIP_RAGAS_EVAL=true면 비용 절감을 위해 평가 루프 자체를 건너뜀 (자체 cost-control 플래그)
+            attempt_count = 1
             card_content = await build_card(
                 issue=issue,
                 docs_concept=docs_concept,
@@ -278,6 +364,7 @@ async def generate_card(
             # docs 3개 합산해서 RAGAS contexts로 전달 (Section 6)
             all_docs = [*(docs_concept or []), *(docs_example or []), *(docs_recommend or [])]
             for attempt in range(3):
+                attempt_count = attempt + 1
                 card_content = await build_card(
                     issue=issue,
                     docs_concept=docs_concept,
@@ -287,7 +374,17 @@ async def generate_card(
                     card_type=card_type,
                     curator_instruction=curator_instruction,
                 )
-                result = await ragas_eval(card_content, all_docs)
+                try:
+                    result = await ragas_eval(card_content, all_docs)
+                except TimeoutError:
+                    # RAGAS judge LLM 응답 시간 초과 — 재시도해도 같은 judge 호출을 다시 기다려야 해
+                    # 타임아웃이 반복될 가능성이 높으므로, low_faithfulness/low_relevancy처럼 재시도하지
+                    # 않고 즉시 루프를 멈춘다. card_content는 이미 RAG 문서로 build_card()가 만들어 둔
+                    # 결과이므로(llm_fallback=False 유지) RAGAS 검증만 건너뛰고 그대로 사용한다 —
+                    # fallback_card()(RAG 없음)로 대체하면 learning_recommendations의 RAG 기반
+                    # 일관성이 깨진다.
+                    ragas_reason = "ragas_timeout"
+                    break
                 ragas_reason = result["reason"]
                 if result["passed"]:
                     break
@@ -298,14 +395,19 @@ async def generate_card(
                     curator_instruction = await curator_agent(profile=profile, issue=issue, hint=hint)
                     query_fields = curator_instruction["query_fields"]
                     embedding1, embedding2, embedding3 = await _embed_query_fields(query_fields)
-                    docs_concept = await rag_search(adapter, embedding1, category="보안")
+                    concept_embedding, concept_category = _concept_search_params(issue, query_fields, embedding1, embedding3)
+                    recommend_embedding, recommend_category = _recommend_search_params(query_fields, embedding1, embedding3)
+                    docs_concept = await rag_search(adapter, concept_embedding, category=concept_category)
                     docs_example = await rag_search(adapter, embedding2, category="코딩컨벤션")
-                    docs_recommend = await rag_search(adapter, embedding3, category="코드성능검증")
+                    docs_recommend = await rag_search(adapter, recommend_embedding, category=recommend_category)
                     all_docs = [*(docs_concept or []), *(docs_example or []), *(docs_recommend or [])]
             else:
                 # 3회 모두 실패 → fallback_card()로 대체, llm_fallback=True (T3)
                 card_content = await fallback_card(
-                    issue=issue, depth=depth, card_type=card_type, curator_instruction=curator_instruction
+                    issue=issue,
+                    depth=depth,
+                    card_type=card_type,
+                    curator_instruction=curator_instruction,
                 )
                 llm_fallback = True
     except Exception as exc:
@@ -317,6 +419,8 @@ async def generate_card(
             llm_fallback=False,
             error_message=str(exc),
             card_content=None,
+            curator_instruction=curator_instruction,
+            attempt_count=attempt_count,
         )
 
     # before_code: code_snippet 없으면 null (프론트에서 단일 컬럼 렌더링)
@@ -340,4 +444,6 @@ async def generate_card(
         error_message=None,
         card_content=card_content,
         ragas_reason=ragas_reason,
+        curator_instruction=curator_instruction,
+        attempt_count=attempt_count,
     )

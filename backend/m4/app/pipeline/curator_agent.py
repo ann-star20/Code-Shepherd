@@ -9,11 +9,21 @@ import json
 from typing import TypedDict
 
 import google.generativeai as genai
+from langsmith import traceable
 
+from app.kms.search_adapter import build_search1_text, build_search2_text
 from app.models.review_issue import ReviewIssue
 
 CURATOR_MODEL_NAME = "gemini-2.5-flash"
 GEMINI_TIMEOUT_SECONDS = 60
+
+# "보안"/"코딩컨벤션"이 비어 있으면 embed_query("")로 인해 rag_search가 None을 반환해
+# llm_fallback(=docs_concept/docs_example is None)이 오탐으로 True가 된다 — D15 고정
+# 검색어로 채운다. "코드성능검증"은 llm_fallback 판정과 무관해 대상에서 제외한다.
+_QUERY_FIELD_FALLBACKS = {
+    "보안": build_search1_text,
+    "코딩컨벤션": build_search2_text,
+}
 
 
 class DeveloperProfile(TypedDict):
@@ -65,6 +75,14 @@ def _format_list(items: list[str]) -> str:
     return ", ".join(items) if items else "(기록 없음)"
 
 
+def _fill_empty_query_fields(query_fields: dict[str, str], issue: ReviewIssue) -> dict[str, str]:
+    return {
+        category: value or _QUERY_FIELD_FALLBACKS[category](issue) if category in _QUERY_FIELD_FALLBACKS else value
+        for category, value in query_fields.items()
+    }
+
+
+@traceable(run_type="llm", name="curator_agent")
 async def curator_agent(
     *,
     profile: DeveloperProfile,
@@ -97,4 +115,6 @@ async def curator_agent(
         )
     except TimeoutError as exc:
         raise TimeoutError(f"curator_agent: Gemini 응답 시간 초과 ({GEMINI_TIMEOUT_SECONDS}s)") from exc
-    return json.loads(response.text)
+    instruction = json.loads(response.text)
+    instruction["query_fields"] = _fill_empty_query_fields(instruction["query_fields"], issue)
+    return instruction
