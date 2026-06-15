@@ -184,3 +184,45 @@ def test_semgrep_suggestion_maps_to_korean():
     # 미매칭 → 한글 폴백
     fb = analyzer._semgrep_suggestion("some.unknown.rule", "Generic finding")
     assert fb.endswith("수정하세요.")
+
+
+# ── clickjacking 휴리스틱 (Bandit/Semgrep 미탐지 영역) ──
+
+CLICKJACK_DIFF = """diff --git a/settings.py b/settings.py
+--- /dev/null
++++ b/settings.py
+@@ -0,0 +1,9 @@
++from django.views.decorators.clickjacking import xframe_options_exempt
++
++MIDDLEWARE = [
++    "django.middleware.security.SecurityMiddleware",
++]
++X_FRAME_OPTIONS = "SAMEORIGIN"
++
++@xframe_options_exempt
++def pay(request):
++    return None
+"""
+
+
+def test_clickjacking_detected_without_external_tools():
+    # bandit/semgrep 미설치여도 휴리스틱은 결정적으로 동작해야 한다.
+    with patch.object(analyzer.subprocess, "run", side_effect=FileNotFoundError):
+        issues, summary, _ = analyze(CLICKJACK_DIFF, "security_scan")
+
+    cj = [i for i in issues if i.rule_id == "SEC-CLICKJACK"]
+    # 4개 하위개념: exempt, SAMEORIGIN, XFrameOptionsMiddleware 누락, SameSite 누락
+    assert len(cj) == 4
+    msgs = " ".join(i.message for i in cj)
+    assert "xframe_options_exempt" in msgs
+    assert "SAMEORIGIN" in msgs
+    assert "XFrameOptionsMiddleware" in msgs
+    assert "SameSite" in msgs
+    # 사이트 전체 노출/보호 해제는 Critical
+    assert summary.critical >= 2
+
+
+def test_clickjacking_not_flagged_on_non_django_file():
+    with patch.object(analyzer.subprocess, "run", side_effect=FileNotFoundError):
+        issues, _, _ = analyze(PY_DIFF, "security_scan")
+    assert all(i.rule_id != "SEC-CLICKJACK" for i in issues)

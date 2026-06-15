@@ -585,6 +585,79 @@ def _run_semgrep(paths: list[str], cwd: str) -> list[IssueItem]:
     ]
 
 
+# ── clickjacking 휴리스틱 (Bandit/Semgrep 미탐지 영역) ──────────────────────────
+# clickjacking은 코드 패턴이 아니라 Django 보안 설정/미들웨어 "누락"(OWASP A05)이라
+# Bandit·Semgrep owasp-top-ten 팩이 신뢰성 있게 잡지 못한다. 결정적으로 탐지해
+# m4 RAG 학습카드용 review_issue(sub_category="clickjacking")를 생성하기 위한 휴리스틱.
+_CLICKJACK_RULE = "SEC-CLICKJACK"
+_XFRAME_SAMEORIGIN_RE = re.compile(r"""X_FRAME_OPTIONS\s*=\s*['"]SAMEORIGIN['"]""")
+
+
+def _is_django_settings(content: str) -> bool:
+    """Django 설정 파일로 보이는지(MIDDLEWARE/INSTALLED_APPS 정의 존재)."""
+    return "MIDDLEWARE" in content or "INSTALLED_APPS" in content
+
+
+def _run_clickjacking(paths: list[str], cwd: str) -> list[IssueItem]:
+    """Django clickjacking 설정 취약점 휴리스틱 탐지.
+
+    탐지 대상:
+      - @xframe_options_exempt 오용 — X-Frame-Options 보호 해제 (Critical)
+      - X_FRAME_OPTIONS = "SAMEORIGIN" — 자사 iframe 허용, DENY 권장 (Major)
+      - MIDDLEWARE에 XFrameOptionsMiddleware 누락 — 사이트 전체 노출 (Critical)
+      - SESSION/CSRF Cookie SameSite 미설정 (Major)
+    """
+    items: list[IssueItem] = []
+    for rel in paths:
+        if Path(rel).suffix.lower() != ".py":
+            continue
+        try:
+            content = Path(os.path.join(cwd, rel)).read_text(encoding="utf-8")
+        except OSError:
+            continue
+        lines = content.splitlines()
+
+        for idx, line in enumerate(lines, start=1):
+            stripped = line.strip()
+            if stripped.startswith("@xframe_options_exempt"):
+                items.append(IssueItem(
+                    severity="Critical", line=idx, file=rel,
+                    message="xframe_options_exempt로 X-Frame-Options 보호가 해제되어 clickjacking에 노출됩니다.",
+                    rule_id=_CLICKJACK_RULE,
+                    suggestion="민감한 뷰에서 xframe_options_exempt를 제거하고 X-Frame-Options를 DENY로 강제하세요.",
+                ))
+            elif _XFRAME_SAMEORIGIN_RE.search(stripped):
+                items.append(IssueItem(
+                    severity="Major", line=idx, file=rel,
+                    message="X_FRAME_OPTIONS=SAMEORIGIN은 자사 도메인 iframe을 허용해 clickjacking 여지가 남습니다.",
+                    rule_id=_CLICKJACK_RULE,
+                    suggestion="민감한 서비스라면 X_FRAME_OPTIONS를 'DENY'로 설정하세요.",
+                ))
+
+        if _is_django_settings(content):
+            if "XFrameOptionsMiddleware" not in content:
+                mw_line = next(
+                    (i for i, line in enumerate(lines, start=1) if "MIDDLEWARE" in line), 1
+                )
+                items.append(IssueItem(
+                    severity="Critical", line=mw_line, file=rel,
+                    message="MIDDLEWARE에 XFrameOptionsMiddleware가 없어 사이트 전체가 clickjacking에 노출됩니다.",
+                    rule_id=_CLICKJACK_RULE,
+                    suggestion="MIDDLEWARE에 django.middleware.clickjacking.XFrameOptionsMiddleware를 추가하세요.",
+                ))
+            if "SESSION_COOKIE_SAMESITE" not in content and "CSRF_COOKIE_SAMESITE" not in content:
+                anchor = next(
+                    (i for i, line in enumerate(lines, start=1) if "MIDDLEWARE" in line), 1
+                )
+                items.append(IssueItem(
+                    severity="Major", line=anchor, file=rel,
+                    message="SESSION/CSRF Cookie SameSite 설정이 없어 CSRF·clickjacking 복합 공격 방어가 약합니다.",
+                    rule_id=_CLICKJACK_RULE,
+                    suggestion="SESSION_COOKIE_SAMESITE='Lax', CSRF_COOKIE_SAMESITE='Lax'를 명시하세요.",
+                ))
+    return items
+
+
 def _run_tools(rel_paths: list[str], cwd: str, agent: Agent) -> list[IssueItem]:
     issues: list[IssueItem] = []
     for lang, paths in _group_by_lang(rel_paths).items():
@@ -598,6 +671,7 @@ def _run_tools(rel_paths: list[str], cwd: str, agent: Agent) -> list[IssueItem]:
             if lang == "python":
                 issues += _run_bandit(paths, cwd)
                 issues += _run_semgrep(paths, cwd)
+                issues += _run_clickjacking(paths, cwd)
             else:
                 issues += _run_semgrep(paths, cwd)
     return issues
