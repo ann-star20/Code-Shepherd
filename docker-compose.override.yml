@@ -28,7 +28,7 @@ services:
     environment:
       # .env에 OLLAMA_BASE_URL을 넣으면 덮어씌워지므로 여기서만 지정
       OLLAMA_BASE_URL: http://host.docker.internal:11434
-      ENABLE_DB_WRITE: "true"
+      ENABLE_DB_WRITE: "false"
     # dev3 진입점 — 팀 m3의 app.main:app 대신 src.adapters.http_adapter:app
     command: uvicorn src.adapters.http_adapter:app --host 0.0.0.0 --port 8004
 
