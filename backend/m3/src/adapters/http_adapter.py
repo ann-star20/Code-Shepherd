@@ -237,6 +237,28 @@ async def _fetch_pr_diff(owner: str, repo: str, pr_number: int) -> str:
         return r.text
 
 
+async def _fetch_pr_author(owner: str, repo: str, pr_number: int) -> str | None:
+    """PR 작성자의 GitHub login을 반환한다. 실패 시 None."""
+    token = os.getenv("GITHUB_TOKEN", "")
+    headers: dict[str, str] = {
+        "Accept": "application/vnd.github.v3+json",
+        "User-Agent": "dev3-code-review-agent",
+    }
+    if token:
+        headers["Authorization"] = f"Bearer {token}"
+    try:
+        async with httpx.AsyncClient(timeout=10) as client:
+            r = await client.get(
+                f"https://api.github.com/repos/{owner}/{repo}/pulls/{pr_number}",
+                headers=headers,
+            )
+            if r.status_code == 200:
+                return r.json().get("user", {}).get("login")
+    except Exception:
+        pass
+    return None
+
+
 async def _post_github_comment(owner: str, repo: str, pr_number: int, body: str) -> tuple[bool, str | None]:
     token = os.getenv("GITHUB_TOKEN", "")
     if not token or not body:
@@ -284,11 +306,12 @@ async def post_review(payload: M3ReviewRequest) -> M3ReviewResponse:
     def emit(event: dict) -> None:
         loop.call_soon_threadsafe(stream.push, event)
 
+    github_id = await _fetch_pr_author(owner, repo, payload.pr_number)
     output, trace = await asyncio.to_thread(run_review_traced, inp, emit)
 
     posted, comment_url = await _post_github_comment(owner, repo, payload.pr_number, output.comment_md)
     _store_result(owner, repo, payload.pr_number, output, trace)
-    insert_review_issues(output.findings or [], payload.pr_number, payload.repository)
+    insert_review_issues(output.findings or [], payload.pr_number, payload.repository, github_id=github_id)
 
     stored = _result_store[key]
     stream.push({
@@ -385,7 +408,7 @@ async def _run_with_stream(
 
     posted, _ = await _post_github_comment(owner, repo, pr_number, output.comment_md)
     _store_result(owner, repo, pr_number, output, trace)
-    insert_review_issues(output.findings or [], pr_number, full_name)
+    insert_review_issues(output.findings or [], pr_number, full_name, github_id=pr_author)
 
     stored = _result_store[key]
     stream.push({
