@@ -10,11 +10,11 @@ import { DocumentAnalyzer } from "./DocumentAnalyzer";
 
 // ── KPI data hook ─────────────────────────────────────────────────────────────
 interface KpiCounts {
-  total: number; processing: number; hitl: number; stored: number; loading: boolean;
+  total: number; processing: number; hitl: number; stored: number; other: number; loading: boolean;
 }
 
 function useKpiCounts(refreshKey: number): KpiCounts {
-  const [kpi, setKpi] = useState<KpiCounts>({ total: 0, processing: 0, hitl: 0, stored: 0, loading: true });
+  const [kpi, setKpi] = useState<KpiCounts>({ total: 0, processing: 0, hitl: 0, stored: 0, other: 0, loading: true });
 
   useEffect(() => {
     let cancelled = false;
@@ -25,16 +25,20 @@ function useKpiCounts(refreshKey: number): KpiCounts {
       listHitlQueue("pending", 1, 0),
       listDocuments("stored", 1, 0),
       listDocuments("stored_partial", 1, 0),
-    ]).then(([allRes, procRes, hitlRes, storedRes, partialRes]) => {
+      listDocuments("failed", 1, 0),
+      listDocuments("rejected", 1, 0),
+    ]).then(([allRes, procRes, hitlRes, storedRes, partialRes, failedRes, rejectedRes]) => {
       if (cancelled) return;
-      setKpi({
-        total:      allRes.status      === "fulfilled" ? allRes.value.total      : 0,
-        processing: procRes.status     === "fulfilled" ? procRes.value.total     : 0,
-        hitl:       hitlRes.status     === "fulfilled" ? hitlRes.value.total     : 0,
-        stored:     (storedRes.status  === "fulfilled" ? storedRes.value.total   : 0) +
-                    (partialRes.status === "fulfilled" ? partialRes.value.total  : 0),
-        loading: false,
-      });
+      const total      = allRes.status      === "fulfilled" ? allRes.value.total      : 0;
+      const processing = procRes.status     === "fulfilled" ? procRes.value.total     : 0;
+      const hitl       = hitlRes.status     === "fulfilled" ? hitlRes.value.total     : 0;
+      const stored     = (storedRes.status  === "fulfilled" ? storedRes.value.total   : 0) +
+                         (partialRes.status === "fulfilled" ? partialRes.value.total  : 0);
+      const failed     = (failedRes.status   === "fulfilled" ? failedRes.value.total   : 0) +
+                         (rejectedRes.status === "fulfilled" ? rejectedRes.value.total : 0);
+      // 나머지(approved, reprocessing, pending 등)
+      const other      = Math.max(0, total - processing - hitl - stored - failed);
+      setKpi({ total, processing, hitl, stored, other: failed + other, loading: false });
     });
     return () => { cancelled = true; };
   }, [refreshKey]);
@@ -293,6 +297,7 @@ export function DocumentUpload({ isVisible = true }: { isVisible?: boolean }) {
         <KpiCard label="처리 중"   value={kpi.processing} color="#f59e0b" loading={kpi.loading} />
         <KpiCard label="HITL 대기" value={kpi.hitl}       color="#3b82f6" loading={kpi.loading} />
         <KpiCard label="적재 완료" value={kpi.stored}     color="#22c55e" loading={kpi.loading} />
+        <KpiCard label="실패/거부" value={kpi.other}      color="#ef4444" loading={kpi.loading} />
       </div>
 
       {/* ── Main two-column area ─────────────────────────────────────── */}
