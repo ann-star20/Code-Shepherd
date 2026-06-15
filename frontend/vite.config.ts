@@ -1,9 +1,15 @@
-/// <reference types="vitest/config" />
+﻿/// <reference types="vitest/config" />
 import { defineConfig } from "vite";
 import react from "@vitejs/plugin-react";
+import path from "path";
 
 export default defineConfig({
   plugins: [react()],
+  resolve: {
+    alias: {
+      "@": path.resolve(__dirname, "./src"),
+    },
+  },
   test: {
     globals: true,
     environment: "jsdom",
@@ -53,6 +59,16 @@ export default defineConfig({
         target: process.env.VITE_M3_PROXY_TARGET ?? "http://m3:8004",
         changeOrigin: true,
         rewrite: (path) => path.replace(/^\/m3-api/, ""),
+      },
+      "/m6-api": {
+        target: process.env.VITE_M6_PROXY_TARGET ?? "http://m6:8007",
+        changeOrigin: true,
+        rewrite: (path) => path.replace(/^\/m6-api/, ""),
+      },
+      "/m2-api": {
+        target: process.env.VITE_M2_PROXY_TARGET ?? "http://m2:8003",
+        changeOrigin: true,
+        rewrite: (path) => path.replace(/^\/m2-api/, ""),
       },
     },
   },
