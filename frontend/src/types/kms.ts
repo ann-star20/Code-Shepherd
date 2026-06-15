@@ -55,8 +55,25 @@ export interface DocDetailsResponse {
   file_type: string | null;
   status: string;
   created_at: string | null;
+  parser_used?: string | null;
+  quality_score: number | null;
+  doc_complexity?: string | null;
+  parsing_time_ms?: number | null;
   agent_traces: AgentTraceItem[];
   chunks: ChunkItem[];
+}
+
+export interface DocStats {
+  rag_reference_count: number;
+  last_used_at: string | null;
+  recent_search_reflected: boolean;
+}
+
+export interface RelatedDoc {
+  doc_id: string;
+  title: string | null;
+  category: string | null;
+  shared_count: number;
 }
 
 export interface DocListItem {

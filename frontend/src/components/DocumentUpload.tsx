@@ -1,5 +1,7 @@
 import { useCallback, useEffect, useRef, useState, type ChangeEvent, type DragEvent } from "react";
-import { getDocDetails, listDocuments, uploadDocument } from "../lib/kmsApi";
+import { getDocDetails, listDocuments, uploadDocument, checkDuplicate, replaceDocument, type CheckDuplicateResult, type ExistingDocInfo } from "../lib/kmsApi";
+import { computeFileHash } from "../lib/fileHash";
+import { DuplicateModal } from "./DuplicateModal";
 import { listHitlQueue } from "../lib/hitlApi";
 import { TERMINAL_STATUSES, useUploadStatus } from "../hooks/useUploadStatus";
 import type { DocDetailsResponse, UploadResponse } from "../types/kms";
@@ -8,11 +10,11 @@ import { DocumentAnalyzer } from "./DocumentAnalyzer";
 
 // ── KPI data hook ─────────────────────────────────────────────────────────────
 interface KpiCounts {
-  total: number; processing: number; hitl: number; stored: number; loading: boolean;
+  total: number; processing: number; hitl: number; stored: number; other: number; loading: boolean;
 }
 
 function useKpiCounts(refreshKey: number): KpiCounts {
-  const [kpi, setKpi] = useState<KpiCounts>({ total: 0, processing: 0, hitl: 0, stored: 0, loading: true });
+  const [kpi, setKpi] = useState<KpiCounts>({ total: 0, processing: 0, hitl: 0, stored: 0, other: 0, loading: true });
 
   useEffect(() => {
     let cancelled = false;
@@ -23,16 +25,20 @@ function useKpiCounts(refreshKey: number): KpiCounts {
       listHitlQueue("pending", 1, 0),
       listDocuments("stored", 1, 0),
       listDocuments("stored_partial", 1, 0),
-    ]).then(([allRes, procRes, hitlRes, storedRes, partialRes]) => {
+      listDocuments("failed", 1, 0),
+      listDocuments("rejected", 1, 0),
+    ]).then(([allRes, procRes, hitlRes, storedRes, partialRes, failedRes, rejectedRes]) => {
       if (cancelled) return;
-      setKpi({
-        total:      allRes.status      === "fulfilled" ? allRes.value.total      : 0,
-        processing: procRes.status     === "fulfilled" ? procRes.value.total     : 0,
-        hitl:       hitlRes.status     === "fulfilled" ? hitlRes.value.total     : 0,
-        stored:     (storedRes.status  === "fulfilled" ? storedRes.value.total   : 0) +
-                    (partialRes.status === "fulfilled" ? partialRes.value.total  : 0),
-        loading: false,
-      });
+      const total      = allRes.status      === "fulfilled" ? allRes.value.total      : 0;
+      const processing = procRes.status     === "fulfilled" ? procRes.value.total     : 0;
+      const hitl       = hitlRes.status     === "fulfilled" ? hitlRes.value.total     : 0;
+      const stored     = (storedRes.status  === "fulfilled" ? storedRes.value.total   : 0) +
+                         (partialRes.status === "fulfilled" ? partialRes.value.total  : 0);
+      const failed     = (failedRes.status   === "fulfilled" ? failedRes.value.total   : 0) +
+                         (rejectedRes.status === "fulfilled" ? rejectedRes.value.total : 0);
+      // 나머지(approved, reprocessing, pending 등)
+      const other      = Math.max(0, total - processing - hitl - stored - failed);
+      setKpi({ total, processing, hitl, stored, other: failed + other, loading: false });
     });
     return () => { cancelled = true; };
   }, [refreshKey]);
@@ -102,6 +108,12 @@ export function DocumentUpload({ isVisible = true }: { isVisible?: boolean }) {
   const [dragOver, setDragOver]         = useState(false);
   const [uploading, setUploading]       = useState(false);
   const [uploadError, setUploadError]   = useState<string | null>(null);
+  const [duplicateState, setDuplicateState] = useState<{
+    type: "identical" | "modified";
+    existingDoc: ExistingDocInfo;
+    pendingFile: File;
+    pendingHash: string;
+  } | null>(null);
   const [uploadResult, setUploadResult] = useState<UploadResponse | null>(() => {
     try {
       const saved = sessionStorage.getItem(SESSION_KEY);
@@ -152,6 +164,34 @@ export function DocumentUpload({ isVisible = true }: { isVisible?: boolean }) {
     return () => clearTimeout(timer);
   }, [isTerminal, uploadResult?.doc_id, docDetails]);
 
+  const doUpload = useCallback(async (file: File, fileHash?: string | null) => {
+    setUploading(true);
+    setUploadError(null);
+    try {
+      const result = await uploadDocument(file, "upload", fileHash ?? undefined);
+      setUploadResult(result);
+      setKpiRefreshKey(k => k + 1);
+    } catch (e) {
+      setUploadError(e instanceof Error ? e.message : "업로드 중 오류 발생");
+    } finally {
+      setUploading(false);
+    }
+  }, []);
+
+  const doReplace = useCallback(async (oldDocId: string, file: File, fileHash?: string | null) => {
+    setUploading(true);
+    setUploadError(null);
+    try {
+      const result = await replaceDocument(oldDocId, file, fileHash);
+      setUploadResult({ doc_id: result.new_doc_id, status: result.status, message: result.message, quality_score: null, hitl_required: false, chunk_count: 0 });
+      setKpiRefreshKey(k => k + 1);
+    } catch (e) {
+      setUploadError(e instanceof Error ? e.message : "교체 중 오류 발생");
+    } finally {
+      setUploading(false);
+    }
+  }, []);
+
   const handleFile = useCallback(async (file: File) => {
     const ext = "." + (file.name.split(".").pop()?.toLowerCase() ?? "");
     if (!ACCEPTED_EXTENSIONS.includes(ext)) {
@@ -162,17 +202,34 @@ export function DocumentUpload({ isVisible = true }: { isVisible?: boolean }) {
     setUploadResult(null);
     setDocDetails(null);
     setShowChunks(false);
-    setUploading(true);
+    setDuplicateState(null);
+
+    let fileHash: string | null = null;
     try {
-      const result = await uploadDocument(file);
-      setUploadResult(result);
-      setKpiRefreshKey(k => k + 1);
-    } catch (e) {
-      setUploadError(e instanceof Error ? e.message : "업로드 중 오류 발생");
-    } finally {
-      setUploading(false);
+      fileHash = await computeFileHash(file);
+    } catch {
+      // hash 실패 시 체크 없이 업로드 진행
     }
-  }, []);
+
+    if (fileHash) {
+      try {
+        const dupResult = await checkDuplicate(fileHash, file.name);
+        if (dupResult.status !== "new" && dupResult.existing_doc) {
+          setDuplicateState({
+            type: dupResult.status,
+            existingDoc: dupResult.existing_doc,
+            pendingFile: file,
+            pendingHash: fileHash,
+          });
+          return;
+        }
+      } catch {
+        // 중복 체크 실패 시 업로드 계속 진행
+      }
+    }
+
+    await doUpload(file, fileHash);
+  }, [doUpload]);
 
   const onFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -200,6 +257,39 @@ export function DocumentUpload({ isVisible = true }: { isVisible?: boolean }) {
 
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
+      {/* ── 중복 감지 모달 ─────────────────────────────────────────── */}
+      {duplicateState && (
+        duplicateState.type === "identical" ? (
+          <DuplicateModal
+            type="identical"
+            existingDoc={duplicateState.existingDoc}
+            onKeepExisting={() => setDuplicateState(null)}
+            onReupload={() => {
+              const { pendingFile, pendingHash } = duplicateState;
+              setDuplicateState(null);
+              void doUpload(pendingFile, pendingHash);
+            }}
+            onCancel={() => setDuplicateState(null)}
+          />
+        ) : (
+          <DuplicateModal
+            type="modified"
+            existingDoc={duplicateState.existingDoc}
+            onKeepExisting={() => setDuplicateState(null)}
+            onReplace={() => {
+              const { pendingFile, pendingHash, existingDoc } = duplicateState;
+              setDuplicateState(null);
+              void doReplace(existingDoc.doc_id, pendingFile, pendingHash);
+            }}
+            onAddNew={() => {
+              const { pendingFile, pendingHash } = duplicateState;
+              setDuplicateState(null);
+              void doUpload(pendingFile, pendingHash);
+            }}
+            onCancel={() => setDuplicateState(null)}
+          />
+        )
+      )}
 
       {/* ── KPI Row ─────────────────────────────────────────────────── */}
       <div style={{ display: "flex", gap: 12 }}>
@@ -207,6 +297,7 @@ export function DocumentUpload({ isVisible = true }: { isVisible?: boolean }) {
         <KpiCard label="처리 중"   value={kpi.processing} color="#f59e0b" loading={kpi.loading} />
         <KpiCard label="HITL 대기" value={kpi.hitl}       color="#3b82f6" loading={kpi.loading} />
         <KpiCard label="적재 완료" value={kpi.stored}     color="#22c55e" loading={kpi.loading} />
+        <KpiCard label="실패/거부" value={kpi.other}      color="#ef4444" loading={kpi.loading} />
       </div>
 
       {/* ── Main two-column area ─────────────────────────────────────── */}

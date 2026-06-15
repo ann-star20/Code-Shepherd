@@ -85,7 +85,7 @@ def issue_tokens(user: User) -> dict[str, str]:
     jti = str(uuid.uuid4())
     access = create_access_token(
         subject=user.user_id,
-        extra_claims={"jti": jti, "login": user.login},
+        extra_claims={"jti": jti, "login": user.login, "role": user.role, "team": user.team},
     )
     refresh = create_refresh_token(subject=user.user_id)
     return {

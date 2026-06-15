@@ -47,6 +47,8 @@ dependencies = [
     "lxml>=5.0.0",
     # SQL 검증 (chat_api _validate_sql_v2)
     "sqlglot>=23.0.0",
+    "playwright>=1.60.0",
+    "marker-pdf>=1.10.2",
 ]
 
 [project.optional-dependencies]

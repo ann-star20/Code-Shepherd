@@ -1,11 +1,15 @@
-import { useCallback, useEffect, useState, type CSSProperties, type ReactNode } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { DocumentUpload } from "../../components/DocumentUpload";
 import { HitlQueue } from "../../components/HitlQueue";
+import { PipelineFlow } from "../../components/PipelineFlow";
+import { DocumentAnalyzer } from "../../components/DocumentAnalyzer";
+import { DocStatusPanel } from "../../components/DocStatusPanel";
+import { DocUsagePanel } from "../../components/DocUsagePanel";
 import { getDocDetails, listDocuments } from "../../lib/kmsApi";
-import type { AgentTraceItem, ChunkItem, DocDetailsResponse, DocListItem } from "../../types/kms";
+import type { DocDetailsResponse, DocListItem } from "../../types/kms";
 
-type Tab = "upload" | "hitl" | "stored";
-type DetailTab = "info" | "chunks" | "traces";
+type Tab = "upload" | "pipeline" | "analyzer" | "hitl" | "stored";
+type DetailTab = "status" | "usage";
 
 const STATUS_LABEL: Record<string, string> = {
   stored:         "저장 완료",
@@ -96,72 +100,6 @@ function DocInfoPanel({ doc, details }: { doc: DocListItem; details: DocDetailsR
   );
 }
 
-function ChunksPanel({ chunks }: { chunks: ChunkItem[] }) {
-  if (chunks.length === 0) return (
-    <div style={{ color: "#94a3b8", fontSize: 13, textAlign: "center", padding: 24 }}>청크 데이터 없음</div>
-  );
-  const parents  = chunks.filter(c => c.chunk_type === "parent");
-  const children = chunks.filter(c => c.chunk_type === "child");
-  return (
-    <div>
-      <div style={{ fontSize: 12, color: "#64748b", marginBottom: 10 }}>
-        Parent {parents.length}개 · Child {children.length}개 · 총 {chunks.length}개
-      </div>
-      {chunks.map((chunk) => (
-        <div key={chunk.chunk_id} style={{
-          marginBottom: 8, padding: "10px 12px", borderRadius: 8, fontSize: 12,
-          background: chunk.chunk_type === "parent" ? "#f0f9ff" : "#f8fafc",
-          border: `1px solid ${chunk.chunk_type === "parent" ? "#bae6fd" : "#e2e8f0"}`,
-        }}>
-          <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 4 }}>
-            <span style={{ fontWeight: 600, color: chunk.chunk_type === "parent" ? "#0284c7" : "#64748b" }}>
-              {chunk.chunk_type === "parent" ? "Parent" : "Child"}
-              {chunk.section_header ? ` · ${chunk.section_header}` : ""}
-            </span>
-            <span style={{ color: "#94a3b8" }}>{chunk.token_count ?? "—"}tok</span>
-          </div>
-          <div style={{ color: "#374151", lineHeight: 1.5, maxHeight: 72, overflow: "hidden" }}>
-            {chunk.content.slice(0, 180)}{chunk.content.length > 180 ? "…" : ""}
-          </div>
-        </div>
-      ))}
-    </div>
-  );
-}
-
-function TracesPanel({ traces }: { traces: AgentTraceItem[] }) {
-  if (traces.length === 0) return (
-    <div style={{ color: "#94a3b8", fontSize: 13, textAlign: "center", padding: 24 }}>처리 이력 없음</div>
-  );
-  return (
-    <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-      {traces.map((t) => (
-        <div key={t.trace_id} style={{
-          padding: "10px 12px", borderRadius: 8, background: "#f8fafc",
-          border: "1px solid #e2e8f0", fontSize: 12,
-        }}>
-          <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 4 }}>
-            <span style={{ fontWeight: 600, color: "#334155" }}>{t.agent_name}</span>
-            <span style={{
-              fontSize: 11, fontWeight: 600, color: "#fff",
-              background: t.status === "success" ? "#22c55e" : t.status === "fail" ? "#ef4444" : "#f59e0b",
-              padding: "1px 7px", borderRadius: 10,
-            }}>{t.status}</span>
-          </div>
-          <div style={{ color: "#94a3b8", fontFamily: "monospace", wordBreak: "break-all", marginBottom: 2 }}>
-            {t.trace_id}
-          </div>
-          {t.execution_ms !== null && (
-            <div style={{ color: "#64748b" }}>{t.execution_ms}ms</div>
-          )}
-          {t.error_message && (
-            <div style={{ color: "#ef4444", marginTop: 2 }}>{t.error_message}</div>
-          )}
-        </div>
-      ))}
-    </div>
-  );
-}
 
 // ── StoredDocsList ─────────────────────────────────────────────────────────────
 const STORED_PAGE = 20;
@@ -178,25 +116,28 @@ function StoredDocsList() {
   const [selected, setSelected]         = useState<DocListItem | null>(null);
   const [details, setDetails]           = useState<DocDetailsResponse | null>(null);
   const [detailLoading, setDetailLoading] = useState(false);
-  const [detailTab, setDetailTab]       = useState<DetailTab>("info");
+  const [detailTab, setDetailTab]       = useState<DetailTab>("status");
 
   const load = useCallback(async (pageOffset = 0) => {
     setLoading(true);
     setError(null);
     try {
+      // 전체 로드 후 클라이언트 슬라이싱 — 두 status를 동일 offset으로 각각 20건 페치하면
+      // 한 페이지에 최대 40건이 표시되는 버그가 있어 limit=10000으로 전체 수집 후 slice
       const [storedRes, partialRes] = await Promise.all([
-        listDocuments("stored",         STORED_PAGE, pageOffset),
-        listDocuments("stored_partial", STORED_PAGE, pageOffset),
+        listDocuments("stored",         10000, 0),
+        listDocuments("stored_partial", 10000, 0),
       ]);
-      const merged = [...storedRes.docs, ...partialRes.docs].sort(
+      const allDocs = [...storedRes.docs, ...partialRes.docs].sort(
         (a, b) => (b.created_at ?? "").localeCompare(a.created_at ?? ""),
       );
-      setDocs(merged);
-      setTotal(storedRes.total + partialRes.total);
+      const totalCount = storedRes.total + partialRes.total;
+      setDocs(allDocs.slice(pageOffset, pageOffset + STORED_PAGE));
+      setTotal(totalCount);
       setOffset(pageOffset);
       setKpi({
-        total:   storedRes.total + partialRes.total,
-        neo4j:   merged.filter(d => d.neo4j_synced === true).length,
+        total:   totalCount,
+        neo4j:   allDocs.filter(d => d.neo4j_synced === true).length,
         partial: partialRes.total,
         loading: false,
       });
@@ -212,7 +153,7 @@ function StoredDocsList() {
 
   const handleRowClick = useCallback(async (doc: DocListItem) => {
     setSelected(doc);
-    setDetailTab("info");
+    setDetailTab("status");
     if (details?.doc_id === doc.doc_id) return;
     setDetails(null);
     setDetailLoading(true);
@@ -230,9 +171,8 @@ function StoredDocsList() {
   const hasNext = offset + STORED_PAGE < total;
 
   const DETAIL_TABS: { key: DetailTab; label: string }[] = [
-    { key: "info",   label: "기본 정보" },
-    { key: "chunks", label: "Chunk" },
-    { key: "traces", label: "처리 이력" },
+    { key: "status", label: "문서 현황" },
+    { key: "usage",  label: "활용 & 연관" },
   ];
 
   return (
@@ -312,9 +252,9 @@ function StoredDocsList() {
                             }}>{doc.doc_complexity}</span>
                           ) : "-"}
                         </td>
-                        <td style={{ padding: "10px 12px", fontWeight: 700 }}>
+                        <td data-testid="neo4j-sync-cell" style={{ padding: "10px 12px", fontWeight: 700 }}>
                           <span style={{ color: doc.neo4j_synced === true ? "#22c55e" : "#cbd5e1" }}>
-                            {doc.neo4j_synced == null ? "—" : doc.neo4j_synced ? "✓" : "✗"}
+                            {doc.neo4j_synced == null ? "—" : doc.neo4j_synced ? "✓" : "-"}
                           </span>
                         </td>
                         <td style={{ padding: "10px 12px" }}>
@@ -385,16 +325,197 @@ function StoredDocsList() {
 
             {/* Panel content */}
             <div style={{ padding: 16, maxHeight: 520, overflowY: "auto" }}>
-              {detailLoading ? (
-                <div style={{ textAlign: "center", color: "#94a3b8", fontSize: 13, padding: 24 }}>불러오는 중...</div>
-              ) : detailTab === "info" ? (
-                <DocInfoPanel doc={selected} details={details} />
-              ) : detailTab === "chunks" ? (
-                <ChunksPanel chunks={details?.chunks ?? []} />
+              {detailTab === "status" ? (
+                <DocStatusPanel
+                  doc={selected}
+                  details={details}
+                  detailLoading={detailLoading}
+                  onRefresh={() => { void load(offset); setSelected(null); }}
+                />
               ) : (
-                <TracesPanel traces={details?.agent_traces ?? []} />
+                <DocUsagePanel docId={selected.doc_id} />
               )}
             </div>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+// ── PipelineStatusPanel (처리 현황) ───────────────────────────────────────────
+const PIPELINE_STATUSES = ["processing", "failed", "hitl_pending"] as const;
+
+function PipelineStatusPanel() {
+  const [docs, setDocs]         = useState<DocListItem[]>([]);
+  const [loading, setLoading]   = useState(true);
+  const [selected, setSelected] = useState<DocListItem | null>(null);
+  const [details, setDetails]   = useState<DocDetailsResponse | null>(null);
+  const [detailLoading, setDetailLoading] = useState(false);
+
+  useEffect(() => {
+    void (async () => {
+      setLoading(true);
+      try {
+        const results = await Promise.allSettled(
+          PIPELINE_STATUSES.map(s => listDocuments(s, 100, 0)),
+        );
+        const allDocs = results
+          .flatMap(r => r.status === "fulfilled" ? r.value.docs : [])
+          .sort((a, b) => (b.created_at ?? "").localeCompare(a.created_at ?? ""));
+        setDocs(allDocs);
+      } finally {
+        setLoading(false);
+      }
+    })();
+  }, []);
+
+  const handleSelect = useCallback(async (doc: DocListItem) => {
+    setSelected(doc);
+    if (details?.doc_id === doc.doc_id) return;
+    setDetails(null);
+    setDetailLoading(true);
+    try {
+      setDetails(await getDocDetails(doc.doc_id));
+    } catch {
+      setDetails(null);
+    } finally {
+      setDetailLoading(false);
+    }
+  }, [details]);
+
+  return (
+    <div style={{ display: "flex", gap: 16, alignItems: "flex-start" }}>
+      <div style={{ width: 280, flexShrink: 0, background: "#fff", borderRadius: 12, border: "1px solid #e2e8f0", overflow: "hidden" }}>
+        <div style={{ padding: "12px 16px", borderBottom: "1px solid #f1f5f9", fontSize: 14, fontWeight: 700 }}>
+          처리 중 / 실패 {!loading && `(${docs.length}건)`}
+        </div>
+        {loading ? (
+          <div style={{ padding: 24, textAlign: "center", color: "#94a3b8", fontSize: 13 }}>불러오는 중...</div>
+        ) : docs.length === 0 ? (
+          <div style={{ padding: 24, textAlign: "center", color: "#94a3b8", fontSize: 13 }}>처리 중인 문서가 없습니다.</div>
+        ) : docs.map(doc => (
+          <div
+            key={doc.doc_id}
+            onClick={() => void handleSelect(doc)}
+            style={{
+              padding: "10px 16px", borderBottom: "1px solid #f8fafc", cursor: "pointer",
+              background: selected?.doc_id === doc.doc_id ? "#eff6ff" : "transparent",
+            }}
+          >
+            <div style={{ fontSize: 13, fontWeight: 500, color: "#1e293b", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+              {doc.title ?? doc.doc_id.slice(0, 18) + "…"}
+            </div>
+            <div style={{ fontSize: 11, color: "#94a3b8", marginTop: 2 }}>{doc.status}</div>
+          </div>
+        ))}
+      </div>
+
+      <div style={{ flex: 1, minWidth: 0 }}>
+        {selected ? (
+          detailLoading ? (
+            <div style={{ padding: 48, textAlign: "center", color: "#94a3b8" }}>불러오는 중...</div>
+          ) : details ? (
+            <PipelineFlow traces={details.agent_traces} isProcessing={selected.status === "processing"} />
+          ) : (
+            <div style={{ padding: 48, textAlign: "center", color: "#94a3b8" }}>조회 실패</div>
+          )
+        ) : (
+          <div style={{ padding: 48, textAlign: "center", color: "#94a3b8", fontSize: 13 }}>
+            왼쪽에서 문서를 선택하면 파이프라인 현황이 표시됩니다.
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+// ── ParsePreviewPanel (파싱 미리보기) ─────────────────────────────────────────
+function ParsePreviewPanel() {
+  const [docs, setDocs]         = useState<DocListItem[]>([]);
+  const [loading, setLoading]   = useState(true);
+  const [selected, setSelected] = useState<DocListItem | null>(null);
+  const [details, setDetails]   = useState<DocDetailsResponse | null>(null);
+  const [detailLoading, setDetailLoading] = useState(false);
+
+  useEffect(() => {
+    void (async () => {
+      setLoading(true);
+      try {
+        const [storedRes, partialRes] = await Promise.all([
+          listDocuments("stored", 100, 0),
+          listDocuments("stored_partial", 100, 0),
+        ]);
+        const allDocs = [...storedRes.docs, ...partialRes.docs]
+          .sort((a, b) => (b.created_at ?? "").localeCompare(a.created_at ?? ""));
+        setDocs(allDocs);
+      } finally {
+        setLoading(false);
+      }
+    })();
+  }, []);
+
+  const handleSelect = useCallback(async (doc: DocListItem) => {
+    setSelected(doc);
+    if (details?.doc_id === doc.doc_id) return;
+    setDetails(null);
+    setDetailLoading(true);
+    try {
+      setDetails(await getDocDetails(doc.doc_id));
+    } catch {
+      setDetails(null);
+    } finally {
+      setDetailLoading(false);
+    }
+  }, [details]);
+
+  return (
+    <div style={{ display: "flex", gap: 16, alignItems: "flex-start" }}>
+      <div style={{ width: 260, flexShrink: 0, background: "#fff", borderRadius: 12, border: "1px solid #e2e8f0", overflow: "hidden" }}>
+        <div style={{ padding: "12px 16px", borderBottom: "1px solid #f1f5f9", fontSize: 14, fontWeight: 700 }}>
+          문서 선택 {!loading && `(${docs.length}건)`}
+        </div>
+        {loading ? (
+          <div style={{ padding: 24, textAlign: "center", color: "#94a3b8", fontSize: 13 }}>불러오는 중...</div>
+        ) : docs.length === 0 ? (
+          <div style={{ padding: 24, textAlign: "center", color: "#94a3b8", fontSize: 13 }}>적재 완료 문서가 없습니다.</div>
+        ) : (
+          <div style={{ maxHeight: "70vh", overflowY: "auto" }}>
+            {docs.map(doc => (
+              <div
+                key={doc.doc_id}
+                onClick={() => void handleSelect(doc)}
+                style={{
+                  padding: "10px 16px", borderBottom: "1px solid #f8fafc", cursor: "pointer",
+                  background: selected?.doc_id === doc.doc_id ? "#eff6ff" : "transparent",
+                }}
+              >
+                <div style={{ fontSize: 13, fontWeight: 500, color: "#1e293b", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                  {doc.title ?? doc.doc_id.slice(0, 18) + "…"}
+                </div>
+                <div style={{ fontSize: 11, color: "#94a3b8", marginTop: 2 }}>
+                  {doc.file_type?.toUpperCase()} · {doc.created_at ? new Date(doc.created_at).toLocaleDateString("ko-KR") : "-"}
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+
+      <div style={{ flex: 1, minWidth: 0 }}>
+        {selected ? (
+          detailLoading ? (
+            <div style={{ padding: 48, textAlign: "center", color: "#94a3b8" }}>청크 로딩 중...</div>
+          ) : details && details.chunks.length > 0 ? (
+            <DocumentAnalyzer chunks={details.chunks} docId={selected.doc_id} />
+          ) : details ? (
+            <div style={{ padding: 48, textAlign: "center", color: "#94a3b8", fontSize: 13 }}>청크 데이터가 없습니다.</div>
+          ) : (
+            <div style={{ padding: 48, textAlign: "center", color: "#94a3b8" }}>조회 실패</div>
+          )
+        ) : (
+          <div style={{ padding: 48, textAlign: "center", color: "#94a3b8", fontSize: 13 }}>
+            왼쪽에서 문서를 선택하면 청크 분석이 표시됩니다.
           </div>
         )}
       </div>
@@ -429,17 +550,22 @@ export default function KmsManagePage() {
         background: "#fff",
         padding: "0 24px",
         position: "sticky", top: 0, zIndex: 10,
+        overflowX: "auto",
       }}>
-        <TabBtn active={tab === "upload"} onClick={() => setTab("upload")}>📄 문서 업로드</TabBtn>
-        <TabBtn active={tab === "hitl"}   onClick={() => setTab("hitl")}>🔍 HITL 검토</TabBtn>
-        <TabBtn active={tab === "stored"} onClick={() => setTab("stored")}>✅ 적재 완료 문서</TabBtn>
+        <TabBtn active={tab === "upload"}   onClick={() => setTab("upload")}>📄 문서 업로드</TabBtn>
+        <TabBtn active={tab === "pipeline"} onClick={() => setTab("pipeline")}>⚙️ 처리 현황</TabBtn>
+        <TabBtn active={tab === "analyzer"} onClick={() => setTab("analyzer")}>🔬 파싱 미리보기</TabBtn>
+        <TabBtn active={tab === "hitl"}     onClick={() => setTab("hitl")}>🔍 HITL 검토</TabBtn>
+        <TabBtn active={tab === "stored"}   onClick={() => setTab("stored")}>✅ 적재 완료 문서</TabBtn>
       </div>
 
       {/* Content */}
       <div style={{ padding: "20px 24px" }}>
-        {tab === "upload" && <DocumentUpload isVisible={tab === "upload"} />}
-        {tab === "hitl"   && <HitlQueue />}
-        {tab === "stored" && <StoredDocsList />}
+        {tab === "upload"   && <DocumentUpload isVisible={tab === "upload"} />}
+        {tab === "pipeline" && <PipelineStatusPanel />}
+        {tab === "analyzer" && <ParsePreviewPanel />}
+        {tab === "hitl"     && <HitlQueue />}
+        {tab === "stored"   && <StoredDocsList />}
       </div>
     </div>
   );

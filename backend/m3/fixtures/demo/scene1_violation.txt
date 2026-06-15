@@ -1,0 +1,26 @@
+diff --git a/services/payment.py b/services/payment.py
+index abc1234..def5678 100644
+--- a/services/payment.py
++++ b/services/payment.py
+@@ -1,8 +1,18 @@
++import asyncio
+ import requests
+
+-def get_payment(payment_id: str) -> dict:
+-    return requests.get(f"https://api.pay.com/{payment_id}").json()
++class PaymentService:
++    async def verify_payment(self, payment_id: str) -> dict:
++        """결제 검증 - async 함수에서 동기 requests 호출."""
++        response = requests.get(
++            f"https://api.payment.com/v1/payments/{payment_id}",
++            timeout=10,
++        )
++        response.raise_for_status()
++        return response.json()
++
++    async def refund(self, payment_id: str, amount: int) -> dict:
++        result = requests.post(
++            "https://api.payment.com/v1/refunds",
++            json={"payment_id": payment_id, "amount": amount},
++        )
++        return result.json()

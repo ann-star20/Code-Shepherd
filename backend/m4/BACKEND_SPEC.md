@@ -79,6 +79,8 @@ SDK: `google-generativeai` (Python)
 | D25 | 에이전트 간 통신 — 함수 파이프라인 (message passing). 공유 상태 없음 |
 | D26 | Phase 2 재시도 전략 — reason 기반 Curator 재지시 후 RAG 재검색 포함 |
 | D27 | Curator 비용 — gemini-2.5-flash 추가 1회 ≈ $0.0001/카드 수준. 카드 3개 기준 ~$0.0003 추가 |
+| D37 | RAG 검색 카테고리 동적 라우팅 — query_fields["보안"]이 D15 fallback(build_search1_text)과 동일하면(Gemini가 "보안과 무관"으로 판단해 비워둔 것) docs_concept(개념 설명)을 "코드성능검증"에서 검색. query_fields["코드성능검증"]이 빈 문자열이면(fallback 없음, Gemini가 "성능과 무관"으로 판단) docs_recommend(학습 추천)를 "보안"에서 검색. 이슈 타입별 하드코딩이 아닌 query_fields 값 기반 범용 분기. adapter.search() 호출 순서(concept→example→recommend)는 유지 |
+| D38 | top3 정렬 기준 변경 — `_find_top3_issues`/`_load_issues_with_plans`의 ORDER BY를 `(severity_rank, created_at)`에서 `(created_at DESC, severity_rank)`로 변경. 같은 PR이 재스캔되어 review_issue가 여러 차례 insert된 경우, severity가 낮아도 더 최근에 insert된 이슈를 먼저 보여준다. severity_rank(D19)는 created_at이 동일한 row끼리의 tiebreaker로만 사용 |
 
 ---
 
@@ -514,7 +516,9 @@ backend/m4/
 │   ├── env.py                     ← 기존 (shared.db.Base 기준)
 │   └── versions/
 │       ├── 0001_m4_tables.py      ← curriculum_plan + review_issue 신규 생성 (T1)
-│       └── 0002_multiagent.py     ← Phase 2: curator_instruction, ragas_reason (T16)
+│       ├── 0002_curriculum_plan_completed_at.py  ← completed_at (D11)
+│       ├── 0003_curriculum_plan_ragas_reason.py  ← ragas_reason (T12/D14)
+│       └── 0004_curriculum_plan_curator_instruction_attempt_count.py  ← curator_instruction, attempt_count (T16/D22)
 ├── tests/
 │   ├── test_contract.py           ← 기존 /evaluate, /curriculum 계약 테스트 (유지)
 │   ├── test_pipeline.py           ← Phase 1 단위 테스트 (T7)
@@ -651,17 +655,82 @@ backend/m4/
   - `DeveloperProfile` TypedDict(weak_categories, past_mistakes), `CURATOR_PROMPT`/`CURATOR_MODEL_NAME`(gemini-2.5-flash) 정의
   - D26 재시도 전략 — hint="narrow_query"(low_faithfulness)/"change_framing"(low_relevancy)에 따라 프롬프트에 다른 재지시 문구 추가
   - `tests/test_curator_agent.py` 6개 테스트 신규 (Mock 기반) — 전체 스위트 39/39 통과
-- [ ] **T12 (~15min)** — RAGAS reason 필드 활성화 + 재시도 전략 분기
-- [ ] **T13 (~15min)** — Curator 기반 RAG 필드 선택 (D15 룰 대체)
-- [ ] **T14 (~20min)** — build_card() curator_instruction 파라미터 추가 (additive)
-- [ ] **T15 (~20min)** — Phase 2 통합 테스트 (5개)
-- [ ] **T16 (~15min)** — Phase 2 DB 마이그레이션
+- [x] **T12 (~15min)** — RAGAS reason 필드 활성화
+  - 구현 완료: `_ragas_reason(faithfulness_score, relevancy_score)` 헬퍼 추가 — faithfulness 미달 시 "low_faithfulness"(우선),
+    relevancy 미달 시 "low_relevancy", 둘 다 통과면 None
+  - `ragas_eval()` 반환에 `reason` 포함, `generate_card()`가 RAGAS 재시도 루프의 마지막 시도 reason을 `curriculum_plan.ragas_reason`에 저장
+  - DB: `curriculum_plan.ragas_reason TEXT` 컬럼 추가 + Alembic migration `0003_curriculum_plan_ragas_reason.py` 작성·적용
+  - `routes.py` `_plan_json`/`_run_card_generation`에서 `ragas_reason` 그대로 노출
+  - `tests/conftest.py` 신규(.env의 SKIP_RAGAS_EVAL 누수를 autouse delenv로 차단), TDD RED→GREEN 확인 (전체 47/47 통과)
+  - 재시도 전략 분기(D26 — reason을 curator_agent `_retry_hint`로 연결)는 curator_agent 통합과 함께 T13에서 진행
+- [x] **T13 (~15min)** — Curator 기반 RAG 필드 선택 (D15 룰 대체) + RAGAS 재시도 전략 분기 (D26 — ragas_reason → curator_agent `_retry_hint` 연결)
+  - 구현 완료: `generate_card(issue, adapter, mistake_count=0, profile: DeveloperProfile | None = None)` —
+    D15의 고정 검색어(`build_search1/2/3_text`) 대신 `curator_agent(profile, issue)`가 정한
+    `query_fields`(보안/코딩컨벤션/코드성능검증)로 RAG 검색어를 결정. `profile`이 없으면 빈 프로필
+    (`weak_categories=[]`, `past_mistakes=[]`)로 호출
+  - `curator_agent.py`: 프롬프트에 `sub_category`/`code_context`/`code_snippet`(300자 제한)/
+    `programming_language`/`framework`/`framework_version` 추가 — D15가 검색 카테고리별로 참고하던
+    issue 필드를 Curator도 동일하게 참고할 수 있도록 함. `query_fields` 스키마를 `"object"`(추상) →
+    `{"보안": str, "코딩컨벤션": str, "코드성능검증": str}`로 구체화
+  - D26 재시도 분기: `_RETRY_HINT_BY_REASON = {"low_faithfulness": "narrow_query", "low_relevancy": "change_framing"}`
+    추가. RAGAS 재시도 루프(최대 3회, T3) 내에서 1·2차 시도 실패 시 `ragas_reason`에 맞는 hint로
+    `curator_agent`를 재호출 → 새 `query_fields`로 임베딩/RAG 재검색 → 다음 시도에 사용. 3차 실패 후에는
+    재호출 없이 바로 `fallback_card()` (총 curator_agent 호출 = 초기 1회 + 재시도 최대 2회)
+  - `routes.py`: `_build_developer_profile(session, user_id)` 추가 — 이 개발자의 review_issue 이력에서
+    최근 keyword 5개를 `past_mistakes`로, 2회 이상 반복된 `sub_category`를 `weak_categories`로 집계.
+    `user_id`가 없으면 빈 프로필. `_run_card_generation`에서 `generate_card(..., profile=profile)`로 전달
+  - `test_curator_agent.py` 1개, `test_pipeline.py` 5개(curator 연동 3개 + D26 재시도 hint 2개),
+    `test_routes.py` 2개 신규. TDD RED→GREEN 확인 (전체 55/55 통과)
+- [x] **T14 (~20min)** — build_card() curator_instruction 파라미터 추가 (additive)
+  - 구현 완료: `build_card(..., curator_instruction: dict | None = None)` — 새 파라미터 추가(D23, 하위 호환).
+    `curator_instruction`이 있으면 `_format_curator_guidance()`가 `focus`/`analogy`/`key_points`를
+    "Curator 지시" 섹션으로 포맷해 `_CARD_PROMPT_BODY`(새 `{curator_guidance}` 자리)에 추가.
+    `None`이면 빈 문자열 — 기존 프롬프트와 동일(하위 호환)
+  - `fallback_card(..., curator_instruction: dict | None = None)`도 동일 파라미터를 받아 `build_card()`로 전달
+  - `generate_card()`의 `build_card`/`fallback_card` 호출 3곳(스킵 경로, RAGAS 루프, 3회 실패 후 fallback)
+    모두에 그 시점의 `curator_instruction`(재시도로 갱신된 값 포함)을 전달
+  - `depth`/`card_type`은 기존과 동일하게 `determine_depth()`/`route_card_type()`로 결정 — D18/D16 그대로 유지(additive 범위)
+  - `test_pipeline.py` 5개 신규(빌더 프롬프트 포함/누락 2개 + generate_card 연동 3개). TDD RED→GREEN 확인 (전체 60/60 통과)
+- [x] **T15 (~20min)** — Phase 2 통합 테스트 (5개)
+  - 구현 완료: `tests/test_multiagent_pipeline.py` 신규 — `genai.GenerativeModel`/`embed_query`만
+    mock하고 나머지는 실제 코드 경로(curator_agent → `_embed_query_fields`/rag_search → build_card →
+    ragas_eval → D26 재시도 → `_run_card_generation`)를 그대로 실행하는 통합 테스트.
+    기존 `test_pipeline.py`/`test_curator_agent.py`/`test_routes.py`가 함수 단위 mock으로 이미
+    커버한 로직은 중복하지 않고, 모듈 간 실제 연결만 검증
+  - happy path e2e(curator/RAG/builder 실제 연결), D26 narrow_query 재시도 e2e(curator_agent
+    재호출 + 새 query_fields로 6회 재검색 확인), Bug B 회귀(빈 query_field → 실제
+    `PgvectorAdapter.search()`가 DataError 없이 `llm_fallback=True`), 라우트 persist e2e
+    (`_run_card_generation`이 실제 생성 결과를 plan에 정확히 기록), Bug A 회귀
+    (curator_agent 타임아웃 → `_generate_one`이 `plan.status="failed"`)
+  - 이미 올바르게 동작하는 기존 구현(T11~T14 + Bug A/B) 위의 회귀 안전망이라 5개 모두 RED 없이
+    즉시 GREEN — 전체 71/71 통과. 프로덕션 코드 변경 없음
+- [x] **T16 (~15min)** — Phase 2 DB 마이그레이션
+  - 구현 완료: `alembic/versions/0004_curriculum_plan_curator_instruction_attempt_count.py` 신규 —
+    `curriculum_plan`에 `curator_instruction JSONB`(nullable), `attempt_count INTEGER NOT NULL
+    DEFAULT 0` 컬럼 추가 (0002/0003은 이미 completed_at/ragas_reason에 사용 중이라 0004로 진행)
+  - `app/models/curriculum_plan.py`에 두 컬럼 매핑 추가 (`Integer` import 추가)
+  - `generate_card()`(`learn_pipeline.py`)가 반환하는 모든 `CurriculumPlan`에 `curator_instruction`
+    (카드 생성에 사용된 마지막 Curator 지시)과 `attempt_count`(build_card 시도 횟수: 1차 성공=1,
+    D26 재시도 후 성공=2/3, fallback_card 대체=3, embed_query 타임아웃=0)를 기록
+  - `_run_card_generation`이 두 필드를 pending plan에 반영, `_plan_json()`의 placeholder(`None`)를
+    실제 값으로 교체 → `GET /api/pr/{scan_id}` 응답에 노출
+  - 신규 테스트 6개(`test_pipeline.py` 4개, `test_routes.py` 2개) 추가, 전체 77/77 통과
 
-- [ ] **T17 (~15min)** — AgentHarness/LangSmith 통합 (Phase 1, generate_card 대상)
+- [x] **T17 (~15min)** — AgentHarness/LangSmith 통합 (Phase 1, generate_card 대상)
   - T3로 generate_card()가 Agent 분류 기준(GLOBAL_AGENT_RULE.md §1-2: Tool 2개 이상 선택 호출 + 품질평가·재시도 + 조건분기) 3/4 충족 → §7-2에 따라 AgentHarness 래핑 필요
-  - shared.harness.AgentHarness로 generate_card() 호출 래핑, LANGCHAIN_PROJECT=module4-{githubId} 설정
-  - TimeoutError는 async with 블록 바깥에서 처리 (§7-4 — 안에서 잡으면 status='success'로 잘못 기록됨)
-  - 확인: LangSmith 대시보드에서 module4 프로젝트로 trace 기록 확인
+  - 구현 완료: `_generate_one()`(`routes.py`)에서 `generate_card(...)` 호출을 `shared.harness.AgentHarness`로
+    래핑 — `trace_id=new_sub_trace(f"pr_{issue.pull_request_id}", "generate_card")`,
+    `agent_name="generate_card"`, `task_id=str(plan_id)`, `db_session_factory=session_factory`로
+    `__aenter__`/`__aexit__`이 `agent_traces`에 `status='running'`/`'success'`/`'fail'`을 UPSERT
+  - `GENERATE_CARD_TIMEOUT_SECONDS = GEMINI_TIMEOUT_SECONDS * 2 * 3 = 360`(D26 재시도 최대 3회 ×
+    회차당 Gemini 호출 최대 2회, Bug A의 `GEMINI_TIMEOUT_SECONDS=60` 기준) — `AgentHarness(timeout=...)`
+    로 전달, `harness.run(generate_card, issue, adapter, mistake_count=..., profile=...)`로 실행
+  - TimeoutError는 `async with AgentHarness(...)` 블록 안에서 잡지 않고 `__aexit__`까지 그대로
+    전파시켜 `agent_traces`에 `status='fail'`로 기록되게 한 뒤, 바깥의 기존 `except Exception`이
+    `plan.status="failed"` + `error_message`로 전환 (§7-4)
+  - 신규 테스트 2개(`test_routes.py`) — AgentHarness 호출 kwargs/`harness.run()` 위임 검증 +
+    TimeoutError가 `__aexit__`까지 전파되는지 검증(`_FakeAgentHarness` 더블). 전체 79/79 통과
+  - LangSmith 대시보드 trace 확인은 `USE_MOCK_LLM=false` + 실제 LangSmith 연동 환경에서 별도 확인 필요(범위 외)
 
 ---
 

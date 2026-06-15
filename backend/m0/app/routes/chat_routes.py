@@ -21,8 +21,9 @@ import os
 from dataclasses import dataclass, field
 
 import httpx
-from fastapi import APIRouter
+from fastapi import APIRouter, BackgroundTasks, Depends
 from langchain_google_genai import ChatGoogleGenerativeAI
+from app.dependencies import get_current_kms_user
 from pydantic import BaseModel, field_validator
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
@@ -77,6 +78,7 @@ class ChatSource(BaseModel):
     doc_title: str | None = None
     source_type: str = "pgvector"
     page_image_path: str | None = None
+    doc_id: str | None = None
 
 
 class ChatResponse(BaseModel):
@@ -218,11 +220,14 @@ async def _query_pgvector(
     question: str,
     session_factory: async_sessionmaker[AsyncSession],
     top_k: int = 5,
+    user_team: str | None = None,
+    user_id: str | None = None,
 ) -> list[dict]:
     """질문을 임베딩해 chunk_embeddings에서 코사인 유사도 상위 k개를 반환한다.
 
     chunk_embeddings에 저장된 model_name을 확인해 쿼리 임베딩 모델을 맞춘다.
     모델이 섞여 있으면 각 모델로 임베딩 후 UNION해서 top_k를 재정렬한다.
+    user_team / user_id가 제공되면 문서 권한 필터를 적용한다.
     """
     async with session_factory() as session:
         model_rows = await session.execute(
@@ -248,17 +253,32 @@ async def _query_pgvector(
             result = await session.execute(
                 text("""
                     SELECT
-                        chunk_id::text,
-                        content,
-                        1 - (embedding <=> CAST(:embedding AS vector)) AS score,
-                        metadata->>'doc_title' AS doc_title,
-                        metadata
-                    FROM chunk_embeddings
-                    WHERE model_name = :model_name
-                    ORDER BY embedding <=> CAST(:embedding AS vector)
+                        ce.chunk_id::text,
+                        ce.content,
+                        1 - (ce.embedding <=> CAST(:embedding AS vector)) AS score,
+                        ce.metadata->>'doc_title' AS doc_title,
+                        ce.metadata,
+                        d.doc_id::text AS doc_id
+                    FROM chunk_embeddings ce
+                    INNER JOIN chunks c ON ce.chunk_id = c.chunk_id
+                    INNER JOIN documents d ON c.doc_id = d.doc_id
+                    WHERE ce.model_name = :model_name
+                      AND d.upload_status IN ('stored', 'stored_partial')
+                      AND (
+                          d.permission_level = 'public'
+                          OR (:user_team IS NOT NULL AND d.department_id = :user_team)
+                          OR (:user_id IS NOT NULL AND d.user_id = :user_id)
+                      )
+                    ORDER BY ce.embedding <=> CAST(:embedding AS vector)
                     LIMIT :top_k
                 """),
-                {"embedding": embedding_str, "top_k": top_k, "model_name": model_name},
+                {
+                    "embedding": embedding_str,
+                    "top_k": top_k,
+                    "model_name": model_name,
+                    "user_team": user_team,
+                    "user_id": user_id,
+                },
             )
             rows = result.mappings().fetchall()
 
@@ -270,6 +290,7 @@ async def _query_pgvector(
                 "doc_title": r["doc_title"],
                 "source_type": "pgvector",
                 "metadata": r["metadata"] if isinstance(r.get("metadata"), dict) else {},
+                "doc_id": r.get("doc_id"),
             })
 
     # 여러 모델이 섞인 경우 score 내림차순 재정렬 후 top_k 반환
@@ -545,11 +566,54 @@ async def _generate_answer(
 
 
 # ---------------------------------------------------------------------------
+# RAG 참조 로깅 (fire-and-forget)
+# ---------------------------------------------------------------------------
+
+async def _log_rag_references(
+    sources: list[ChatSource],
+    team_id: str,
+) -> None:
+    """pgvector 소스에 한해 rag_references 테이블에 참조 기록을 남긴다.
+    BackgroundTasks에서 실행되므로 실패해도 chat 응답에 영향 없음.
+    """
+    pgvector_sources = [s for s in sources if s.source_type == "pgvector" and s.doc_id]
+    if not pgvector_sources:
+        return
+    try:
+        session_factory = _get_session_factory()
+        async with session_factory() as session:
+            for src in pgvector_sources:
+                await session.execute(
+                    text("""
+                        INSERT INTO rag_references (doc_id, chunk_id, team_id, queried_at)
+                        VALUES (
+                            CAST(:doc_id AS uuid),
+                            CAST(:chunk_id AS uuid),
+                            :team_id,
+                            NOW()
+                        )
+                    """),
+                    {
+                        "doc_id": src.doc_id,
+                        "chunk_id": src.chunk_id,
+                        "team_id": team_id,
+                    },
+                )
+            await session.commit()
+    except Exception as e:
+        logger.warning(f"RAG 참조 로깅 실패 (무시됨): {e}")
+
+
+# ---------------------------------------------------------------------------
 # 엔드포인트
 # ---------------------------------------------------------------------------
 
 @router.post("", response_model=ChatResponse)
-async def chat(request: ChatRequest) -> ChatResponse:
+async def chat(
+    request: ChatRequest,
+    background_tasks: BackgroundTasks,
+    current_user: dict = Depends(get_current_kms_user),
+) -> ChatResponse:
     """
     멀티 스토리지 RAG 챗봇 엔드포인트.
 
@@ -566,7 +630,13 @@ async def chat(request: ChatRequest) -> ChatResponse:
     raw_chunks: list[dict] = []
     for storage in storages:
         if storage == "pgvector":
-            results = await _query_pgvector(request.question, session_factory, top_k=request.top_k)
+            results = await _query_pgvector(
+                request.question,
+                session_factory,
+                top_k=request.top_k,
+                user_team=current_user["team"],
+                user_id=current_user["user_id"],
+            )
         elif storage == "postgresql":
             results = await _query_postgresql(request.question, session_factory)
         elif storage == "neo4j":
@@ -574,7 +644,13 @@ async def chat(request: ChatRequest) -> ChatResponse:
         elif storage == "gcs":
             results = await _query_gcs(request.question)
         else:
-            results = await _query_pgvector(request.question, session_factory, top_k=request.top_k)
+            results = await _query_pgvector(
+                request.question,
+                session_factory,
+                top_k=request.top_k,
+                user_team=current_user["team"],
+                user_id=current_user["user_id"],
+            )
         raw_chunks.extend(results)
 
     context = "\n\n".join(
@@ -592,9 +668,16 @@ async def chat(request: ChatRequest) -> ChatResponse:
             doc_title=c.get("doc_title"),
             source_type=c.get("source_type", "pgvector"),
             page_image_path=(c.get("metadata") or {}).get("page_image_path"),
+            doc_id=c.get("doc_id"),
         )
         for c in raw_chunks
     ]
+
+    background_tasks.add_task(
+        _log_rag_references,
+        sources=sources,
+        team_id=current_user.get("team", ""),
+    )
 
     return ChatResponse(
         question=request.question,

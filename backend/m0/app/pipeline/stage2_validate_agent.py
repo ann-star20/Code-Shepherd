@@ -33,7 +33,14 @@ from app.pipeline.stage1_document_parser_agent import (
 )
 
 QUALITY_THRESHOLD = float(os.getenv("MARKDOWN_QUALITY_THRESHOLD", "0.8"))
+_QUALITY_THRESHOLD_PDF = float(os.getenv("MARKDOWN_QUALITY_THRESHOLD_PDF", "0.50"))
 STAGE2_MAX_FIX_ATTEMPTS = int(os.getenv("STAGE2_MAX_FIX_ATTEMPTS", "2"))
+
+
+def _get_quality_threshold(file_type: str) -> float:
+    if file_type == "pdf":
+        return _QUALITY_THRESHOLD_PDF
+    return QUALITY_THRESHOLD
 
 _SYSTEM_PROMPT = """\
 당신은 문서 변환 품질 검수 에이전트입니다.
@@ -51,7 +58,8 @@ PDF, DOCX, PPTX에서 Markdown으로 변환된 결과물의 구조적 완전성�
 - 문제 심각도에 따라 점수를 차등 부여합니다 (표 소실 > 제목 구조 붕괴 > 리스트 누락 > 서식 오류).
 - 이미지/그림이 Markdown에 포함되지 않는 것은 정상입니다. image_loss=true로 표시하되 score 감점은 최소화하세요 (최대 -0.05).
 - 텍스트 내용이 정상적으로 보존되고 구조가 올바르면 score는 0.85 이상이어야 합니다.
-- issues 항목은 수정 가능한 구체적 문제를 한국어로 기술합니다.\
+- issues 항목은 수정 가능한 구체적 문제를 한국어로 기술합니다.
+- 이모지(🔴 🟡 🟢 ⚠ ★ 🖥 📊 등)는 원본 문서에서 의도적으로 사용된 유효한 문자입니다. 이모지 존재 자체를 품질 문제로 보고하거나 감점하지 마세요.\
 """
 
 
@@ -93,6 +101,7 @@ _QUALITY_PROMPT = """\
 - 텍스트·구조가 정상이고 표도 정상이면: 0.90 이상
 - 제목 계층이 완전히 붕괴되거나 표가 소실된 경우에만 0.7 미만으로 채점
 - "...(중략)..." 표시는 샘플링 처리이므로 내용 손실로 판단하지 마세요
+- 이모지(🔴 🟡 🟢 ⚠ ★ 🖥 📊 🔵 등)는 원본 문서의 정상 콘텐츠입니다. 이모지 포함을 이유로 감점하거나 issues에 추가하지 마세요
 
 다음 JSON 형식으로만 응답하세요 (다른 텍스트 포함 금지):
 {{
@@ -120,6 +129,8 @@ async def stage2_validate(state: "DocPipelineState") -> dict:
     """
     markdown = state.get("raw_markdown") or ""
     doc_id = state["doc_id"]
+    file_type = state.get("file_type", "")
+    threshold = _get_quality_threshold(file_type)
 
     if not markdown:
         logger.warning("Stage 2: raw_markdown이 비어있음", extra={"doc_id": doc_id})
@@ -136,7 +147,7 @@ async def stage2_validate(state: "DocPipelineState") -> dict:
     last_score, last_issues = 0.0, []
 
     for attempt in range(max_attempts + 1):
-        score, issues, hitl, data = await _evaluate_quality(markdown, doc_id)
+        score, issues, hitl, data = await _evaluate_quality(markdown, doc_id, threshold)
         last_score, last_issues = score, issues
 
         if not hitl:
@@ -257,7 +268,9 @@ async def _apply_targeted_fix(markdown: str, issues: list[str], data: dict) -> s
     return await _gemini_format_correct(markdown)
 
 
-async def _evaluate_quality(markdown: str, doc_id: str) -> tuple[float, list[str], bool, dict]:
+async def _evaluate_quality(
+    markdown: str, doc_id: str, threshold: float = QUALITY_THRESHOLD
+) -> tuple[float, list[str], bool, dict]:
     """
     Gemini로 Markdown 품질 점수를 평가한다.
     반환: (score, issues, hitl_required, data)
@@ -292,9 +305,9 @@ async def _evaluate_quality(markdown: str, doc_id: str) -> tuple[float, list[str
     score: float = float(data.get("score", 0.0))
     issues: list[str] = data.get("issues", [])
 
-    # 구조 손실이 감지되거나 점수 미달이면 HITL
+    # 구조 손실은 issues에 기록만 함 — HITL 결정은 score 기준만 사용
     structure_loss = data.get("structure_loss", False) or data.get("table_loss", False)
-    hitl_required = score < QUALITY_THRESHOLD or structure_loss
+    hitl_required = score < threshold
 
     if structure_loss:
         issues.insert(0, "표/이미지 구조 손실 감지")

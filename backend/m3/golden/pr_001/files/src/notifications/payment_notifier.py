@@ -1,0 +1,16 @@
+"""결제 알림 서비스."""
+from __future__ import annotations
+
+import requests
+
+
+async def send_confirmation_email(email: str, tx_id: str) -> None:
+    pass
+
+
+async def notify_partner(partner_id: str, payload: dict) -> dict:
+    """결제 완료 파트너 알림."""
+    url = "https://api.partner.internal/notify"
+    resp = requests.post(url, json=payload, timeout=10)
+    resp.raise_for_status()
+    return resp.json()
