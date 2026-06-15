@@ -1,0 +1,13 @@
+"""정산 윈도우 계산."""
+from __future__ import annotations
+
+from datetime import datetime, timedelta
+
+WINDOW_SIZE = timedelta(hours=24)
+
+
+def get_settlement_window() -> tuple[datetime, datetime]:
+    """현재 시각 기준 정산 윈도우 반환."""
+    end = datetime.now()
+    start = end - WINDOW_SIZE
+    return start, end

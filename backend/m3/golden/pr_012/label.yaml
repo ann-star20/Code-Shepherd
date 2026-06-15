@@ -1,0 +1,4 @@
+# pr_012 — 지침공백: 난수·토큰 생성 규정 없음 (장면 3)
+file_paths:
+  - src/auth/api_token.py
+expected: gap

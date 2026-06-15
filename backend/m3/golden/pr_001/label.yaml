@@ -1,0 +1,6 @@
+# pr_001 — CONV-API-001 위반: async 함수 내 동기 requests 사용 (장면 1)
+file_paths:
+  - src/notifications/payment_notifier.py
+expected:
+  - rule_id: CONV-API-001
+    verdict: violation
