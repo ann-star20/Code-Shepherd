@@ -47,11 +47,11 @@ async def sync_old_document_version(
         await _delete_neo4j_document(old_doc_id)
 
     if delete_gcs:
-        await _delete_gcs_images(old_doc_id)
+        await _delete_gcs_files(old_doc_id)
 
 
 async def _delete_neo4j_document(doc_id: str) -> None:
-    """Neo4j에서 Document 노드와 연결된 모든 관계를 삭제한다."""
+    """Neo4j에서 Document 노드, Chunk 노드, 연결된 모든 관계를 삭제한다."""
     neo4j_uri = os.getenv("NEO4J_URI", "bolt://host.docker.internal:7687")
     neo4j_user = os.getenv("NEO4J_USER", "neo4j")
     neo4j_password = os.getenv("NEO4J_PASSWORD", "password")
@@ -65,6 +65,16 @@ async def _delete_neo4j_document(doc_id: str) -> None:
     driver = AsyncGraphDatabase.driver(neo4j_uri, auth=(neo4j_user, neo4j_password))
     try:
         async with driver.session() as neo_session:
+            # Chunk 노드 + 관계 먼저 삭제 (고아 방지)
+            await neo_session.run(
+                """
+                MATCH (d:Document {doc_id: $doc_id})-[:HAS_CHUNK]->(c:Chunk)
+                OPTIONAL MATCH (c)-[cr]-()
+                DELETE cr, c
+                """,
+                doc_id=doc_id,
+            )
+            # Document 노드 + 나머지 관계 삭제
             await neo_session.run(
                 """
                 MATCH (d:Document {doc_id: $doc_id})
@@ -80,19 +90,26 @@ async def _delete_neo4j_document(doc_id: str) -> None:
         await driver.close()
 
 
-async def _delete_gcs_images(doc_id: str) -> None:
-    """GCS images/{doc_id}/ 하위 모든 이미지를 삭제한다."""
+async def _delete_gcs_files(doc_id: str) -> None:
+    """GCS에서 문서 관련 파일 전체(originals/ markdown/ images/)를 삭제한다."""
     from app.routes.kms_routes import _get_storage
 
     try:
         storage = _get_storage()
-        prefix = f"images/{doc_id}/"
-        paths = await storage.list_prefix(prefix)
-        for path in paths:
-            try:
-                await storage.delete(path)
-            except Exception as e:
-                logger.warning(f"[GraphSync] GCS 파일 삭제 실패 {path}: {e}")
-        logger.info(f"[GraphSync] GCS 삭제 완료: {len(paths)}개 파일, prefix={prefix}")
+        prefixes = [
+            f"originals/{doc_id}/",
+            f"markdown/{doc_id}/",
+            f"images/{doc_id}/",
+        ]
+        total = 0
+        for prefix in prefixes:
+            paths = await storage.list_prefix(prefix)
+            for path in paths:
+                try:
+                    await storage.delete(path)
+                    total += 1
+                except Exception as e:
+                    logger.warning(f"[GraphSync] GCS 파일 삭제 실패 {path}: {e}")
+        logger.info(f"[GraphSync] GCS 삭제 완료: {total}개 파일, doc_id={doc_id}")
     except Exception as e:
         logger.error(f"[GraphSync] GCS 삭제 실패 doc_id={doc_id}: {e}")
