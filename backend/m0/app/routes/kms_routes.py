@@ -340,6 +340,22 @@ async def upload_document(
     session_factory = _get_session_factory()
     _get_pipeline()
 
+    # 서버 사이드 중복 체크 — file_hash가 제공된 경우 기존 문서 존재 여부 확인
+    if file_hash:
+        async with session_factory() as session:
+            dup = await check_duplicate(file_hash, filename, session)
+            if dup["status"] == "identical":
+                existing = dup["existing_doc"]
+                raise HTTPException(
+                    status_code=409,
+                    detail={
+                        "code": "DUPLICATE_FILE",
+                        "message": "동일한 파일이 이미 존재합니다.",
+                        "existing_doc_id": existing["doc_id"],
+                        "existing_filename": existing["original_filename"],
+                    },
+                )
+
     # hitl_queue가 documents(doc_id)를 FK로 참조하므로 파이프라인 전 초기 레코드 삽입
     try:
         async with session_factory() as session:
