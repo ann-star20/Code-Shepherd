@@ -351,8 +351,8 @@ async def upload_document(
                     detail={
                         "code": "DUPLICATE_FILE",
                         "message": "동일한 파일이 이미 존재합니다.",
-                        "existing_doc_id": existing["doc_id"],
-                        "existing_filename": existing["original_filename"],
+                        "existing_doc_id": str(existing["doc_id"]),
+                        "existing_filename": str(existing["original_filename"] or ""),
                     },
                 )
 
@@ -1283,9 +1283,9 @@ async def check_duplicate(
         return {
             "status": "identical",
             "existing_doc": {
-                "doc_id": row[0],
-                "original_filename": row[1],
-                "upload_status": row[2],
+                "doc_id": str(row[0]),
+                "original_filename": str(row[1]) if row[1] else None,
+                "upload_status": str(row[2]) if row[2] else None,
                 "created_at": str(row[3]) if row[3] else None,
             },
         }
@@ -1307,9 +1307,9 @@ async def check_duplicate(
         return {
             "status": "modified",
             "existing_doc": {
-                "doc_id": row2[0],
-                "original_filename": row2[1],
-                "upload_status": row2[2],
+                "doc_id": str(row2[0]),
+                "original_filename": str(row2[1]) if row2[1] else None,
+                "upload_status": str(row2[2]) if row2[2] else None,
                 "created_at": str(row2[3]) if row2[3] else None,
             },
         }
