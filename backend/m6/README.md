@@ -21,3 +21,6 @@ Remove-Item -Recurse -Force .venv-win
 C:\Users\user\AppData\Local\Programs\Python\Python314\python.exe -m venv .venv-win
 .\.venv-win\Scripts\python.exe -m pip install -r requirements.txt
 .\.venv-win\Scripts\python.exe script\seed_neo4j.py
+
+
+docker compose exec m6 python script/seed_postgres.py

@@ -1,0 +1,28 @@
+diff --git a/utils/deploy_runner.py b/utils/deploy_runner.py
+new file mode 100644
+index 0000000..fedcba9
+--- /dev/null
++++ b/utils/deploy_runner.py
+@@ -0,0 +1,22 @@
++"""배포 스크립트 실행기 — subprocess 사용 패턴 (KMS에 관련 규칙 없음)."""
++import subprocess
++import shlex
++import logging
++
++log = logging.getLogger(__name__)
++
++
++def run_migration_script(script_path: str, env: dict | None = None) -> tuple[int, str]:
++    """DB 마이그레이션 스크립트를 subprocess로 실행."""
++    cmd = shlex.split(f"python {script_path}")
++    result = subprocess.run(
++        cmd,
++        capture_output=True,
++        text=True,
++        shell=True,
++        timeout=300,
++        env=env,
++    )
++    if result.returncode != 0:
++        log.error("migration failed: %s", result.stderr)
++    return result.returncode, result.stdout

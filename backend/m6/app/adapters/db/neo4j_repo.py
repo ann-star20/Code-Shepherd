@@ -2,12 +2,18 @@
 
 from __future__ import annotations
 
+import hashlib
 import re
 from pathlib import Path
 
 from neo4j import AsyncDriver
 
 from app.domain.models import ConceptExtractionSchema
+
+# aliases에 방어책 명사가 섞이면 다음 Resolver가 오판 — 흡수 시 필터링
+_ALIAS_POISON_PATTERN = re.compile(
+    r"(Protection|Defense|Mitigation|Guard|Filter|Handler)$", re.I
+)
 
 
 class Neo4jConceptRepo:
@@ -49,6 +55,51 @@ class Neo4jConceptRepo:
                 await tx.rollback()
                 raise
         return name
+
+    async def transplant_as_mechanism(
+        self,
+        incoming: ConceptExtractionSchema,
+        target_name: str,
+    ) -> None:
+        """정책 2: 방어책 오기출 Concept을 target의 L3 Mechanism으로 격하 이식."""
+        mechanism_name = _pascal_to_snake(incoming.concept_name)
+        async with self._driver.session(database=self._db) as session:
+            tx = await session.begin_transaction()
+            try:
+                await _merge_mechanism_node(tx, mechanism_name, target_name)
+                for mech in incoming.mechanism:
+                    await _merge_mechanism_node(tx, mech.mechanism_name, target_name)
+                    for ce in mech.code_examples:
+                        await _merge_code_example(tx, ce, mech.mechanism_name)
+                await tx.commit()
+            except Exception:
+                await tx.rollback()
+                raise
+
+    async def absorb_into_target(
+        self,
+        incoming: ConceptExtractionSchema,
+        target_name: str,
+    ) -> None:
+        """MERGE action: incoming 개념을 target 노드에 흡수 (새 노드 생성 없음)."""
+        async with self._driver.session(database=self._db) as session:
+            tx = await session.begin_transaction()
+            try:
+                await _absorb_concept_node(tx, incoming, target_name)
+                for mech in incoming.mechanism:
+                    await _merge_mechanism_node(tx, mech.mechanism_name, target_name)
+                    for ce in mech.code_examples:
+                        await _merge_code_example(tx, ce, mech.mechanism_name)
+                if incoming.root_cause:
+                    await _merge_root_cause_node(tx, incoming.root_cause, target_name)
+                for comp in incoming.affected_components:
+                    await _merge_component_node(tx, comp, target_name)
+                # 잔존 소스 노드 정리: incoming_name과 동일한 노드가 존재하면 관계 이전 후 삭제
+                await _consolidate_source_node(tx, incoming.concept_name, target_name)
+                await tx.commit()
+            except Exception:
+                await tx.rollback()
+                raise
 
     async def get_topology(self) -> dict[str, list[dict]]:
         """4-Layer 온톨로지 전체 토폴로지 - 노드/엣지 (force-graph 뷰어용).
@@ -295,11 +346,14 @@ async def _merge_component_node(tx, component_name: str, concept_name: str) -> N
     await tx.run(cypher, component_name=component_name, concept_name=concept_name)
 
 
+def _pascal_to_snake(name: str) -> str:
+    return re.sub(r"(?<!^)(?=[A-Z])", "_", name).lower()
+
+
 async def _merge_code_example(tx, ce, mechanism_name: str) -> None:
-    unq_id = (
-        f"{mechanism_name}_{ce.lang}_{ce.lang_version}"
-        f"_{ce.framework}_{ce.framework_version}"
-    )
+    normalized_code = re.sub(r"\s+", " ", ce.code or "").strip()
+    code_hash = hashlib.md5(normalized_code.encode()).hexdigest()[:8]
+    unq_id = f"{mechanism_name}_{code_hash}"
     cypher = """
     MERGE (ce:CodeExample {unq_id: $unq_id})
     ON CREATE SET
@@ -328,6 +382,71 @@ async def _merge_code_example(tx, ce, mechanism_name: str) -> None:
         code=ce.code,
         description=ce.description,
         mechanism_name=mechanism_name,
+    )
+
+
+async def _absorb_concept_node(
+    tx, incoming: ConceptExtractionSchema, target_name: str
+) -> None:
+    """기존 target 노드에 incoming의 별칭·메타데이터를 흡수 (MATCH, 새 노드 생성 안 함)."""
+    incoming_aliases = [
+        a for a in ([incoming.concept_name] + incoming.aliases)
+        if not _ALIAS_POISON_PATTERN.search(a)
+    ]
+    cypher = """
+    MATCH (c:Concept {name: $target_name})
+    SET
+        c.cwe_id         = COALESCE($cwe_id, c.cwe_id),
+        c.owasp_id       = COALESCE($owasp_id, c.owasp_id),
+        c.severity       = COALESCE($severity, c.severity),
+        c.description_ko = COALESCE(
+                             CASE WHEN $description_ko <> '' THEN $description_ko END,
+                             c.description_ko),
+        c.root_cause     = COALESCE(
+                             CASE WHEN $root_cause <> '' THEN $root_cause END,
+                             c.root_cause),
+        c.aliases        = apoc.coll.toSet(c.aliases + $incoming_aliases),
+        c.domains        = apoc.coll.toSet(c.domains + $domains),
+        c.updated_at     = datetime()
+    """
+    await tx.run(
+        cypher,
+        target_name=target_name,
+        cwe_id=incoming.cwe_id,
+        owasp_id=incoming.owasp_id,
+        severity=incoming.severity,
+        description_ko=incoming.description_ko or "",
+        root_cause=incoming.root_cause or "",
+        incoming_aliases=incoming_aliases,
+        domains=incoming.domains,
+    )
+
+
+async def _consolidate_source_node(tx, incoming_name: str, target_name: str) -> None:
+    """MERGE 완료 후 incoming_name 노드가 Neo4j에 잔존하면 관계를 target으로 이전하고 삭제.
+
+    이전 파이프라인 버그나 시드 데이터로 생성된 고립 노드(예: CsrfAttack)가
+    CSRF와 별개로 남아 그래프가 파편화되는 현상을 방지한다.
+    """
+    if incoming_name == target_name:
+        return
+    for rel_type in ("MITIGATED_BY", "CAUSED_BY", "AFFECTS"):
+        await tx.run(
+            f"MATCH (src:Concept {{name: $src}})-[:{rel_type}]->(node) "
+            f"MATCH (tgt:Concept {{name: $tgt}}) "
+            f"MERGE (tgt)-[:{rel_type}]->(node)",
+            src=incoming_name, tgt=target_name,
+        )
+    await tx.run(
+        "MATCH (src:Concept {name: $src})-[:RELATED_TO]->(rel:Concept) "
+        "WHERE rel.name <> $tgt "
+        "MATCH (tgt:Concept {name: $tgt}) "
+        "MERGE (tgt)-[:RELATED_TO]->(rel)",
+        src=incoming_name, tgt=target_name,
+    )
+    await tx.run(
+        "MATCH (src:Concept {name: $src}) DETACH DELETE src",
+        src=incoming_name,
     )
 
 

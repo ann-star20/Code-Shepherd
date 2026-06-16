@@ -1,0 +1,5 @@
+# pr_007 — 예외조항 적용 정상: scripts/ 배치에서 requests 사용 (CONV-API-001 §4, 장면 2)
+# scripts/ 경로 — §4 예외조항 적용 대상. violation 없음이 정답.
+file_paths:
+  - scripts/backfill_orders.py
+expected: []

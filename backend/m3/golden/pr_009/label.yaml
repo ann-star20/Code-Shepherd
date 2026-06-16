@@ -1,0 +1,4 @@
+# pr_009 — 정상: repo.bulk_fetch() 올바른 일괄 조회
+file_paths:
+  - src/reports/monthly_summary.py
+expected: []

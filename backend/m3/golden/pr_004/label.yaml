@@ -1,0 +1,6 @@
+# pr_004 — CONV-ERR-006 위반: bare except + pass (무음 삼킴)
+file_paths:
+  - src/payments/pg_callback.py
+expected:
+  - rule_id: CONV-ERR-006
+    verdict: violation

@@ -1,0 +1,5 @@
+# pr_008 — 정상: httpx.AsyncClient 사용 (핫스왑 시연용, 장면 4)
+# 현재 코퍼스 기준 정상. external_api.md §1 "httpx→aiohttp" 수정+reindex 후 violation으로 뒤집힘.
+file_paths:
+  - src/inventory/stock_checker.py
+expected: []

@@ -74,6 +74,11 @@ export default defineConfig({
         changeOrigin: true,
         rewrite: (path) => path.replace(/^\/m2-api/, ""),
       },
+      "/m5-api": {
+        target: process.env.VITE_M5_PROXY_TARGET ?? "http://m5:8006",
+        changeOrigin: true,
+        rewrite: (path) => path.replace(/^\/m5-api/, ""),
+      },
     },
   },
 });
