@@ -265,9 +265,9 @@ export function DocumentUpload({ isVisible = true }: { isVisible?: boolean }) {
             existingDoc={duplicateState.existingDoc}
             onKeepExisting={() => setDuplicateState(null)}
             onReupload={() => {
-              const { pendingFile, pendingHash } = duplicateState;
+              const { pendingFile, pendingHash, existingDoc } = duplicateState;
               setDuplicateState(null);
-              void doUpload(pendingFile, pendingHash);
+              void doReplace(existingDoc.doc_id, pendingFile, pendingHash);
             }}
             onCancel={() => setDuplicateState(null)}
           />
