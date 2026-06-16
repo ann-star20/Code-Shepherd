@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { DocumentUpload } from "../../components/DocumentUpload";
 import { HitlQueue } from "../../components/HitlQueue";
 import { PipelineFlow } from "../../components/PipelineFlow";
@@ -104,7 +104,7 @@ function DocInfoPanel({ doc, details }: { doc: DocListItem; details: DocDetailsR
 // ── StoredDocsList ─────────────────────────────────────────────────────────────
 const STORED_PAGE = 20;
 
-function StoredDocsList() {
+function StoredDocsList({ highlightDocId }: { highlightDocId?: string | null }) {
   const [docs, setDocs]         = useState<DocListItem[]>([]);
   const [total, setTotal]       = useState(0);
   const [offset, setOffset]     = useState(0);
@@ -117,6 +117,8 @@ function StoredDocsList() {
   const [details, setDetails]           = useState<DocDetailsResponse | null>(null);
   const [detailLoading, setDetailLoading] = useState(false);
   const [detailTab, setDetailTab]       = useState<DetailTab>("status");
+
+  const allDocsRef = useRef<DocListItem[]>([]);
 
   const load = useCallback(async (pageOffset = 0) => {
     setLoading(true);
@@ -131,6 +133,7 @@ function StoredDocsList() {
       const allDocs = [...storedRes.docs, ...partialRes.docs].sort(
         (a, b) => (b.created_at ?? "").localeCompare(a.created_at ?? ""),
       );
+      allDocsRef.current = allDocs;
       const totalCount = storedRes.total + partialRes.total;
       setDocs(allDocs.slice(pageOffset, pageOffset + STORED_PAGE));
       setTotal(totalCount);
@@ -150,6 +153,25 @@ function StoredDocsList() {
   }, []);
 
   useEffect(() => { void load(0); }, [load]);
+
+  useEffect(() => {
+    if (!highlightDocId || loading) return;
+    const all = allDocsRef.current;
+    const idx = all.findIndex(d => d.doc_id === highlightDocId);
+    if (idx === -1) return;
+    const pageOffset = Math.floor(idx / STORED_PAGE) * STORED_PAGE;
+    setDocs(all.slice(pageOffset, pageOffset + STORED_PAGE));
+    setOffset(pageOffset);
+    const doc = all[idx];
+    setSelected(doc);
+    setDetailTab("status");
+    setDetails(null);
+    setDetailLoading(true);
+    void getDocDetails(doc.doc_id)
+      .then(d => setDetails(d))
+      .catch(() => setDetails(null))
+      .finally(() => setDetailLoading(false));
+  }, [highlightDocId, loading]);
 
   const handleRowClick = useCallback(async (doc: DocListItem) => {
     setSelected(doc);
@@ -540,6 +562,7 @@ const btnSt = {
 // ── Main Page ──────────────────────────────────────────────────────────────────
 export default function KmsManagePage() {
   const [tab, setTab] = useState<Tab>("upload");
+  const [highlightDocId, setHighlightDocId] = useState<string | null>(null);
 
   return (
     <div style={{ background: "#f8fafc", minHeight: "100%" }}>
@@ -561,11 +584,11 @@ export default function KmsManagePage() {
 
       {/* Content */}
       <div style={{ padding: "20px 24px" }}>
-        {tab === "upload"   && <DocumentUpload isVisible={tab === "upload"} />}
+        {tab === "upload"   && <DocumentUpload isVisible={tab === "upload"} onGoToStored={(docId) => { setHighlightDocId(docId); setTab("stored"); }} />}
         {tab === "pipeline" && <PipelineStatusPanel />}
         {tab === "analyzer" && <ParsePreviewPanel />}
         {tab === "hitl"     && <HitlQueue />}
-        {tab === "stored"   && <StoredDocsList />}
+        {tab === "stored"   && <StoredDocsList highlightDocId={highlightDocId} />}
       </div>
     </div>
   );

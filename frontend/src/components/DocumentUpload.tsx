@@ -103,7 +103,7 @@ function InfoRow({ label, value, mono }: { label: string; value: string; mono?: 
 }
 
 // ── DocumentUpload ────────────────────────────────────────────────────────────
-export function DocumentUpload({ isVisible = true }: { isVisible?: boolean }) {
+export function DocumentUpload({ isVisible = true, onGoToStored }: { isVisible?: boolean; onGoToStored?: (docId: string) => void }) {
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [dragOver, setDragOver]         = useState(false);
   const [uploading, setUploading]       = useState(false);
@@ -263,7 +263,7 @@ export function DocumentUpload({ isVisible = true }: { isVisible?: boolean }) {
           <DuplicateModal
             type="identical"
             existingDoc={duplicateState.existingDoc}
-            onKeepExisting={() => setDuplicateState(null)}
+            onKeepExisting={() => { setDuplicateState(null); onGoToStored?.(duplicateState.existingDoc.doc_id); }}
             onReupload={() => {
               const { pendingFile, pendingHash, existingDoc } = duplicateState;
               setDuplicateState(null);
@@ -275,7 +275,7 @@ export function DocumentUpload({ isVisible = true }: { isVisible?: boolean }) {
           <DuplicateModal
             type="modified"
             existingDoc={duplicateState.existingDoc}
-            onKeepExisting={() => setDuplicateState(null)}
+            onKeepExisting={() => { setDuplicateState(null); onGoToStored?.(duplicateState.existingDoc.doc_id); }}
             onReplace={() => {
               const { pendingFile, pendingHash, existingDoc } = duplicateState;
               setDuplicateState(null);
