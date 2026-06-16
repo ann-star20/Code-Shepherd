@@ -54,7 +54,7 @@ class ConceptExtractionSchema(BaseModel):
 
     concept_name: str = Field(
         ...,
-        pattern=r"^[A-Z][a-zA-Z0-9]+$",
+        pattern=r"^[A-Z][a-zA-Z0-9\+-]+$",
         description=(
             "핵심 주제어. 반드시 PascalCase 단일 명사여야 함 (예: CsrfProtection, NextProxy). "
             "'concept_' 접두사나 해시 접미사(_b6ce44 등) 절대 금지."

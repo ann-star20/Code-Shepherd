@@ -30,7 +30,15 @@ from app.core.config import (
     USE_REAL_LLM,
     pg_dsn,
 )
+from pydantic import BaseModel as _PydanticBase
+
 from app.domain.models import ConceptExtractionSchema
+
+
+class _VerifyResult(_PydanticBase):
+    is_valid: bool
+    prescan_mismatch: bool
+    discrepancies: list[str]
 
 _PG_DSN = pg_dsn()
 logger = logging.getLogger(__name__)
@@ -73,30 +81,26 @@ def _log(session_id: str, agent: str, message: str) -> None:
     })
 
 
-@celery_app.task(name="m6.prescan", bind=True, max_retries=3, queue="m6_graph")
-def prescan_task(self, session_id: str, url: str) -> dict:
-    """URL 메타 분석 + ETag/hash 중복 검증 + knowledge_documents PENDING 생성."""
-    _emit(session_id, {"type": "step_update", "step": "Input", "status": "RUNNING"})
+@celery_app.task(bind=True, queue="m6_graph")
+def run_pipeline_task(self, session_id: str, url: str) -> dict:
+    """LangGraph full_pipeline_graph 실행 (prescan → crawl → extract → extract_verify)."""
+    from app.worker.graph import full_pipeline_graph
     try:
-        ctx = _run_async(_prescan_async(session_id, url))
-        if ctx.get("skip"):
-            _emit(session_id, {
-                "type": "step_update", "step": "Input", "status": "SKIPPED",
-                "reason": ctx.get("skip_reason", "중복 문서로 파이프라인을 건너뜁니다."),
-            })
-            _emit(session_id, {"type": "finished"})
-        elif ctx.get("awaiting_metadata"):
-            _emit(session_id, {
-                "type": "metadata_required", "step": "Input",
-                "doc_id": ctx["doc_id"], "url": ctx["url"],
-                "suggestions": ctx.get("suggestions", []),
-            })
-        else:
-            _emit(session_id, {"type": "step_update", "step": "Input", "status": "DONE"})
-        return ctx
-    except Exception as exc:
-        _set_failed_sync(session_id)
-        raise self.retry(exc=exc, countdown=5) from exc
+        return _run_async(full_pipeline_graph.ainvoke({"session_id": session_id, "url": url}))
+    except Exception:
+        _emit(session_id, {"type": "finished"})
+        raise
+
+
+@celery_app.task(bind=True, queue="m6_graph")
+def resume_pipeline_task(self, ctx: dict) -> dict:
+    """LangGraph resume_pipeline_graph 실행 (crawl → extract → extract_verify)."""
+    from app.worker.graph import resume_pipeline_graph
+    try:
+        return _run_async(resume_pipeline_graph.ainvoke(ctx))
+    except Exception:
+        _emit(ctx.get("session_id", ""), {"type": "finished"})
+        raise
 
 
 def _make_doc_id(url: str, content_hash: str) -> str:
@@ -211,22 +215,6 @@ async def _match_framework(conn: asyncpg.Connection, url: str) -> dict:
                     "version": None,
                 }
     return {"source_prefix": "external", "framework": None, "lang": None, "version": None}
-
-
-@celery_app.task(name="m6.crawl", bind=True, max_retries=3, queue="m6_graph")
-def crawl_task(self, ctx: dict) -> dict:
-    """DOM 정제 텍스트 추출 스마트 청킹."""
-    if ctx.get("skip") or ctx.get("awaiting_metadata"):
-        return ctx
-    session_id = ctx["session_id"]
-    _emit(session_id, {"type": "step_update", "step": "Crawler", "status": "RUNNING"})
-    try:
-        result = _run_async(_crawl_async(ctx))
-        _emit(session_id, {"type": "step_update", "step": "Crawler", "status": "DONE"})
-        return result
-    except Exception as exc:
-        _set_failed_sync(session_id)
-        raise self.retry(exc=exc, countdown=10) from exc
 
 
 async def _crawl_async(ctx: dict) -> dict:
@@ -358,36 +346,6 @@ def _classify_error(exc: Exception) -> str:
     if isinstance(exc, httpx.HTTPError):
         return "Gemini API 통신 오류 — 자동 재시도합니다."
     return f"LLM 추출 단계 오류 ({type(exc).__name__}) — 재시도 버튼으로 다시 시도해 주세요."
-
-
-@celery_app.task(name="m6.extract", bind=True, max_retries=3, queue="m6_graph")
-def extract_task(self, ctx: dict) -> dict:
-    """LLM 개념 추출 + 벡터 임베딩 + staging DRAFT 적재."""
-    if ctx.get("skip") or ctx.get("awaiting_metadata"):
-        return ctx
-    session_id = ctx["session_id"]
-    _emit(session_id, {"type": "step_update", "step": "Extractor", "status": "RUNNING"})
-    try:
-        result = _run_async(_extract_async(ctx))
-        if result.get("no_concepts_found"):
-            _emit(session_id, {
-                "type": "step_update", "step": "Extractor", "status": "FAILED",
-                "reason": _NO_CONCEPTS_FOUND_MESSAGE,
-            })
-        else:
-            _emit(session_id, {"type": "step_update", "step": "Extractor", "status": "DONE"})
-        _emit(session_id, {"type": "finished"})
-        return result
-    except Exception as exc:
-        is_final = self.request.retries >= self.max_retries
-        reason = _classify_error(exc)
-        _emit(session_id, {
-            "type": "step_update", "step": "Extractor", "status": "FAILED", "reason": reason,
-        })
-        _set_failed_sync(session_id)
-        if is_final:
-            _emit(session_id, {"type": "finished"})
-        raise self.retry(exc=exc, countdown=60) from exc
 
 
 async def _extract_async(ctx: dict) -> dict:
@@ -626,14 +584,18 @@ async def _gemini_extract(chunk: str, ctx: dict, metadata: dict | None = None) -
     logger.debug("%s gemini_raw_request START %s", "=" * 10, "=" * 10)
     logger.debug("[%s 자] %s", len(prompt), prompt)
     logger.debug("%s gemini_raw_request END %s", "=" * 10, "=" * 10)
-    async with httpx.AsyncClient(timeout=60) as client:
-        resp = await client.post(
-            f"https://generativelanguage.googleapis.com/v1beta/models/{GEMINI_MODEL}"
-            f":generateContent?key={GEMINI_API_KEY}",
-            json={"contents": [{"parts": [{"text": prompt}]}]},
-        )
-        resp.raise_for_status()
-        text = resp.json()["candidates"][0]["content"]["parts"][0]["text"]
+
+    try:
+        from langchain_core.messages import HumanMessage
+        from langchain_google_genai import ChatGoogleGenerativeAI
+
+        llm = ChatGoogleGenerativeAI(model=GEMINI_MODEL, google_api_key=GEMINI_API_KEY)
+        response = await llm.ainvoke([HumanMessage(content=prompt)])
+        text = response.content
+    except Exception as exc:
+        logger.warning("_gemini_extract LangChain 호출 실패: %s", exc)
+        return []
+
     logger.debug("%s gemini_raw_response START %s", "=" * 10, "=" * 10)
     logger.debug("[%s 자] %s", len(text), text)
     logger.debug("%s gemini_raw_response END %s", "=" * 10, "=" * 10)
@@ -764,13 +726,200 @@ async def _update_doc_state_conn(conn: asyncpg.Connection, doc_id: str, state: s
     )
 
 
+_VERIFY_SYSTEM_PROMPT = """\
+당신은 4-Layer 온톨로지 기반 지식그래프 추출 결과를 심사하는 수석 QA 엔지니어입니다.
+
+제공된 입력을 바탕으로 아래 4가지 기준을 순서대로 충분히 분석하고 근거를 한국어로 서술한 뒤,
+모든 분석이 끝난 마지막에 최종 판정 JSON을 마크다운 코드 블록으로 한 번만 출력하세요.
+
+[심사 기준]
+
+1. 4-Layer 온톨로지 준수
+   - Layer0(Domain): domains 값이 허용 도메인 목록에만 속하는가
+   - Layer1(Concept): concept_name이 PascalCase 안티패턴/취약점 명칭인가
+     ※ 방어책/해결책 명칭 금지 — CsrfProtection ❌, CrossSiteRequestForgery ✅
+     ※ 프레임워크 이름·해시 접미사·concept_ 접두사 금지
+   - Layer2(Mechanism): mechanism, root_cause, affected_components가 Layer1 문제의 종속 속성으로 올바르게 배치됐는가
+   - Layer3(CodeExample): code_examples 코드가 원본 문서 코드와 실질적으로 일치하는가 (원본에 코드 없으면 패스)
+
+2. Prescan 메타데이터 일치
+   - 추출된 개념의 framework/language 맥락이 Prescan 탐지 결과(framework, lang)와 상충하는가
+
+3. 원본 문서 일치 — 환각 검출
+   - description_ko, root_cause, mechanism_name 등이 원본 문서에 근거한 내용인가
+   - 원본에 없는 내용을 지어냈다면 환각으로 판정
+
+4. 코드 일치 검증
+   - code_examples 코드 스니펫이 원본 문서의 코드와 실질적으로 동일한가
+   - 원본에 코드가 없는데 코드를 생성했다면 환각으로 판정
+
+[출력 형식]
+각 기준마다 분석 내용을 자유롭게 서술하세요.
+모든 분석이 끝난 뒤 반드시 아래와 같은 형식으로 최종 판정 JSON 코드 블록을 출력하세요.
+JSON 코드 블록 이후에 추가 텍스트를 절대 출력하지 마세요.
+
+```json
+{
+  "is_valid": true,
+  "prescan_mismatch": false,
+  "discrepancies": []
+}
+```\
+"""
+
+_VERIFY_USER_PROMPT_TEMPLATE = """\
+[Prescan 탐지 결과]
+- framework: {framework}
+- language: {lang}
+- version: {version}
+- source_url: {url}
+
+[허용 도메인 목록(domain_registry)]
+{allowed_domains}
+
+[원본 문서 텍스트]
+{crawled_content}
+
+[추출 결과 JSON]
+{extracted_triples}\
+"""
+
+
+async def _verify_async(state: dict) -> dict:
+    """staging_concepts 품질 검증 + knowledge_documents 상태를 VERIFIED로 전이.
+
+    USE_REAL_LLM=true 시 Gemini로 원본-추출 일관성 검증, false 시 휴리스틱 fallback.
+    """
+    doc_id = state["doc_id"]
+
+    conn = await asyncpg.connect(_PG_DSN)
+    try:
+        rows = await conn.fetch(
+            "SELECT concept_json FROM staging_concepts WHERE doc_id = $1 AND state = 'DRAFT'",
+            doc_id,
+        )
+        allowed_domains = await _list_allowed_domains(conn)
+        await _update_doc_state_conn(conn, doc_id, "VERIFIED")
+    finally:
+        await conn.close()
+
+    if not rows:
+        return {**state, "is_valid": True, "prescan_mismatch": False, "discrepancies": []}
+
+    concepts = [json.loads(r["concept_json"]) for r in rows]
+
+    if USE_REAL_LLM and GEMINI_API_KEY:
+        return await _llm_verify(state, concepts, allowed_domains)
+    return _heuristic_verify(state, concepts, allowed_domains)
+
+
+async def _llm_verify(state: dict, concepts: list[dict], allowed_domains: list[str]) -> dict:
+    """LangChain ChatGoogleGenerativeAI + Chain-of-Thought 심사 후 마크다운 코드 블록 JSON 파싱."""
+    from langchain_core.messages import HumanMessage, SystemMessage
+    from langchain_google_genai import ChatGoogleGenerativeAI
+
+    crawled_content = "\n\n".join(state.get("chunks") or [])[:20000]
+    extracted_triples = json.dumps(
+        [
+            {
+                "concept_name": c.get("concept_name"),
+                "concept_type": c.get("concept_type"),
+                "domains": c.get("domains"),
+                "description_ko": c.get("description_ko"),
+                "root_cause": c.get("root_cause"),
+                "affected_components": c.get("affected_components"),
+                "mechanism": c.get("mechanism"),
+            }
+            for c in concepts
+        ],
+        ensure_ascii=False, indent=2,
+    )
+    user_prompt = _VERIFY_USER_PROMPT_TEMPLATE.format(
+        framework=state.get("framework") or "unknown",
+        lang=state.get("lang") or "unknown",
+        version=state.get("version") or "unknown",
+        url=state.get("url") or "",
+        allowed_domains=json.dumps(allowed_domains, ensure_ascii=False),
+        crawled_content=crawled_content,
+        extracted_triples=extracted_triples,
+    )
+    try:
+        llm = ChatGoogleGenerativeAI(model=GEMINI_MODEL, google_api_key=GEMINI_API_KEY)
+        response = await llm.ainvoke([
+            SystemMessage(content=_VERIFY_SYSTEM_PROMPT),
+            HumanMessage(content=user_prompt),
+        ])
+        text = response.content
+        logger.debug("_llm_verify 심사 내용:\n%s", text)
+
+        # 마지막 ```json ... ``` 블록에서 JSON 추출 (LLM이 분석 중 예시 코드 블록을 쓸 수 있어 역순 탐색)
+        parsed: dict | None = None
+        for m in reversed(list(re.finditer(r"```(?:json)?\s*([\s\S]*?)\s*```", text))):
+            try:
+                candidate = json.loads(m.group(1))
+                if "is_valid" in candidate:
+                    parsed = candidate
+                    break
+            except Exception:
+                continue
+
+        if parsed is None:
+            logger.warning("_llm_verify 코드 블록 파싱 실패, 휴리스틱으로 폴백")
+            return _heuristic_verify(state, concepts, allowed_domains)
+
+        return {
+            **state,
+            "is_valid": bool(parsed.get("is_valid", True)),
+            "prescan_mismatch": bool(parsed.get("prescan_mismatch", False)),
+            "discrepancies": parsed.get("discrepancies") or [],
+        }
+    except Exception as exc:
+        logger.warning("_llm_verify LangChain 호출 실패, 휴리스틱으로 폴백: %s", exc)
+        return _heuristic_verify(state, concepts, allowed_domains)
+
+
+def _heuristic_verify(state: dict, concepts: list[dict], allowed_domains: list[str]) -> dict:
+    """LLM 없이 구조적 무결성만 검사하는 fallback 검증."""
+    discrepancies: list[str] = []
+
+    _ALLOWED_CONCEPT_TYPES = {
+        "concept", "mechanism", "property", "root_cause",
+        "component", "performance_antipattern", "antipattern",
+    }
+    bad_types = [
+        c.get("concept_name", "?")
+        for c in concepts
+        if c.get("concept_type") not in _ALLOWED_CONCEPT_TYPES
+    ]
+    if bad_types:
+        discrepancies.append(f"비정상 concept_type 감지: {bad_types[:3]}")
+
+    no_domain = [c.get("concept_name", "?") for c in concepts if not c.get("domains")]
+    if no_domain:
+        discrepancies.append(f"도메인 배지 누락: {no_domain[:3]}")
+
+    if allowed_domains:
+        allowed_set = set(allowed_domains)
+        for c in concepts:
+            bad = [d for d in (c.get("domains") or []) if d not in allowed_set]
+            if bad:
+                discrepancies.append(
+                    f"'{c.get('concept_name')}' 도메인 이탈: {bad} (허용={sorted(allowed_set)})"
+                )
+
+    return {
+        **state,
+        "is_valid": not discrepancies,
+        "prescan_mismatch": bool(discrepancies),
+        "discrepancies": discrepancies,
+    }
+
+
 def trigger_pipeline(session_id: str, url: str) -> None:
-    """prescan -> crawl -> extract 체인 비동기 실행."""
-    chain = prescan_task.s(session_id, url) | crawl_task.s() | extract_task.s()
-    chain.apply_async()
+    """LangGraph full_pipeline_graph를 Celery worker에서 비동기 실행."""
+    run_pipeline_task.apply_async(args=[session_id, url])
 
 
 def resume_pipeline(ctx: dict) -> None:
-    """HITL 메타데이터 입력(또는 skip) 완료 후 crawl -> extract 체인 재개."""
-    chain = crawl_task.s(ctx) | extract_task.s()
-    chain.apply_async()
+    """HITL 완료 후 LangGraph resume_pipeline_graph를 Celery worker에서 재개."""
+    resume_pipeline_task.apply_async(args=[ctx])

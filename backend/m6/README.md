@@ -24,3 +24,7 @@ C:\Users\user\AppData\Local\Programs\Python\Python314\python.exe -m venv .venv-w
 
 
 docker compose exec m6 python script/seed_postgres.py
+
+docker compose up -d --force-recreate celery_worker_m6 m5
+
+docker compose build celery_worker_m6 m6 && docker compose up -d celery_worker_m6 m6

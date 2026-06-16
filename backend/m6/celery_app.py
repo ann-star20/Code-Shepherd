@@ -30,3 +30,12 @@ if os.getenv("LOCAL_DEBUG") == "true":
         task_always_eager=True,       # 비동기 큐를 거치지 않고, 일반 함수처럼 즉시 실행
         task_eager_propagates=True    # 태스크 내부에서 에러 발생 시 디버거 콘솔에 바로 에러 전파
     )
+
+
+from celery.signals import worker_ready  # noqa: E402
+
+
+@worker_ready.connect
+def _warmup_embedding_model(**kwargs):
+    from app.infrastructure.embeddings import get_client
+    get_client()
