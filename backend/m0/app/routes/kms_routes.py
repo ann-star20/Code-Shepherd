@@ -362,9 +362,9 @@ async def upload_document(
             await session.execute(
                 text("""
                     INSERT INTO documents
-                        (doc_id, title, source, file_type, original_filename, upload_status, created_at)
+                        (doc_id, title, source, file_type, original_filename, file_hash, upload_status, created_at)
                     VALUES
-                        (:doc_id, :title, :source, :file_type, :original_filename, 'processing', NOW())
+                        (:doc_id, :title, :source, :file_type, :original_filename, :file_hash, 'processing', NOW())
                     ON CONFLICT (doc_id) DO NOTHING
                 """),
                 {
@@ -373,6 +373,7 @@ async def upload_document(
                     "source": source,
                     "file_type": ext,
                     "original_filename": filename,
+                    "file_hash": file_hash,
                 },
             )
             await session.commit()
@@ -1383,9 +1384,9 @@ async def replace_document(
             await session.execute(
                 text("""
                     INSERT INTO documents
-                        (doc_id, title, source, file_type, original_filename, upload_status, created_at)
+                        (doc_id, title, source, file_type, original_filename, file_hash, upload_status, created_at)
                     VALUES
-                        (:doc_id, :title, :source, :file_type, :original_filename, 'processing', NOW())
+                        (:doc_id, :title, :source, :file_type, :original_filename, :file_hash, 'processing', NOW())
                     ON CONFLICT (doc_id) DO NOTHING
                 """),
                 {
@@ -1394,6 +1395,7 @@ async def replace_document(
                     "source": source,
                     "file_type": ext,
                     "original_filename": filename,
+                    "file_hash": file_hash,
                 },
             )
             await session.commit()

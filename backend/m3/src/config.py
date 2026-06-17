@@ -29,7 +29,7 @@ PROMPT_VERSIONS: dict[str, str] = {
 MAX_TOKENS: dict[str, int] = {
     "extract_concepts": 800,
     "check_sufficiency": 800,
-    "judge": 2000,
+    "judge": 4096,  # 기존 2000 → 대형 PR diff 심사 시 JSON 응답 중간 절단 방지
     "compose_comment": 800,
 }
 
@@ -48,7 +48,7 @@ CORPUS_DIR: str = "corpus"
 SYNONYMS_PER_CONCEPT: int = 3
 TOP_K: int = 5                  # query 당 top-k
 MAX_REQUERY: int = 1            # 전 파이프라인 합산 상한 (contracts: requery_count)
-MAX_JUDGE_CHUNKS: int = 8       # judge 입력 청크 dedup 후 캡 (6~8)
+MAX_JUDGE_CHUNKS: int = 6       # judge 입력 청크 dedup 후 캡 (6~8)
 
 # ── 캐시 (브리프 §9.1 — D2부터 필수) ──
 LLM_CACHE_DIR: str = os.getenv("LLM_CACHE_DIR", ".cache/llm")
