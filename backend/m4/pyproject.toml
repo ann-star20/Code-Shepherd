@@ -1,0 +1,45 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "m4"
+version = "0.1.0"
+requires-python = ">=3.12"
+dependencies = [
+    "fastapi>=0.111.0",
+    "uvicorn[standard]>=0.30.0",
+    "pydantic>=2.7.0",
+    "structlog>=24.2.0",
+    "shared",
+    "asyncpg>=0.29.0",
+    "httpx>=0.27.0",
+    "python-dotenv>=1.0.0",
+    "ragas>=0.2.0",
+    "langchain-community>=0.3.27,<0.4.0",  # ragas==0.4.x의 ragas/llms/base.py가 langchain_community.chat_models.vertexai를 top-level import하는데, 0.4.x부터 해당 모듈이 삭제되어 ImportError 발생 — 0.3.x로 고정
+    "langchain-google-genai>=2.0.0",  # T3: ragas_eval()의 judge LLM(gemini-2.5-pro)을 LangchainLLMWrapper로 감싸기 위해 필요
+    "pgvector>=0.3.0",
+    "google-generativeai>=0.8.0",
+]
+
+[project.optional-dependencies]
+# KMS 임베딩 스크립트용 (scripts/embed_kms_docs.py): pip install python-docx pypdf
+scripts = [
+    "python-docx>=1.1.0",
+    "pypdf>=4.0.0",
+]
+test = [
+    "pytest>=8.2.0",
+    "pytest-asyncio>=0.23.7",
+    "httpx>=0.27.0",
+]
+
+[tool.uv.sources]
+shared = { path = "../_shared", editable = true }
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+testpaths = ["tests"]
+
+[tool.hatch.build.targets.wheel]
+packages = ["app"]

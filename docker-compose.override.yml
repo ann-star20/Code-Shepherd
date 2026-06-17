@@ -1,0 +1,41 @@
+# dev3 m3 교체 override — 팀 docker-compose.yml 무수정, 이 파일만 추가.
+# 원복: 이 파일 삭제 후 docker compose up -d m3
+#
+# 병합 규칙 (보정 2):
+#   base volumes(./backend/_shared:ro, ./backend/m3:/app/service)는 유지(보정 3).
+#   override는 .chroma/.cache/corpus + src 마운트를 추가한다.
+#   실행 코드 소스: 호스트 backend/m3/src 를 /app/src 로 라이브 마운트한다.
+#     (과거엔 이미지 베이크본 /app/src 로 실행했으나, src 수정마다 이미지 재빌드가
+#      필요했고 재빌드 누락 시 stale 코드로 실행되는 문제가 있었다 — 예: ChromaDB
+#      stale UUID 캐시 무효화 67bc24d5 가 서버에 반영되지 않아 reindex 후 /review 500.
+#      라이브 마운트로 전환해 src 변경이 컨테이너 재시작만으로 반영되게 한다.)
+#   핫스왑 경로: 호스트 backend/m3/corpus 수정 → 컨테이너 reindex → .chroma 갱신.
+
+services:
+  m3:
+    image: dev3-m3:latest         # 태그 — build context는 팀 규약 유지(보정 1)
+    build:
+      context: ./backend
+      dockerfile: m3/Dockerfile
+    volumes:
+      # 실행 소스 라이브 마운트 — src 수정이 컨테이너 재시작만으로 반영 (재빌드 불필요)
+      - ./backend/m3/src:/app/src
+      # 인덱스·캐시 공유 (핫스왑·재시작 후 재인덱싱 방지)
+      - ./backend/m3/.chroma:/app/.chroma
+      - ./backend/m3/.cache:/app/.cache
+      # 핫스왑: 호스트 corpus 수정 → 컨테이너 reindex가 이 경로를 읽음
+      - ./backend/m3/corpus:/app/corpus
+    environment:
+      # .env에 OLLAMA_BASE_URL을 넣으면 덮어씌워지므로 여기서만 지정
+      OLLAMA_BASE_URL: http://host.docker.internal:11434
+      ENABLE_DB_WRITE: "true"
+    # dev3 진입점 — 팀 m3의 app.main:app 대신 src.adapters.http_adapter:app
+    command: uvicorn src.adapters.http_adapter:app --host 0.0.0.0 --port 8004
+
+  m0:
+    environment:
+      OLLAMA_BASE_URL: http://host.docker.internal:11434
+
+  m4:
+    environment:
+      OLLAMA_BASE_URL: http://host.docker.internal:11434

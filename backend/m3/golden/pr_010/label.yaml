@@ -1,0 +1,4 @@
+# pr_010 — 정상: config.from_env() 올바른 설정 로더 사용
+file_paths:
+  - src/integrations/external_webhook.py
+expected: []

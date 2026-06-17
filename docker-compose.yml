@@ -1,0 +1,261 @@
+version: "3.9"
+
+networks:
+  code-shepherd:
+    driver: bridge
+
+services:
+  api-core:
+    build:
+      context: ./backend
+      dockerfile: api-core/Dockerfile
+    ports:
+      - "8000:8000"
+    env_file: .env
+    volumes:
+      - ./backend/_shared:/app/_shared:ro
+      - ./backend/api-core:/app/service
+    networks:
+      - code-shepherd
+    restart: unless-stopped
+    command: uv run uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
+
+  m1:
+    build:
+      context: ./backend
+      dockerfile: m1/Dockerfile
+    ports:
+      - "8001:8001"
+    env_file: .env
+    volumes:
+      - ./backend/_shared:/app/_shared:ro
+      - ./backend/m1:/app/service
+    networks:
+      - code-shepherd
+    restart: unless-stopped
+    command: uv run uvicorn app.main:app --host 0.0.0.0 --port 8001 --reload
+
+  m0:
+    build:
+      context: ./backend
+      dockerfile: m0/Dockerfile
+    ports:
+      - "8002:8002"
+    env_file: .env
+    environment:
+      GOOGLE_APPLICATION_CREDENTIALS: /root/.config/gcloud/application_default_credentials.json
+      GCS_KEY_PATH: /root/.config/gcloud/application_default_credentials.json
+      NEO4J_URI: bolt://host.docker.internal:7687
+      NEO4J_USER: neo4j
+      NEO4J_PASSWORD: ${NEO4J_PASSWORD:-codeshepherd}
+    volumes:
+      - ./backend/_shared:/app/_shared:ro
+      - ./backend/m0:/app/service
+      - ${GOOGLE_ADC_PATH}:/root/.config/gcloud/application_default_credentials.json:ro
+      - ./secrets:/app/secrets:ro
+    networks:
+      - code-shepherd
+    restart: unless-stopped
+    command: /app/.venv/bin/python -m uvicorn app.main:app --host 0.0.0.0 --port 8002 --reload
+
+  m2:
+    build:
+      context: ./backend
+      dockerfile: m2/Dockerfile
+    ports:
+      - "8003:8003"
+    env_file: .env
+    volumes:
+      - ./backend/_shared:/app/_shared:ro
+      - ./backend/m2:/app/service
+    networks:
+      - code-shepherd
+    restart: unless-stopped
+    command: uv run uvicorn app.main:app --host 0.0.0.0 --port 8003 --reload
+
+  m3:
+    build:
+      context: ./backend
+      dockerfile: m3/Dockerfile
+    ports:
+      - "8004:8004"
+    env_file: .env
+    volumes:
+      - ./backend/_shared:/app/_shared:ro
+      - ./backend/m3:/app/service
+    networks:
+      - code-shepherd
+    restart: unless-stopped
+    command: uv run uvicorn app.main:app --host 0.0.0.0 --port 8004 --reload
+
+  m4:
+    build:
+      context: ./backend
+      dockerfile: m4/Dockerfile
+    ports:
+      - "8005:8005"
+    env_file: .env
+    volumes:
+      - ./backend/_shared:/app/_shared:ro
+      - ./backend/m4:/app/service
+    networks:
+      - code-shepherd
+    restart: unless-stopped
+    command: uv run uvicorn app.main:app --host 0.0.0.0 --port 8005 --reload
+
+  neo4j:
+    image: neo4j:5-community
+    ports:
+      - "7474:7474"
+      - "7687:7687"
+    environment:
+      NEO4J_AUTH: neo4j/${NEO4J_PASSWORD:-codeshepherd}
+    volumes:
+      - neo4j_data:/data
+    networks:
+      - code-shepherd
+    restart: unless-stopped
+
+  m5:
+    build:
+      context: ./backend
+      dockerfile: m5/Dockerfile
+    ports:
+      - "8006:8006"
+    env_file: .env
+    environment:
+      NEO4J_URI: bolt://neo4j_m6:7687
+      NEO4J_USER: neo4j
+      NEO4J_PASSWORD: ${NEO4J_PASSWORD:-codeshepherd}
+    volumes:
+      - ./backend/_shared:/app/_shared:ro
+      - ./backend/m5:/app/service
+    networks:
+      - code-shepherd
+    depends_on:
+      - neo4j_m6
+    restart: unless-stopped
+    command: uv run uvicorn app.main:app --host 0.0.0.0 --port 8006 --reload
+
+  neo4j_m6:
+    image: neo4j:5-community
+    ports:
+      - "7475:7474"
+      - "7688:7687"
+    environment:
+      - NEO4J_AUTH=neo4j/${NEO4J_PASSWORD:-codeshepherd}
+      - NEO4J_PLUGINS=["apoc"]
+      - NEO4J_dbms_security_procedures_unrestricted=apoc.*
+      # NEO4J_URI: bolt://neo4j:7688 # 팀원들을 위해 그대로 유지
+      # 💡 [치트키 기입] 이 한 줄을 추가하면 유효성 검사를 안 해서 Neo4j가 절대 안 죽습니다!
+      # NEO4J_server_config_strict__validation_enabled: "false"
+    volumes:
+      - neo4j_m6_data:/data
+    networks:
+      - code-shepherd
+    restart: unless-stopped
+
+  neo4j_m6_seed:
+    build:
+      context: ./backend
+      dockerfile: m6/Dockerfile
+    env_file: .env
+    environment:
+      NEO4J_URI: bolt://neo4j_m6:7687
+      NEO4J_DATABASE: neo4j
+    volumes:
+      - ./backend/_shared:/app/_shared:ro
+      - ./backend/m6:/app/service
+    networks:
+      - code-shepherd
+    depends_on:
+      - neo4j_m6
+    restart: "no"
+    command: python script/seed_neo4j.py &&  python script/seed_postgres.py
+
+  redis:
+    image: redis:7-alpine
+    ports:
+      - "6379:6379"
+    networks:
+      - code-shepherd
+    restart: unless-stopped
+
+  cloud-sql-proxy:
+    image: gcr.io/cloud-sql-connectors/cloud-sql-proxy:2
+    env_file: .env
+    command:
+      - "--address=0.0.0.0"
+      - "--port=5432"
+      - "${CLOUD_SQL_INSTANCE_CONNECTION_NAME}"
+    ports:
+      - "15432:5432"
+    volumes:
+      - ${GOOGLE_ADC_PATH}:/secrets/credentials.json:ro
+    environment:
+      GOOGLE_APPLICATION_CREDENTIALS: /secrets/credentials.json
+    networks:
+      - code-shepherd
+    restart: unless-stopped
+
+  m6:
+    build:
+      context: ./backend
+      dockerfile: m6/Dockerfile
+    ports:
+      - "8007:8007"
+    env_file: .env
+    environment:
+      NEO4J_URI: bolt://neo4j_m6:7687
+      NEO4J_DATABASE: neo4j
+      REDIS_URL: redis://redis:6379/0
+    volumes:
+      - ./backend/_shared:/app/_shared:ro
+      - ./backend/m6:/app/service
+    networks:
+      - code-shepherd
+    depends_on:
+      - neo4j_m6
+      - redis
+    restart: unless-stopped
+    command: uvicorn app.main:app --host 0.0.0.0 --port 8007 --reload --reload-dir app
+
+  celery_worker_m6:
+    build:
+      context: ./backend
+      dockerfile: m6/Dockerfile
+    env_file: .env
+    environment:
+      NEO4J_URI: bolt://neo4j_m6:7687
+      NEO4J_DATABASE: neo4j
+      REDIS_URL: redis://redis:6379/0
+    volumes:
+      - ./backend/_shared:/app/_shared:ro
+      - ./backend/m6:/app/service
+    networks:
+      - code-shepherd
+    depends_on:
+      - neo4j_m6
+      - redis
+    restart: unless-stopped
+    command: celery -A celery_app worker --loglevel=debug -Q m6_graph
+
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+      target: dev
+    ports:
+      - "5173:5173"
+    env_file: .env
+    volumes:
+      - ./frontend:/app
+      - /app/node_modules
+    networks:
+      - code-shepherd
+    restart: unless-stopped
+    command: npm run dev -- --host 0.0.0.0
+
+volumes:
+  neo4j_data:
+  neo4j_m6_data:

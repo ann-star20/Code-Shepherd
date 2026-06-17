@@ -1,0 +1,25 @@
+# ── secrets ──────────────────────────────
+.env
+.env.*
+.env
+# ── python ───────────────────────────────
+__pycache__/
+*.py[cod]
+.venv/
+.pytest_cache/
+.ruff_cache/
+*.egg-info/
+
+# ── 로컬 데이터·아티팩트 ─────────────────
+.chroma/
+.chroma_backup*/
+.cache/
+eval/runs/
+*.log
+coverage.json
+
+# ── os / ide ─────────────────────────────
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/
