@@ -279,6 +279,42 @@ def _pg_insert(row: dict, pr_number: int, repository: str) -> None:
 
 # ── 공개 API ─────────────────────────────────────────────────────────────────
 
+def _clear_existing_issues(pr_number: int, repository: str,
+                           use_real: bool, mock_db_path: Path | None) -> None:
+    """동일 PR의 기존 review_issue 행 삭제 — 재심사 시 중복 방지."""
+    try:
+        if use_real:
+            import psycopg2  # noqa: PLC0415
+            kwargs = _pg_dsn_kwargs()
+            if kwargs is None:
+                return
+            conn = psycopg2.connect(connect_timeout=10, **kwargs)
+            try:
+                with conn.cursor() as cur:
+                    cur.execute(
+                        "DELETE FROM review_issue WHERE pull_request_id = ("
+                        "SELECT id FROM pull_requests "
+                        "WHERE github_pr_number = %s AND repository_full_name = %s LIMIT 1)",
+                        (pr_number, repository),
+                    )
+                conn.commit()
+            finally:
+                conn.close()
+        else:
+            conn = _mock_conn(mock_db_path)
+            try:
+                conn.execute(
+                    "DELETE FROM review_issue WHERE pull_request_id = ?",
+                    (str(pr_number),),
+                )
+                conn.commit()
+            finally:
+                conn.close()
+        log.info("db_adapter: cleared existing issues pr=%s repo=%s", pr_number, repository)
+    except Exception as exc:  # noqa: BLE001
+        log.warning("db_adapter: clear failed pr=%s: %s", pr_number, type(exc).__name__)
+
+
 def insert_review_issues(
     findings: list[Finding],
     pr_number: int,
@@ -295,6 +331,7 @@ def insert_review_issues(
         return
 
     use_real = _is_real_db_available()
+    _clear_existing_issues(pr_number, repository, use_real, _mock_db_path)
     for finding in findings:
         if finding.verdict != "violation":
             continue

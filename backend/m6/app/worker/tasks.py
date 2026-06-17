@@ -543,7 +543,7 @@ def _mock_extract(chunk: str, ctx: dict, metadata: dict | None = None) -> list[d
     fw = ctx.get("framework") or "unknown"
     # crawling-chunking-guide-v3.md §2 — concept_name은 ^[A-Z][a-zA-Z0-9]+$ PascalCase 강제
     # (concept_ 접두사/해시 접미사/프레임워크 원형(예: "Next.js") 금지)
-    fw_pascal = re.sub(r"[^A-Za-z0-9]", "", fw) or "Unknown"
+    fw_pascal = re.sub(r"[^A-Za-z0-9+-]", "", fw) or "Unknown"
     fw_pascal = fw_pascal[0].upper() + fw_pascal[1:]
     allowed_domains = (metadata or {}).get("allowed_domains") or []
     domains = [allowed_domains[0]] if allowed_domains else [ctx.get("source_prefix", "external")]

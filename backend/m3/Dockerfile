@@ -14,7 +14,7 @@ COPY m3/corpus/ corpus/
 
 # 도커 내부 → 호스트 ollama (직접실행은 localhost — .env 만으로 전환)
 ENV OLLAMA_BASE_URL=http://host.docker.internal:11434
-ENV ENABLE_DB_WRITE=false
+ENV ENABLE_DB_WRITE=true
 
 EXPOSE 8004
 

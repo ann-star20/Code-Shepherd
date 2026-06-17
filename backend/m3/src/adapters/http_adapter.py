@@ -463,7 +463,7 @@ async def webhook_handler(request: Request) -> dict[str, Any]:
     event_type = request.headers.get("X-GitHub-Event", "")
     data: dict = json.loads(raw) if raw else {}
 
-    if event_type == "pull_request" and data.get("action") in ("opened", "synchronize"):
+    if event_type == "pull_request" and data.get("action") in ("opened",):
         full_name: str = data["repository"]["full_name"]
         pr_number: int = data["pull_request"]["number"]
         pr_author: str | None = data["pull_request"].get("user", {}).get("login")

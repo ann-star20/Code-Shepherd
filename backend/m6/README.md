@@ -8,6 +8,7 @@ docker compose up -d redis neo4j_m6 cloud-sql-proxy api-core frontend m6 celery_
 docker compose up -d --force-recreate celery_worker_m6
 docker compose restart celery_worker_m6 && docker compose logs -f --tail 100
 
+docker compose restart celery_worker_m6
 docker compose up neo4j_m6_seed
 
 cd backend\m6
@@ -23,4 +24,4 @@ C:\Users\user\AppData\Local\Programs\Python\Python314\python.exe -m venv .venv-w
 .\.venv-win\Scripts\python.exe script\seed_neo4j.py
 
 
-docker compose exec m6 python script/seed_postgres.py
+docker compose exec m6 python script/seed_neo4j.py
