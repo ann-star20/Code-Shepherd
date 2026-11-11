@@ -102,3 +102,5 @@ Compose의 `neo4j_m6_seed` command에는 `&&`가 있으나 명시적 셸 실행�
 [통합 아키텍처](../../docs/M5_M6_ARCHITECTURE.md)에 해소 기준·데이터 모델·트랜잭션 제약을 정리했습니다. [현재 파이프라인 안내](docs/pipeline.md)와 [현재 스키마 안내](docs/schema.md)도 참고하세요. 나머지 docs의 PRD·이관·프론트 설계 문서는 당시의 제안과 요구사항을 포함하므로 구현 근거는 실행 코드로 확인해야 합니다.
 
 테스트는 `docker compose run --rm m6 python -m pytest`로 실행합니다. DB·Neo4j·모델 의존성을 테스트별로 확인하세요. 문서 정비 과정에서는 외부 서비스 통합 테스트와 실제 Gemini 추출을 실행하지 않았습니다.
+
+2026-11-12 실제 Aura에서 `script/seed_neo4j.py`를 두 번 실행해 각 16개 입력 적재 및 노드·관계 수 유지(멱등성)를 확인했습니다. 스키마는 `script/init_db.cypher`를 사용했습니다. [검증 결과](../../docs/M5_M6_AURA_VERIFICATION.json)를 참고하세요.

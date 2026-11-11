@@ -12,6 +12,7 @@ class RankedRecommendRequest(BaseModel):
 
 
 class VideoResult(BaseModel):
+    is_mock: bool = False
     rank: int
     recommendation_type: str
     query_used: str

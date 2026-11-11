@@ -1,0 +1,338 @@
+{
+  "verified_date": "2026-11-12",
+  "seed": {
+    "script": "backend/m6/script/seed_neo4j.py",
+    "schema": "backend/m6/script/init_db.cypher",
+    "records_per_pass": 16,
+    "passes": 2,
+    "idempotent_counts": true,
+    "graph": {
+      "nodes": [
+        {
+          "label": "CodeExample",
+          "count": 29
+        },
+        {
+          "label": "Component",
+          "count": 37
+        },
+        {
+          "label": "Concept",
+          "count": 16
+        },
+        {
+          "label": "Domain",
+          "count": 2
+        },
+        {
+          "label": "Mechanism",
+          "count": 27
+        },
+        {
+          "label": "Performance",
+          "count": 4
+        },
+        {
+          "label": "RootCause",
+          "count": 16
+        },
+        {
+          "label": "Security",
+          "count": 14
+        }
+      ],
+      "relationships": [
+        {
+          "type": "AFFECTS",
+          "count": 42
+        },
+        {
+          "type": "BELONGS_TO",
+          "count": 18
+        },
+        {
+          "type": "CAUSED_BY",
+          "count": 16
+        },
+        {
+          "type": "HAS_EXAMPLE",
+          "count": 29
+        },
+        {
+          "type": "MITIGATED_BY",
+          "count": 27
+        }
+      ],
+      "constraints": [
+        {
+          "name": "code_example_unq_id_unique"
+        },
+        {
+          "name": "component_name_unique"
+        },
+        {
+          "name": "concept_name_unique"
+        },
+        {
+          "name": "document_id_unique"
+        },
+        {
+          "name": "domain_name_unique"
+        },
+        {
+          "name": "mechanism_name_unique"
+        },
+        {
+          "name": "property_unq_key_unique"
+        },
+        {
+          "name": "root_cause_name_unique"
+        }
+      ],
+      "indexes": [
+        {
+          "name": "code_example_lookup_idx",
+          "state": "ONLINE"
+        },
+        {
+          "name": "code_example_unq_id_unique",
+          "state": "ONLINE"
+        },
+        {
+          "name": "component_name_unique",
+          "state": "ONLINE"
+        },
+        {
+          "name": "concept_active_status_idx",
+          "state": "ONLINE"
+        },
+        {
+          "name": "concept_aliases_fulltext_idx",
+          "state": "ONLINE"
+        },
+        {
+          "name": "concept_cwe_idx",
+          "state": "ONLINE"
+        },
+        {
+          "name": "concept_name_unique",
+          "state": "ONLINE"
+        },
+        {
+          "name": "concept_owasp_idx",
+          "state": "ONLINE"
+        },
+        {
+          "name": "document_id_unique",
+          "state": "ONLINE"
+        },
+        {
+          "name": "domain_name_unique",
+          "state": "ONLINE"
+        },
+        {
+          "name": "index_1b9dcc97",
+          "state": "ONLINE"
+        },
+        {
+          "name": "index_460996c0",
+          "state": "ONLINE"
+        },
+        {
+          "name": "mechanism_name_unique",
+          "state": "ONLINE"
+        },
+        {
+          "name": "performance_concept_idx",
+          "state": "ONLINE"
+        },
+        {
+          "name": "property_unq_key_unique",
+          "state": "ONLINE"
+        },
+        {
+          "name": "root_cause_name_unique",
+          "state": "ONLINE"
+        },
+        {
+          "name": "security_concept_idx",
+          "state": "ONLINE"
+        }
+      ]
+    }
+  },
+  "youtube": {
+    "total_search_attempts": 12,
+    "unique_queries": 11,
+    "pools": 11,
+    "distinct_videos": 139,
+    "additional_searches_during_read_verification": 0,
+    "timestamps": [
+      {
+        "videos": 139,
+        "created": 139,
+        "updated": 139,
+        "fetched": 139
+      }
+    ],
+    "pool_timestamps": [
+      {
+        "pools": 11,
+        "created": 11,
+        "updated": 11,
+        "fetched": 11,
+        "expires": 11
+      }
+    ],
+    "scenarios": [
+      {
+        "request": {
+          "concept_name": "SQLi"
+        },
+        "response": {
+          "concept_name": "SQLi",
+          "videos": [
+            {
+              "is_mock": false,
+              "rank": 3,
+              "recommendation_type": "보안 표준 분석",
+              "query_used": "CWE-89 A03:2025 SQLi 분석",
+              "title": "CVE-2026-21643: Critical SQL Injection (9.1) Exploit",
+              "url": "https://www.youtube.com/watch?v=dpCi0EW3N-s",
+              "thumbnail": "https://i.ytimg.com/vi/dpCi0EW3N-s/mqdefault.jpg",
+              "channel_title": "𝑺𝒂𝒎𝒂𝒆𝒍"
+            },
+            {
+              "is_mock": false,
+              "rank": 4,
+              "recommendation_type": "원인 분석",
+              "query_used": "SQLi 취약점 근본 원인 분석",
+              "title": "SQL Injection - Part 4",
+              "url": "https://www.youtube.com/watch?v=QPRFZ7_QBZU",
+              "thumbnail": "https://i.ytimg.com/vi/QPRFZ7_QBZU/mqdefault.jpg",
+              "channel_title": "Kees Leune"
+            },
+            {
+              "is_mock": false,
+              "rank": 5,
+              "recommendation_type": "기본 개념",
+              "query_used": "SQLi 취약점 공격 원리 총정리",
+              "title": "SQL injection 공격",
+              "url": "https://www.youtube.com/watch?v=FoZ2cucLiDs",
+              "thumbnail": "https://i.ytimg.com/vi/FoZ2cucLiDs/mqdefault.jpg",
+              "channel_title": "코딩애플"
+            }
+          ]
+        },
+        "http_status": 200
+      },
+      {
+        "request": {
+          "concept_name": "SQLi",
+          "mechanism_name": "parameterized_query"
+        },
+        "response": {
+          "concept_name": "SQLi",
+          "videos": [
+            {
+              "is_mock": false,
+              "rank": 3,
+              "recommendation_type": "보안 표준 분석",
+              "query_used": "CWE-89 A03:2025 SQLi 분석",
+              "title": "CVE-2026-21643: Critical SQL Injection (9.1) Exploit",
+              "url": "https://www.youtube.com/watch?v=dpCi0EW3N-s",
+              "thumbnail": "https://i.ytimg.com/vi/dpCi0EW3N-s/mqdefault.jpg",
+              "channel_title": "𝑺𝒂𝒎𝒂𝒆𝒍"
+            },
+            {
+              "is_mock": false,
+              "rank": 4,
+              "recommendation_type": "원인 분석",
+              "query_used": "SQLi parameterized query 원리",
+              "title": "SQL Injection, 로그에서 Query 구조 변조 찾기",
+              "url": "https://www.youtube.com/watch?v=iKHRRovR_kM",
+              "thumbnail": "https://i.ytimg.com/vi/iKHRRovR_kM/mqdefault.jpg",
+              "channel_title": "Jeremy Min"
+            },
+            {
+              "is_mock": false,
+              "rank": 5,
+              "recommendation_type": "기본 개념",
+              "query_used": "SQLi 취약점 공격 원리 총정리",
+              "title": "SQL injection 공격",
+              "url": "https://www.youtube.com/watch?v=FoZ2cucLiDs",
+              "thumbnail": "https://i.ytimg.com/vi/FoZ2cucLiDs/mqdefault.jpg",
+              "channel_title": "코딩애플"
+            }
+          ]
+        },
+        "http_status": 200
+      },
+      {
+        "request": {
+          "concept_name": "SQLi",
+          "mechanism_name": "parameterized_query",
+          "code_id": "parameterized_query_11db3576",
+          "code_lang": "python",
+          "code_framework": "django"
+        },
+        "response": {
+          "concept_name": "SQLi",
+          "videos": [
+            {
+              "is_mock": false,
+              "rank": 1,
+              "recommendation_type": "프레임워크 맞춤형",
+              "query_used": "django SQLi parameterized query 구현 방어",
+              "title": "2020 07 09, 자바, 블로그 구현, SQL 인젝션 방어를 위한 기술인 PreparedStatement의 사용법",
+              "url": "https://www.youtube.com/watch?v=y_meXdkSvto",
+              "thumbnail": "https://i.ytimg.com/vi/y_meXdkSvto/mqdefault.jpg",
+              "channel_title": "몰입 코딩"
+            },
+            {
+              "is_mock": false,
+              "rank": 2,
+              "recommendation_type": "언어별 가이드",
+              "query_used": "python SQLi 실전 예제",
+              "title": "Node.js &amp; MySQL - 20.2.보안 2/2 - SQL Injection",
+              "url": "https://www.youtube.com/watch?v=h026ABB9AVk",
+              "thumbnail": "https://i.ytimg.com/vi/h026ABB9AVk/mqdefault.jpg",
+              "channel_title": "생활코딩"
+            },
+            {
+              "is_mock": false,
+              "rank": 3,
+              "recommendation_type": "컴포넌트 취약점",
+              "query_used": "database query layer orm layer SQLi 취약점",
+              "title": "EP08 — SQL Injection and ORM Safety | Security for Legal SaaS",
+              "url": "https://www.youtube.com/watch?v=kgkZrP30eNc",
+              "thumbnail": "https://i.ytimg.com/vi/kgkZrP30eNc/mqdefault.jpg",
+              "channel_title": "yuchou"
+            },
+            {
+              "is_mock": false,
+              "rank": 4,
+              "recommendation_type": "핵심 매커니즘",
+              "query_used": "SQLi parameterized query 개념",
+              "title": "SQL Injection 60초 완벽정리 | ATM 비유로 이해하는 웹 보안 | 개발자 면접 필수 개념 #Shorts #개발자 #sql #sqlinjection #개발자취업 #보안",
+              "url": "https://www.youtube.com/watch?v=N8zqPKtAU7Q",
+              "thumbnail": "https://i.ytimg.com/vi/N8zqPKtAU7Q/mqdefault.jpg",
+              "channel_title": "눈감고듣는개발"
+            },
+            {
+              "is_mock": false,
+              "rank": 5,
+              "recommendation_type": "기본 개념",
+              "query_used": "SQLi 취약점 공격 원리 총정리",
+              "title": "SQL injection 공격",
+              "url": "https://www.youtube.com/watch?v=FoZ2cucLiDs",
+              "thumbnail": "https://i.ytimg.com/vi/FoZ2cucLiDs/mqdefault.jpg",
+              "channel_title": "코딩애플"
+            }
+          ]
+        },
+        "http_status": 200
+      }
+    ]
+  }
+}

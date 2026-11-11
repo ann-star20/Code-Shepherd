@@ -20,7 +20,7 @@
 
 ## Module 5 — 기술 맥락 기반 YouTube 추천
 
-사용자가 선택한 개념·메커니즘·언어·프레임워크를 바탕으로 영상을 찾는 독립 FastAPI 서비스(:8006)입니다. neo4j_m6를 읽어 검색어를 만들고 YouTube Data API를 호출합니다. 문서 추출·온톨로지 관리·그래프 저장은 담당하지 않습니다.
+사용자가 선택한 개념·메커니즘·언어·프레임워크를 바탕으로 영상을 찾는 독립 FastAPI 서비스(:8006)입니다. 추천 API는 neo4j_m6에 미리 저장된 영상 후보만 조회합니다. 별도 M5 수집기가 전체 컨셉·등록 코드 맥락으로 YouTube 영상을 수집·갱신하고 영상 노드와 관계를 저장합니다. 문서 추출·4계층 온톨로지 관리는 M6가 담당합니다.
 
 [Module 5 전용 설명](docs/MODULE_5_GRAPH_YOUTUBE_RULE.md) · [M5 실행·API](backend/m5/README.md)
 
@@ -50,12 +50,14 @@ flowchart LR
     M6 --> KG
     UI --> M5["M5 API :8006"]
     M5 --> KG
-    M5 --> YT["YouTube Data API v3"]
+    COLLECT["M5 정기 수집기: 선택형"] --> YT["YouTube Data API v3"]
+    COLLECT -->|영상 풀 저장·갱신| KG
 ```
 
-M5·M6는 M1의 PR 처리 체인과 별도로 API를 제공합니다. M6가 지식을 구축하고 M5가 그 그래프를 조회합니다. 두 모듈 사이에 직접 Python import나 M6→M5 추천 호출은 없으며, Compose의 `neo4j_m6`를 통해 데이터를 공유합니다. M0용 `neo4j`와는 별도 인스턴스입니다.
+M5·M6는 M1의 PR 처리 체인과 별도로 API를 제공합니다. M6가 온톨로지를 구축하고 M5 API가 그래프와 저장 영상을 조회합니다. M5 수집기는 영상 리소스만 갱신합니다. 두 모듈 사이에 직접 Python import나 M6→M5 추천 호출은 없으며, Compose의 `neo4j_m6`를 통해 데이터를 공유합니다. M0용 `neo4j`와는 별도 인스턴스입니다.
 
 - [M5 사용법·API](backend/m5/README.md)
+- [M5 영상 수집·갱신·일일 예산](docs/M5_VIDEO_COLLECTION.md)
 - [M6 실행·검수·시드](backend/m6/README.md)
 - [M5·M6 상세 아키텍처와 구현 제약](docs/M5_M6_ARCHITECTURE.md)
 
@@ -94,12 +96,16 @@ docker-compose.override.yml
 
 ## 검증
 
-서비스별 의존성과 외부 DB가 준비된 환경에서 테스트를 실행합니다. M5의 기존 계약 테스트에는 폐기된 `/youtube/recommend` 경로가 남아 있으므로 현재 API와 구분해야 합니다. 문서 정비 시 테스트 실행 성공이나 실측 성능을 추정해 기재하지 않습니다.
+서비스별 의존성을 준비해 테스트를 실행합니다. M5 기본 테스트는 Neo4j 서버·YouTube 키 없이 실행할 수 있습니다. 실제 Neo4j 통합 테스트는 전용 DB 설정 시에만 실행합니다. Neo4j가 없어도 M5 서버 시작·health 확인은 가능하고 실제 그래프·추천 요청에는 503을 반환합니다. 실측 성능·추천 품질 검증과 구분하세요.
 
 ```bash
-docker compose run --rm m5 uv run pytest
+docker compose run --rm m5 uv run --extra test pytest
 docker compose run --rm m6 python -m pytest
 docker compose run --rm api-core uv run alembic upgrade head
 ```
 
 마지막 명령은 api-core 마이그레이션입니다. M6 전용 테이블 초기화를 대신하지 않으며, M6의 시드·스키마 준비는 해당 README에 설명합니다.
+
+## M5·M6 포트폴리오 산출물
+
+[시드·HITL·엔지니어링 문제와 해결](docs/M5_YOUTUBE_ENGINEERING_PORTFOLIO.md) · [Aura 조회 쿼리](docs/M5_M6_AURA_QUERIES.md)

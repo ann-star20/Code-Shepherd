@@ -2,7 +2,7 @@
 
 import os
 
-from neo4j import AsyncGraphDatabase, AsyncDriver
+from neo4j import AsyncDriver, AsyncGraphDatabase
 
 _driver: AsyncDriver | None = None
 
@@ -11,9 +11,15 @@ def get_driver() -> AsyncDriver:
     global _driver
     if _driver is None:
         uri = os.getenv("NEO4J_URI", "bolt://localhost:7688")
-        user = os.getenv("NEO4J_USER", "neo4j")
+        user = os.getenv("NEO4J_USER") or os.getenv("NEO4J_USERNAME", "neo4j")
         password = os.getenv("NEO4J_PASSWORD", "codeshepherd")
-        _driver = AsyncGraphDatabase.driver(uri, auth=(user, password))
+        _driver = AsyncGraphDatabase.driver(
+            uri,
+            auth=(user, password),
+            connection_timeout=3.0,
+            connection_acquisition_timeout=3.0,
+            max_transaction_retry_time=0.0,
+        )
     return _driver
 
 

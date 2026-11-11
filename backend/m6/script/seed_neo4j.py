@@ -40,7 +40,7 @@ PERF_JSON = SCRIPTS_DIR / "seed" / "performance" / "performance_concepts.json"
 
 def _driver() -> neo4j.AsyncDriver:
     uri = os.getenv("NEO4J_URI", "bolt://localhost:7688")
-    user = os.getenv("NEO4J_USER", "neo4j")
+    user = os.getenv("NEO4J_USER") or os.getenv("NEO4J_USERNAME", "neo4j")
     pw = os.getenv("NEO4J_PASSWORD", "codeshepherd")
     return neo4j.AsyncGraphDatabase.driver(uri, auth=(user, pw))
 
@@ -80,7 +80,7 @@ async def main() -> None:
         else:
             raise RuntimeError("Neo4j 연결 실패 - 30회 재시도 초과")
 
-        repo = Neo4jConceptRepo(driver)
+        repo = Neo4jConceptRepo(driver, os.getenv("NEO4J_DATABASE", "neo4j"))
 
         # 1. 스키마 초기화 — 8대 제약조건 + 인덱스
         print("[1/3] Neo4j 스키마 초기화...")
@@ -88,7 +88,7 @@ async def main() -> None:
         print("  → 제약조건·인덱스 적용 완료")
         
         print("[추가] L1 도메인 거점 노드(security, performance) 생성 중...")
-        async with driver.session() as session:
+        async with driver.session(database=os.getenv("NEO4J_DATABASE", "neo4j")) as session:
             await session.execute_write(
                 lambda tx: tx.run("MERGE (:Domain {name: 'security'})")
             )
@@ -114,7 +114,7 @@ async def main() -> None:
         
         # ── ⭕ 변경 2: 명시적 쓰기 트랜잭션으로 뼈대선과 교차점 완벽 종결 ──
         print("[추가] L1 도메인 - L2 개념 간의 BELONGS_TO 교차점 및 뼈대선 자동 완공 중...")
-        async with driver.session() as session:
+        async with driver.session(database=os.getenv("NEO4J_DATABASE", "neo4j")) as session:
             query = """
                 MATCH (c:Concept), (d:Domain)
                 WHERE d.name IN c.domains

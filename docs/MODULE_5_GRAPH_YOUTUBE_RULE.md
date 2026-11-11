@@ -1,42 +1,41 @@
 # Module 5 — 기술 맥락 기반 YouTube 추천
 
-Module 5는 **지식 그래프를 읽어 학습 영상을 추천하는 서비스**다. 온톨로지 구축·외부 문서 추출·HITL·그래프 저장은 [Module 6](MODULE_6_ONTOLOGY_KNOWLEDGE_GRAPH.md)이 담당한다. 두 기능을 하나의 Module 5로 묶지 않는다.
+Module 5는 **지식 그래프를 기준으로 학습 영상을 수집·저장하고 추천하는 서비스**다. 외부 문서 추출·HITL·4계층 온톨로지 관리는 [Module 6](MODULE_6_ONTOLOGY_KNOWLEDGE_GRAPH.md)의 책임이다.
 
 ## 목적과 책임
 
-개념·대응 기법·언어·프레임워크 선택을 검색 의도로 바꾸어 관련 영상을 찾는다. M5는 FastAPI :8006에서 독립 실행하며, neo4j_m6를 조회하고 YouTube Data API v3를 호출한다. 학습된 추천 모델이나 LangGraph를 사용하지 않는다.
+M5 API(:8006)는 컨셉·메커니즘·언어·프레임워크를 검색 의도로 변환해 Neo4j의 저장 후보에서 0~5개를 추천한다. 사용자 요청에서는 YouTube를 호출하지 않는다. 별도 M5 수집 명령이 전체 컨셉과 등록 코드 맥락을 순회하며 영상을 갱신한다. LangGraph나 학습 기반 추천 모델은 사용하지 않는다.
 
-## 아키텍처와 액션 흐름
+## 아키텍처 / 액션 플로우
 
 ```mermaid
 flowchart LR
-    U["사용자: 개념·코드 맥락 선택"] --> API["M5 FastAPI :8006"]
-    API --> READ["neo4j_m6 읽기"]
-    READ --> Q["검색어·추천 유형 구성"]
-    Q --> YT["YouTube: 검색어별 영상 최대 1건"]
-    YT --> V["rank·추천 유형·영상 정보 반환"]
+    S["정기 M5 수집기"] --> C["Neo4j 전체 컨셉·코드 맥락"]
+    C --> Q["검색어 중복 제거 / 갱신 대상 / 일일 예산"]
+    Q --> Y["YouTube: 검색당 최대 50개"]
+    Y --> W["Neo4j 검색 풀·영상 저장"]
+    U["사용자 선택"] --> API["M5 추천 API"]
+    API --> W
+    W --> R["동일 영상 중복 없는 0~5개 응답"]
 ```
 
-1. GET /graph/overview, /graph/concept, /graph/mechanism/{mechanism_name}로 탐색한다.
-2. POST /youtube/ranked에 concept_name과 선택 맥락을 전달한다.
-3. 개념의 CWE·OWASP·영향 컴포넌트와 호출자가 전달한 메커니즘·언어·프레임워크를 조합한다.
-4. 언어·프레임워크가 있으면 구현 중심, 없으면 개념·메커니즘·보안 표준 중심으로 최대 5개 검색어를 구성한다.
-5. 검색어 중복을 제거하고 순차 검색한 결과를 반환한다.
+## 계약과 예외
 
-## 입력·출력·예외
+- POST /youtube/ranked: concept_name 필수; mechanism_name, code_id, code_lang, code_framework 선택. code_id를 서버에서 역조회하지 않는다.
+- 응답 필드는 concept_name, videos이며 각 영상은 rank, recommendation_type, query_used, title, url, thumbnail, channel_title을 포함한다.
+- 저장 후보를 읽으므로 추천에 API 키는 필요하지 않다. 개념이 없으면 404, Neo4j 연결·인증 장애는 503이다.
+- 미수집·만료·지원하지 않는 코드 맥락은 빈 배열 또는 일부 결과다. 실시간 외부 검색으로 보충하지 않는다. 의도별 rank는 유지한다.
+- GET /graph/overview, /graph/concept, /graph/mechanism/{mechanism_name} 탐색 계약은 유지한다.
+- POST /extract는 accepted 호환 스텁이다. /youtube/recommend와 Module5Document/Module5State는 현행 계약이 아니다.
 
-concept_name만 필수다. mechanism_name, code_id, code_lang, code_framework는 선택값이다. code_id를 서버에서 해석해 언어·프레임워크를 찾지는 않는다.
+## 저장·갱신
 
-영상 응답에는 rank, recommendation_type, query_used, title, url, thumbnail, channel_title이 포함된다. API 키가 없으면 503, 개념이 없으면 404를 반환한다. 검색 실패는 해당 결과만 생략하므로 0~5개·rank 공백이 가능하며 동일 영상 ID를 중복 제거하지 않는다.
+M5는 기존 neo4j_m6의 Concept에 YouTubeSearchPool과 YouTubeVideo를 연결한다. PostgreSQL·Redis에 영상 데이터를 복제하지 않는다. 고유 제약·MERGE·원자적 풀 교체·임대·영속 일일 예산을 사용한다. 기본 검색 갱신 7일, 일일 검색 80회, 24시간 이상 된 영상의 상태 검증, 28일 보존 정리를 제공한다. 매일 실행은 선택형 Compose 수집기나 외부 스케줄러로 켠다.
 
-## 책임 경계와 문서
+영상 노드·관계 쓰기는 M5 책임이며 M6의 문서·온톨로지 쓰기와 구분한다. 공유 DB를 사용하되 M5↔M6 직접 Python import는 없다.
 
-- M5가 소유: 그래프 조회·검색어 정책·YouTube 조회·추천 응답.
-- M6가 소유: URL 수집·청킹·추출·개념 해소·검수·Neo4j 쓰기·4계층 온톨로지.
-- 공유 데이터: M6가 관리하는 neo4j_m6. M5와 M6 사이의 직접 함수 호출은 없다.
-- POST /extract는 호환용 스텁이다. 기존 파일 업로드·Module5Document·Module5State·source_system 고정값·Aura 필수 사용 규칙은 현행 M5 계약이 아니다.
-- /youtube/recommend는 현행 라우트가 아니다.
+[수집 설계·멱등성·운영 제약](M5_VIDEO_COLLECTION.md) · [실행·테스트](../backend/m5/README.md) · [API 계약](MODULE_CONTRACT.md#module-5--기술-맥락-기반-youtube-추천) · [연결 아키텍처](M5_M6_ARCHITECTURE.md)
 
-[서비스 실행·설정](../backend/m5/README.md) · [현행 API 계약](MODULE_CONTRACT.md#module-5--기술-맥락-기반-youtube-추천) · [모듈 연결 구조](M5_M6_ARCHITECTURE.md)
+## M5·M6 포트폴리오 산출물
 
-이전 통합 설계는 Git 이력에서 확인할 수 있다. 이 문서는 문서 정정이며 런타임 API 변경이 아니다.
+[시드·HITL·엔지니어링 문제와 해결](M5_YOUTUBE_ENGINEERING_PORTFOLIO.md) · [Aura 조회 쿼리](M5_M6_AURA_QUERIES.md)

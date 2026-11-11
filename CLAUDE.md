@@ -103,7 +103,7 @@ USE_MOCK_LLM=false   # 통합 테스트 / 데모
 
 - Module 5: [기술 맥락 기반 YouTube 추천](docs/MODULE_5_GRAPH_YOUTUBE_RULE.md)
 - Module 6: [온톨로지 기반 지식 그래프 관리](docs/MODULE_6_ONTOLOGY_KNOWLEDGE_GRAPH.md)
-- 두 모듈은 독립 HTTP 서비스이며 공통 PlatformState를 사용하지 않는다. 문서 추출·그래프 쓰기를 M5의 책임으로 통합하지 않는다.
+- 두 모듈은 독립 HTTP 서비스이며 공통 PlatformState를 사용하지 않는다. 문서 추출·온톨로지 쓰기를 M5의 책임으로 통합하지 않는다. M5 수집기는 별도의 영상 노드·검색 풀만 갱신하며 [영상 수집 설계](docs/M5_VIDEO_COLLECTION.md)를 따른다.
 
 코딩 시작 전 현재 브랜치를 확인하고, 해당 스펙 문서를 먼저 읽는다.
 

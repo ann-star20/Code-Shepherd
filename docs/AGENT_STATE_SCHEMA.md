@@ -363,7 +363,7 @@ class RankedRecommendResponse(BaseModel):
     videos: list[VideoResult]
 ```
 
-code_id는 수신하지만 현재 사용하지 않는다. 영상 항목과 오류는 [M5 계약](MODULE_CONTRACT.md#module-5--기술-맥락-기반-youtube-추천), [M5 모델](../backend/m5/app/schemas.py)을 따른다.
+code_id는 수신하지만 현재 사용하지 않는다. 추천은 Neo4j 저장 후보만 읽으며 M5 정기 수집기의 풀·영상·임대·일일 예산 상태는 [영상 수집 설계](M5_VIDEO_COLLECTION.md)에 정의한다. 영상 항목과 오류는 [M5 계약](MODULE_CONTRACT.md#module-5--기술-맥락-기반-youtube-추천), [M5 모델](../backend/m5/app/schemas.py)을 따른다.
 
 ## 5-1. Module 6 — 문서 처리·검수 상태
 

@@ -4,8 +4,7 @@ from __future__ import annotations
 
 from pydantic import BaseModel
 
-from app.neo4j_client import get_driver, get_database
-
+from app.neo4j_client import get_database, get_driver
 
 # ── Response 스키마 ──────────────────────────────────────────────────────────
 
@@ -74,6 +73,7 @@ WHERE related <> c
 
 OPTIONAL MATCH (c)-[]->(m:Mechanism)
 OPTIONAL MATCH (m)-[]->(ce:CodeExample)
+OPTIONAL MATCH (c)-[:AFFECTS]->(component:Component)
 
 RETURN
   c.name               AS concept_name,
@@ -81,7 +81,7 @@ RETURN
   c.cwe_id             AS cwe_id,
   c.owasp_id           AS owasp_id,
   c.severity           AS severity,
-  c.affected_components AS affected_components,
+  collect(DISTINCT component.name) AS affected_components,
   collect(DISTINCT parent.name)  AS parent_domains,
   collect(DISTINCT related.name) AS related_concepts,
   collect(DISTINCT {
@@ -111,6 +111,11 @@ LIMIT 1
 # ── 쿼리 함수 ────────────────────────────────────────────────────────────────
 
 async def fetch_overview() -> GraphOverviewResponse:
+    from app import mock_data
+
+    if mock_data.enabled():
+        return mock_data.overview()
+
     driver = get_driver()
     db = get_database()
 
@@ -132,6 +137,11 @@ async def fetch_overview() -> GraphOverviewResponse:
 
 
 async def fetch_concept(keyword: str) -> ConceptGraphResponse | None:
+    from app import mock_data
+
+    if mock_data.enabled():
+        return mock_data.concept(keyword)
+
     driver = get_driver()
     db = get_database()
 
@@ -169,7 +179,7 @@ async def fetch_concept(keyword: str) -> ConceptGraphResponse | None:
         cwe_id=record["cwe_id"],
         owasp_id=record["owasp_id"],
         severity=record["severity"],
-        affected_components=list(record["affected_components"] or []),
+        affected_components=sorted(set(record["affected_components"] or [])),
         parent_domains=[n for n in record["parent_domains"] if n],
         related_concepts=[n for n in record["related_concepts"] if n],
         mechanisms=mechanisms,
@@ -177,6 +187,11 @@ async def fetch_concept(keyword: str) -> ConceptGraphResponse | None:
 
 
 async def fetch_mechanism(mechanism_name: str) -> MechanismGraphResponse | None:
+    from app import mock_data
+
+    if mock_data.enabled():
+        return mock_data.mechanism(mechanism_name)
+
     driver = get_driver()
     db = get_database()
 

@@ -15,7 +15,8 @@
 | M6 Celery worker | Prescan→Crawl→Extract, 승인 후 별도 GraphWriter | queue m6_graph |
 | PostgreSQL / pgvector | 문서 상태·메타데이터·개념 마스터·검수 후보 | Cloud SQL Proxy 또는 별도 PostgreSQL |
 | neo4j_m6 | 개념·메커니즘·원인·컴포넌트·코드 그래프 | 컨테이너 7687, 호스트 7688 / Browser 7475 |
-| M5 API :8006 | 개념 조회·검색어 구성·영상 검색 | neo4j_m6 읽기·YouTube Data API v3 |
+| M5 API :8006 | 개념 조회·맥락별 저장 영상 추천 | neo4j_m6 읽기, 외부 검색 없음 |
+| M5 수집기 | 전체 컨셉·등록 코드 맥락별 영상 수집·갱신 | YouTube API·neo4j_m6 영상 풀 쓰기 |
 
 M0의 KMS 그래프용 `neo4j`(호스트 7687 / Browser 7474)와 M5·M6 그래프는 분리되어 있습니다. 이 문서는 두 그래프 간 자동 동기화를 전제하지 않습니다.
 
@@ -50,7 +51,6 @@ sequenceDiagram
 
 - Prescan은 본문 해시 또는 URL+ETag의 기존 COMMITTED 문서를 확인합니다. 미완료 문서까지 무조건 중복으로 건너뛰는 정책이 아닙니다.
 - 본문 청크는 기본 30,000~40,000자, overlap 2,500자이며 헤더·문단 경계를 고려합니다. Gemini 프롬프트는 청크 앞 30,000자만 사용하므로 청크 전체를 추출한다고 보장할 수 없습니다.
-- 기본 mock 모드는 첫 청크만 처리합니다. 실제 모드는 Gemini 추출과 로컬 BGE-M3 임베딩을 사용합니다. 실제 모드에서도 API 키가 비어 있으면 추출 함수가 mock으로 폴백하므로 키 설정을 함께 확인해야 합니다.
 - Pydantic 스키마 검증과 이름·노이즈 필터를 적용합니다. 도메인 레지스트리와 프레임워크 메타데이터는 프롬프트 구성에 쓰지만 기존 개념의 벡터 Top-K를 주입하는 RAG는 현재 구현되어 있지 않습니다.
 - 개념명·별칭과 설명을 각각 1024차원 벡터로 표현합니다. 실제 임베딩은 SentenceTransformer의 BAAI/bge-m3를 기본으로 L2 정규화합니다.
 
@@ -89,8 +89,10 @@ GraphWriter는 MERGE 후보를 기존 개념으로 흡수하고 별칭 풀을 �
 1. M5는 선택한 concept_name으로 Neo4j 메타데이터를 조회합니다.
 2. 호출자가 전달한 mechanism_name·code_lang·code_framework와 CWE·OWASP·영향 컴포넌트를 조합합니다.
 3. 중복 검색어를 제거하여 최대 5개를 정해진 우선순위로 생성합니다.
-4. 검색어마다 YouTube Data API v3 search를 순차 호출합니다. video 타입·maxResults=1·한국어 관련성 힌트를 사용합니다.
-5. 결과가 있는 검색의 rank와 추천 유형을 보존해 반환합니다. 전부 실패하면 빈 배열이 가능하며 영상 ID 중복 제거와 결과 재순위화는 없습니다.
+4. 컨셉명과 최종 검색어로 Neo4j의 유효한 영상 후보 풀을 조회합니다. 사용자 요청에서 YouTube API를 호출하지 않습니다.
+5. 의도별 첫 미선택 영상을 골라 영상 ID 중복을 제거합니다. rank·추천 유형을 유지하고 미수집·만료 결과는 생략하므로 0~5개·rank 공백이 가능합니다.
+
+별도 M5 수집기는 전체 컨셉과 등록 메커니즘·코드 맥락을 순회합니다. 기본 7일 주기·일일 검색 80회로 최대 50개씩 수집하고, 24시간 이상 된 영상 메타데이터·공개 상태를 배치 검증합니다. 28일 보존 정리와 원자적 풀 교체·영속 예산·임대를 제공합니다. 정기 실행은 선택형 Compose 프로필 또는 외부 스케줄러로 켭니다. 영상 저장은 Neo4j에만 하며 M6의 4계층 온톨로지 노드를 수정하지 않습니다. [수집 설계·실패 처리·검증 한계](M5_VIDEO_COLLECTION.md)를 참고하세요.
 
 `code_id`로 코드 노드를 자동 조회하지 않습니다. `/extract`는 M5의 호환용 스텁이며 M6 수집 파이프라인으로 연결되지 않습니다. [M5 API 계약](../backend/m5/README.md)을 참고하세요.
 
@@ -110,5 +112,12 @@ GraphWriter는 MERGE 후보를 기존 개념으로 흡수하고 별칭 풀을 �
 - [M6 API 진입점](../backend/m6/app/main.py), [파이프라인 API](../backend/m6/app/api/pipeline.py), [문서 API](../backend/m6/app/api/documents.py), [검수 API](../backend/m6/app/api/staging.py)
 - [태스크·청킹·추출·쓰기](../backend/m6/app/worker/tasks.py), [Hybrid Resolver](../backend/m6/app/infrastructure/graph/hybrid_resolver.py)
 - [그래프 저장소](../backend/m6/app/adapters/db/neo4j_repo.py), [임베딩](../backend/m6/app/infrastructure/embeddings.py)
-- [M5 라우트](../backend/m5/app/main.py), [검색어 정책](../backend/m5/app/keyword_builder.py), [YouTube 검색](../backend/m5/app/youtube_client.py)
+- [M5 라우트](../backend/m5/app/main.py), [검색어 정책](../backend/m5/app/keyword_builder.py), [YouTube 클라이언트](../backend/m5/app/youtube_client.py)
+- [M5 수집 흐름](../backend/m5/app/video_collection.py), [영상 저장소](../backend/m5/app/video_store.py), [수집 명령](../backend/m5/app/collect_videos.py)
 - [Compose](../docker-compose.yml), [Compose override](../docker-compose.override.yml)
+
+## 시드·HITL·영상 DB 갱신 산출물
+
+[엔지니어링 문제와 해결](M5_YOUTUBE_ENGINEERING_PORTFOLIO.md) · [Aura 조회 쿼리](M5_M6_AURA_QUERIES.md)
+
+![시드와 HITL 전체 흐름](assets/m5-m6-seed-hitl-flow.svg)

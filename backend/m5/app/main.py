@@ -1,25 +1,31 @@
 """M5 GraphDB + YouTube 추천 서비스."""
 
-import os
 from contextlib import asynccontextmanager
 
 import structlog
-from fastapi import FastAPI, HTTPException, Query
-
+from fastapi import FastAPI, HTTPException, Query, Request
+from fastapi.responses import JSONResponse
+from neo4j.exceptions import (
+    ConfigurationError,
+    Neo4jError,
+    ServiceUnavailable,
+    SessionExpired,
+)
 from shared.contracts import M5ExtractRequest, M5ExtractResponse
 from shared.logging import TraceIDMiddleware, configure_logging
-from app.neo4j_client import close_driver
+
 from app.graph_query import (
+    ConceptGraphResponse,
+    GraphOverviewResponse,
+    MechanismGraphResponse,
     fetch_concept,
     fetch_mechanism,
     fetch_overview,
-    ConceptGraphResponse,
-    MechanismGraphResponse,
-    GraphOverviewResponse,
 )
-from app.schemas import RankedRecommendRequest, RankedRecommendResponse, VideoResult
 from app.keyword_builder import build_queries
-from app.youtube_client import search_one
+from app.neo4j_client import close_driver
+from app.schemas import RankedRecommendRequest, RankedRecommendResponse, VideoResult
+from app.video_store import fetch_candidates
 
 log = structlog.get_logger()
 
@@ -31,8 +37,29 @@ async def lifespan(_app: FastAPI):
     await close_driver()
 
 
-app = FastAPI(title="code-shepherd m5-graph-youtube", version="0.2.0", lifespan=lifespan)
+app = FastAPI(
+    title="code-shepherd m5-graph-youtube", version="0.2.0", lifespan=lifespan
+)
 app.add_middleware(TraceIDMiddleware)
+
+
+async def database_unavailable(_request: Request, exc: Exception) -> JSONResponse:
+    log.warning("neo4j_unavailable", error=type(exc).__name__)
+    return JSONResponse(
+        status_code=503,
+        content={
+            "detail": "Neo4j를 사용할 수 없습니다. 연결 설정과 DB 실행 상태를 확인해 주세요."
+        },
+    )
+
+
+for database_error in (
+    Neo4jError,
+    ServiceUnavailable,
+    SessionExpired,
+    ConfigurationError,
+):
+    app.add_exception_handler(database_error, database_unavailable)
 
 
 @app.get("/health")
@@ -51,6 +78,7 @@ async def extract(payload: M5ExtractRequest) -> M5ExtractResponse:
 
 
 # ── Graph 조회 API ────────────────────────────────────────────────────────────
+
 
 @app.get("/graph/overview", response_model=GraphOverviewResponse)
 async def get_graph_overview() -> GraphOverviewResponse:
@@ -80,15 +108,10 @@ async def get_mechanism(mechanism_name: str) -> MechanismGraphResponse:
 
 # ── YouTube 랭킹 추천 API ─────────────────────────────────────────────────────
 
+
 @app.post("/youtube/ranked", response_model=RankedRecommendResponse)
 async def youtube_ranked(payload: RankedRecommendRequest) -> RankedRecommendResponse:
     """컨셉·매커니즘·코드 선택 상태에 따라 5개 YouTube 영상을 랭킹 순으로 추천한다."""
-    if not os.getenv("YOUTUBE_API_KEY"):
-        raise HTTPException(
-            status_code=503,
-            detail="YOUTUBE_API_KEY가 설정되지 않았습니다. .env에 키를 추가해 주세요.",
-        )
-
     concept = await fetch_concept(payload.concept_name)
     if concept is None:
         raise HTTPException(
@@ -105,25 +128,18 @@ async def youtube_ranked(payload: RankedRecommendRequest) -> RankedRecommendResp
         affected_components=concept.affected_components,
     )
 
-    # 각 쿼리당 YouTube API 1회 호출 — 순차 처리로 API quota 안전하게 관리
     videos: list[VideoResult] = []
+    seen: set[str] = set()
     for idx, query in enumerate(queries):
-        rank = idx + 1
-        try:
-            result = await search_one(query)
-        except Exception as exc:
-            # URL에 API 키가 포함되므로 exc 메시지 전체를 로그에 남기지 않는다
-            safe_error = type(exc).__name__
-            if hasattr(exc, "response") and exc.response is not None:  # type: ignore[union-attr]
-                safe_error += f" {exc.response.status_code}"  # type: ignore[union-attr]
-            log.warning("youtube_search_failed", rank=rank, query=query, error=safe_error)
-            result = None
-
-        if result:
+        for result in await fetch_candidates(concept.concept_name, query):
+            if result["video_id"] in seen:
+                continue
+            seen.add(result["video_id"])
             videos.append(
                 VideoResult(
-                    rank=rank,
-                    recommendation_type=labels.get(rank, "관련 영상"),
+                    is_mock=result.get("is_mock", False),
+                    rank=idx + 1,
+                    recommendation_type=labels.get(idx + 1, "관련 영상"),
                     query_used=query,
                     title=result["title"],
                     url=result["url"],
@@ -131,5 +147,5 @@ async def youtube_ranked(payload: RankedRecommendRequest) -> RankedRecommendResp
                     channel_title=result.get("channel_title"),
                 )
             )
-
+            break
     return RankedRecommendResponse(concept_name=concept.concept_name, videos=videos)

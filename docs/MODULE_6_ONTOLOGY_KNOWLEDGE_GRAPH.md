@@ -58,8 +58,18 @@ Prescan·Crawl·Extract는 최초 chain이며 Resolver는 Extract 내부다. 메
 
 ## 사용 데이터·API·실행
 
-현재 시드 입력은 security 12개 + performance 4개다. 이는 DB 실측 규모가 아니다. 실제 모드는 Gemini와 로컬 BGE-M3 1024차원 벡터를 사용한다. 기본 mock 동작과 청크 절단 등의 제약은 [상세 구현 근거](M5_M6_ARCHITECTURE.md)를 확인한다.
+시드 입력은 security 12개 + performance 4개다. 2026-11-12 Aura에서 Concept 16개를 확인했고 두 번 적재 후 노드·관계 수가 유지됐다. 문서 추출은 Gemini, 개념 해소는 로컬 BGE-M3 1024차원 벡터를 사용하는 구조다. [시드·HITL 전체 흐름과 설계 근거](M5_YOUTUBE_ENGINEERING_PORTFOLIO.md)를 참고한다.
 
 [실행·설정·시드·API 목록](../backend/m6/README.md) · [현행 API 계약](MODULE_CONTRACT.md#module-6--온톨로지-기반-지식-그래프-관리)
 
 M6는 영상 검색 API를 소유하지 않는다. M5는 M6의 Python 코드나 내부 태스크를 호출하지 않고 공유 그래프를 조회한다.
+
+## M5 영상 리소스와의 경계
+
+M5 수집기는 같은 Neo4j의 Concept에 YouTubeSearchPool·YouTubeVideo를 연결하지만 이 리소스는 M6의 L1~L4 온톨로지에 포함하지 않는다. M6는 영상 수집을 호출하거나 영상 데이터를 PostgreSQL에 복제하지 않는다. 영상의 갱신·보존·할당량은 [M5 수집 설계](M5_VIDEO_COLLECTION.md)를 따른다.
+
+## 시드·HITL·영상 DB 갱신 산출물
+
+[엔지니어링 문제와 해결](M5_YOUTUBE_ENGINEERING_PORTFOLIO.md) · [Aura 조회 쿼리](M5_M6_AURA_QUERIES.md)
+
+![시드와 HITL 전체 흐름](assets/m5-m6-seed-hitl-flow.svg)

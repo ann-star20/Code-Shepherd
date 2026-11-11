@@ -432,7 +432,7 @@ export default function YoutubeRecommendPage() {
                 <>
                   <p className="text-2xl">📭</p>
                   <p className="text-sm font-medium text-notion-text">영상을 찾지 못했습니다</p>
-                  <p className="text-xs text-center">YOUTUBE_API_KEY를 확인해 주세요.</p>
+                  <p className="text-xs text-center">아직 저장된 추천 영상이 없습니다. 업데이트 후 다시 확인해 주세요.</p>
                 </>
               ) : (
                 <>

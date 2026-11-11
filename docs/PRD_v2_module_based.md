@@ -33,7 +33,8 @@ flowchart LR
     M6 -->|승인 후 쓰기| N["neo4j_m6"]
     U --> M5["Module 5: YouTube 추천"]
     M5 -->|읽기| N
-    M5 --> Y["YouTube Data API"]
+    C["M5 정기 수집기"] --> Y["YouTube Data API"]
+    C -->|영상 풀 갱신| N
 ```
 
 M5와 M6는 별도 HTTP 서비스다. M6가 지식 그래프를 구축·관리하고 M5가 조회·추천에 사용한다. 최초 PRD에서 M5 하나로 묶었던 외부 문서 추출·그래프 저장·영상 추천 책임을 현재 코드에 맞게 나누었다. M1 호출은 순차 await이며 다이어그램의 가지는 병렬 실행을 뜻하지 않는다.
@@ -198,11 +199,11 @@ Major >= 3     → rework    (힌트 포함, 최대 3회 리트라이)
 
 ### Module 5. 기술 맥락 기반 YouTube 추천
 
-**소유 기능:** neo4j_m6 읽기, 개념·대응 기법·코드 메타데이터 조회, 검색어·우선순위 구성, YouTube 검색. FastAPI :8006의 독립 요청·응답 서비스다. 문서 업로드·추출·그래프 쓰기를 포함하지 않는다.
+**소유 기능:** neo4j_m6 개념·대응 기법·코드 조회, 검색어·우선순위 구성, 저장 영상 추천. 별도 M5 수집기가 YouTube 검색과 영상 풀·영상 노드 저장을 담당한다. FastAPI :8006의 추천 요청은 외부 API를 호출하지 않는다. 문서 업로드·추출·온톨로지 쓰기는 포함하지 않는다.
 
 **입력:** POST /youtube/ranked의 concept_name과 선택 mechanism_name, code_id, code_lang, code_framework. code_id는 현재 로직에서 사용하지 않는다.
 
-**출력:** concept_name, videos 배열. 영상별 rank·추천 유형·검색어·제목·URL·썸네일·채널을 제공한다. 검색 실패·빈 결과는 생략하므로 항상 5개를 보장하지 않는다. POST /extract는 호환용 스텁이다.
+**출력:** concept_name, videos 배열. 영상별 rank·추천 유형·검색어·제목·URL·썸네일·채널을 제공한다. 미수집·만료·빈 후보는 생략하므로 항상 5개를 보장하지 않는다. 영상 ID는 중복 제거한다. 수집·갱신·일일 예산은 [M5 수집 설계](M5_VIDEO_COLLECTION.md)를 따른다. POST /extract는 호환용 스텁이다.
 
 [Module 5 전용 설명](MODULE_5_GRAPH_YOUTUBE_RULE.md) · [서비스 README](../backend/m5/README.md)
 

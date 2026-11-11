@@ -358,7 +358,7 @@ auto_merge: false    # 시니어 최종 승인은 항상 사람이 한다
 
 ## Module 5 — 기술 맥락 기반 YouTube 추천
 
-**실행 서비스:** backend/m5 · FastAPI :8006. 문서 수집·개념 추출·검수·그래프 쓰기는 Module 6의 책임이다. M5는 neo4j_m6를 읽어 탐색 정보와 추천 영상을 제공하며 PlatformState나 LangGraph를 사용하지 않는다.
+**실행 서비스:** backend/m5 · FastAPI :8006. 문서 수집·개념 추출·검수·온톨로지 쓰기는 Module 6의 책임이다. M5 추천 API는 neo4j_m6의 저장 후보만 읽으며, 별도 M5 수집기가 영상 노드·검색 풀을 갱신한다. PlatformState나 LangGraph를 사용하지 않는다.
 
 | 메서드 | 경로 | 입력·출력 / 동작 |
 | --- | --- | --- |
@@ -379,7 +379,7 @@ auto_merge: false    # 시니어 최종 승인은 항상 사람이 한다
 }
 ```
 
-concept_name만 필수이며 나머지는 선택값이다. code_id는 현재 처리에 사용하지 않는다. 영상 항목은 rank, recommendation_type, query_used, title, url, thumbnail, channel_title을 포함한다. 검색어는 최대 5개, 검색어별 영상은 최대 1건이다. 학습된 추천 모델의 점수가 아닌 규칙 기반 우선순위다. API 키가 없으면 503, 개념이 없으면 404이며 일부 검색 실패는 생략한다. 결과 0~5개·rank 공백·영상 중복이 가능하다.
+concept_name만 필수이며 나머지는 선택값이다. code_id는 현재 처리에 사용하지 않는다. 영상 항목은 rank, recommendation_type, query_used, title, url, thumbnail, channel_title을 포함한다. 추천용 검색어는 최대 5개이며 검색 풀마다 저장된 첫 미선택 영상을 최대 1개 선택한다. 규칙 기반 우선순위이며 영상 ID는 응답에서 중복 제거한다. 추천 요청은 YouTube API를 호출하지 않고 API 키도 필요하지 않다. 개념이 없으면 404, Neo4j 연결·인증 장애는 503이다. 미수집·만료·미등록 맥락은 생략하므로 결과 0~5개·rank 공백이 가능하다. 수집은 [별도 CLI](M5_VIDEO_COLLECTION.md)로 수행하며 공개 수집 HTTP 엔드포인트를 추가하지 않는다.
 
 `/youtube/recommend`와 파일 업로드 기반 Module5State는 현행 API 계약이 아니다. 상세 정책은 [Module 5 전용 문서](MODULE_5_GRAPH_YOUTUBE_RULE.md), 실행·모델은 [M5 README](../backend/m5/README.md)와 [schemas.py](../backend/m5/app/schemas.py)를 따른다.
 
@@ -423,7 +423,8 @@ flowchart LR
     M6 -->|승인 후 쓰기| G["neo4j_m6"]
     U --> M5["Module 5: 기술 맥락 기반 YouTube 추천"]
     M5 -->|읽기| G
-    M5 --> Y["YouTube Data API"]
+    C["M5 정기 수집기"] --> Y["YouTube Data API"]
+    C -->|영상 풀 갱신| G
 ```
 
 M5와 M6는 각각 독립 서비스다. M6에서 그래프를 구축하고 M5에서 읽지만, 두 기능을 Module 5 하나의 파이프라인으로 정의하지 않는다. M0의 KMS 그래프와 neo4j_m6는 별도 인스턴스다.
