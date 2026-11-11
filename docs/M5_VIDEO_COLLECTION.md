@@ -86,3 +86,9 @@ YouTube 정책은 공개 API 데이터도 30일 이내 갱신 또는 삭제하�
 [전체 엔지니어링 사례·시드·HITL](M5_YOUTUBE_ENGINEERING_PORTFOLIO.md) · [조회 쿼리](M5_M6_AURA_QUERIES.md) · [실측 근거](M5_M6_AURA_VERIFICATION.json)
 
 공식 참고: [할당량](https://developers.google.com/youtube/data/determine_quota_cost), [검색 API](https://developers.google.com/youtube/data/docs/search/list), [저장 정책](https://developers.google.com/youtube/terms/developer-policies).
+
+## 수집기 실행 시점과 예산 선차감
+
+[정확한 실행 순서·DB 저장·시각화](M5_COLLECTOR_SCHEDULE.md)
+
+![수집기 주기와 예산 처리](assets/m5-collector-schedule-budget.svg)

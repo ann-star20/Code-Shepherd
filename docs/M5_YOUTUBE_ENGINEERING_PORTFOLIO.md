@@ -159,3 +159,9 @@ M5 시간은 epoch seconds이며 Cypher datetime 변환으로 표시합니다. M
 - [M6 전용 설명](MODULE_6_ONTOLOGY_KNOWLEDGE_GRAPH.md)
 
 구현 근거: backend/m6/script/seed_neo4j.py, script/init_db.cypher, script/seed_postgres.py, app/api/staging.py, app/worker/tasks.py 및 backend/m5/app/video_collection.py, video_store.py, main.py.
+
+## 수집기 실행 시점과 예산 선차감
+
+[정확한 실행 순서·DB 저장·시각화](M5_COLLECTOR_SCHEDULE.md)
+
+![수집기 주기와 예산 처리](assets/m5-collector-schedule-budget.svg)
