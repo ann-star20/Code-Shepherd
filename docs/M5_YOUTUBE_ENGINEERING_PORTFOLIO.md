@@ -86,7 +86,7 @@ PostgreSQL 초기 스키마와 각 명령의 의존 서비스가 먼저 준비�
 | 메타데이터 재검증 | 24시간 이상 된 영상, videos.list 최대 50개씩 배치 |
 | 보존 상한 | 28일; 만료 데이터 조회 제외와 수집기 정리 |
 
-일일 검사는 매일 모든 검색어를 다시 호출한다는 뜻이 아닙니다. 수집 시점이 지난 풀만 갱신합니다. 검색 예산은 America/Los_Angeles 날짜 기준으로 호출 전에 예약하며, 실제 프로젝트 할당량에 맞춰 조정합니다. 검색 대상이 많으면 갱신 작업은 다음 실행으로 이월될 수 있습니다.
+일일 검사는 매일 모든 검색어를 다시 호출한다는 뜻이 아닙니다. 수집 시점이 지난 풀만 갱신합니다. 검색 예산은 America/Los_Angeles 날짜 기준으로 호출 전에 사용량을 기록하며, 실제 프로젝트 할당량에 맞춰 조정합니다. 검색 대상이 많으면 갱신 작업은 다음 실행으로 이월될 수 있습니다.
 
 ### 2. HITL을 지식 확정 전 품질 게이트로 사용
 
@@ -114,7 +114,7 @@ Resolver의 유사도 점수는 자동 판단의 근거이며 정답 보증이 �
 | 코드 예시 | 메커니즘과 공백 정규화 코드 해시로 키 생성 |
 | 영상 | video_id와 풀 key 고유 제약, MERGE로 재수집 노드 재사용 |
 | 후보 교체 | 풀 시각 갱신과 후보 관계 교체를 한 Neo4j 트랜잭션으로 수행 |
-| 수집 경쟁 | DB 임대·소유권 검사와 DB 공유 검색 예산 |
+| 수집 경쟁 | DB 락·소유권 검사와 DB 공유 검색 예산 |
 
 이 장치들은 같은 키의 반복 처리와 경쟁을 줄입니다. PostgreSQL과 Neo4j, 외부 API까지 묶인 분산 트랜잭션은 아니므로 전체 exactly-once를 보장한다고 표현하지 않습니다.
 
@@ -160,7 +160,7 @@ M5 시간은 epoch seconds이며 Cypher datetime 변환으로 표시합니다. M
 
 구현 근거: backend/m6/script/seed_neo4j.py, script/init_db.cypher, script/seed_postgres.py, app/api/staging.py, app/worker/tasks.py 및 backend/m5/app/video_collection.py, video_store.py, main.py.
 
-## 수집기 실행 시점과 예산 선차감
+## 수집기 실행 시점과 호출 횟수 관리
 
 [정확한 실행 순서·DB 저장·시각화](M5_COLLECTOR_SCHEDULE.md)
 
