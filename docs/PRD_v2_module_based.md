@@ -1,7 +1,9 @@
 # PRD v2.0 — 사내 지식 관리 + 신입 개발자 온보딩 플랫폼 (모듈 기반)
 
-**버전**: v2.0 | **기준**: Module 0~5 | **이전 버전**: PRD v1.1 (Dev1~Dev5 기반)  
-**작성일**: 2026-06-04 | **상태**: 확정
+**버전**: v2.0 (M5·M6 현행 구현 보정) | **기준**: Module 0~6 | **이전 버전**: PRD v1.1 (Dev1~Dev5 기반)
+**최초 작성일**: 2026-06-04 | **상태**: 초기 기획 + M5·M6 실행 코드 보정
+
+> M5·M6는 각 독립 모듈로 정정했습니다. M0~M4의 역할 상세·공통 Agent 계약·주차별 계획은 초기 설계이며 모두 현재 실행 상태를 뜻하지 않습니다.
 
 ---
 
@@ -18,48 +20,23 @@
 
 ## 2. 시스템 아키텍처 — 모듈 연결 맵
 
+```mermaid
+flowchart LR
+    GH["GitHub PR"] --> M1["M1 감지·라우팅"]
+    M1 --> M2["M2 정적·보안 분석"]
+    M1 --> M3["M3 테스트·성능·리뷰 집계"]
+    U["사용자"] --> M0["M0 KMS"]
+    U --> M4["M4 학습 생성"]
+    M4 --> M0
+    U --> M6["Module 6: 온톨로지 지식 그래프 관리"]
+    M6 --> P["PostgreSQL / pgvector"]
+    M6 -->|승인 후 쓰기| N["neo4j_m6"]
+    U --> M5["Module 5: YouTube 추천"]
+    M5 -->|읽기| N
+    M5 --> Y["YouTube Data API"]
 ```
-  신입 개발자 PR 제출          팀원 자연어 질의           팀원 문서 업로드
-         │                          │                          │
-         └──────────────────────────┘                          │
-                                    │                          ▼
-                                    ▼              ┌───────────────────────────────────┐
-              ┌─────────────────────────────────── │   Module 0: KMS 지식 파이프라인   │
-              │        Module 1: Orchestrator     │ │  (문서 업로드 → 변환 → 검증 → 저장) │
-              │   (LangGraph StateGraph, 라우팅 허브) │ │  PostgreSQL + pgVector + GraphDB  │
-              └─────────────────────────────────── └───────────────────────────────────┘
-                              │  KMS 검색 필요 시 ──────────▶  ▲
-                              │  ◀────────────── chunk_id / context 반환
-                              │
-                              │  PR 리뷰 요청
-                              ▼
-              ┌─────────────────────────────────────────────────┐
-              │           asyncio.gather (병렬 실행)             │
-              └─────────────────────────────────────────────────┘
-                       │                              │
-                       ▼                              ▼
-         ┌──────────────────────┐       ┌──────────────────────┐
-         │      Module 2:       │       │      Module 3:       │
-         │   정적분석 + 보안     │       │   테스트 + 성능분석   │
-         │     (KMS 참조)       │       │     (KMS 참조)       │
-         └──────────────────────┘       └──────────────────────┘
-                       └──────────────┬────────────────┘
-                                      │
-                                      ▼
-              ┌─────────────────────────────────────────────────┐
-              │          Module 4: 커리큘럼 에이전트             │
-              │       KMS 참조 · 이슈 기반 학습 추천             │
-              │    → GitHub PR 코멘트 + Slack + 대시보드         │
-              └─────────────────────────────────────────────────┘
 
-  별도 문서 업로드
-         │
-         ▼
-  ┌────────────────────────────────────────────────────────────────┐
-  │       Module 5: GraphDB + YouTube — 독립 모듈 (KMS 확장 가능)  │
-  │       별도 웹 UI → Neo4j Aura → 관계 그래프 → YouTube 추천    │
-  └────────────────────────────────────────────────────────────────┘
-```
+M5와 M6는 별도 HTTP 서비스다. M6가 지식 그래프를 구축·관리하고 M5가 조회·추천에 사용한다. 최초 PRD에서 M5 하나로 묶었던 외부 문서 추출·그래프 저장·영상 추천 책임을 현재 코드에 맞게 나누었다. M1 호출은 순차 await이며 다이어그램의 가지는 병렬 실행을 뜻하지 않는다.
 
 ---
 
@@ -219,39 +196,31 @@ Major >= 3     → rework    (힌트 포함, 최대 3회 리트라이)
 
 ---
 
-### Module 5. 독립 GraphDB + YouTube 추천 모듈
+### Module 5. 기술 맥락 기반 YouTube 추천
 
-**MAS 패턴**: 독립 Pipeline (Module 0~4와 현재 분리)
+**소유 기능:** neo4j_m6 읽기, 개념·대응 기법·코드 메타데이터 조회, 검색어·우선순위 구성, YouTube 검색. FastAPI :8006의 독립 요청·응답 서비스다. 문서 업로드·추출·그래프 쓰기를 포함하지 않는다.
 
-**역할**: 별도 웹 UI에서 문서 업로드 → 엔티티/관계 추출 → Neo4j Aura 저장 → 관계 그래프 시각화 → 키워드 기반 YouTube 추천.
+**입력:** POST /youtube/ranked의 concept_name과 선택 mechanism_name, code_id, code_lang, code_framework. code_id는 현재 로직에서 사용하지 않는다.
 
-**독립성**: Module 0~4와 직접 연결 없음. doc_id / file_hash로 향후 KMS 연결 가능.
+**출력:** concept_name, videos 배열. 영상별 rank·추천 유형·검색어·제목·URL·썸네일·채널을 제공한다. 검색 실패·빈 결과는 생략하므로 항상 5개를 보장하지 않는다. POST /extract는 호환용 스텁이다.
 
-**입력:**
-```json
-{
-  "file": "multipart/form-data",
-  "source_system": "graph_youtube"
-}
-```
+[Module 5 전용 설명](MODULE_5_GRAPH_YOUTUBE_RULE.md) · [서비스 README](../backend/m5/README.md)
 
-**출력:**
-```json
-{
-  "doc_id": "uuid",
-  "source_system": "graph_youtube",
-  "entities": [...],
-  "relations": [...],
-  "keywords": [...],
-  "youtube_recommendations": [{"title": "...", "url": "..."}]
-}
-```
+### Module 6. 온톨로지 기반 지식 그래프 관리
 
-**KMS 연결 확장 포인트**: doc_id / file_hash → 향후 KMS chunk_id와 매칭 가능하도록 설계. 섹션 9 참고.
+**소유 기능:** 외부 URL 수집·청킹·개념 추출·해소·HITL·그래프 저장. FastAPI :8007과 Celery worker, Redis, PostgreSQL/pgvector, Neo4j/APOC를 사용한다. YouTube 검색은 M5의 책임이다.
+
+**입력:** POST /pipeline/trigger의 doc_id 필드에 문서 URL을 전달한다. 이후 session_id 기반 메타데이터 재개·검수·commit API를 사용한다.
+
+**출력:** session_id, SSE 이벤트, staging 후보와 해소 결과, 상태별 집계, topology 노드·관계. 최초 Celery chain은 Prescan→Crawl→Extract이며 Resolver는 Extract 내부, GraphWriter는 승인 후 별도 실행이다.
+
+**지식 모델:** Domain → Concept → Mechanism/RootCause/Component → CodeExample의 4계층. 완료 문서 중복 검사·문서 upsert·행 잠금·Neo4j MERGE·코드 해시 키를 사용하지만 전체 멱등성·DB 간 원자성은 보장하지 않는다.
+
+[Module 6 전용 설명](MODULE_6_ONTOLOGY_KNOWLEDGE_GRAPH.md) · [서비스 README](../backend/m6/README.md)
 
 ---
 
-## 4. 공통 Output Contract (모든 모듈 필수 준수)
+## 4. 초기 Agent Output Contract (M5·M6 HTTP API에는 적용하지 않음)
 
 모듈 간 통신은 이 계약을 정확히 따른다. 필드 추가는 가능하지만 삭제 불가.
 
@@ -299,7 +268,7 @@ Major >= 3     → rework    (힌트 포함, 최대 3회 리트라이)
 
 ## 6. LangSmith / Harness 적용 기준
 
-**모든 모듈은 `common/harness.py`의 `AgentHarness`를 통해 실행한다.**
+초기 공통 설계의 Harness 적용 기준이다. M5·M6의 실제 진입점은 각 FastAPI와 Celery 코드이며, 이 문구만으로 전 경로 Harness·LangSmith 적용을 보장하지 않는다.
 
 ```python
 # 환경변수 (개인별 GitHub ID 포함 필수)
@@ -322,14 +291,16 @@ PR 리뷰:        pr_{12자리 hex}
 |--------|------|-------------------|
 | PostgreSQL | 메타데이터, PR 이력, trace 로그 | users, documents, chunks, pr_reviews, agent_traces, categories |
 | pgVector | 임베딩 벡터 검색 | chunk_embeddings (vector(1024), Ollama bge-m3) |
-| Neo4j Aura | 엔티티-관계 그래프 | Module 0 GraphDB + Module 5 독립 그래프 |
+| Neo4j | 지식 관계 | M0용 neo4j / M6 관리·M5 조회용 neo4j_m6 분리 |
+| PostgreSQL / pgvector | M6 문서·검수·매칭 기준 | knowledge_documents, staging_concepts, concepts, framework_metadata, domain_registry |
+| Redis | M6 작업·진행 이벤트 | Celery m6_graph / 세션 PubSub |
 | GCS/MinIO | 원본 파일 저장 | PDF, DOCX, 이미지 원본 |
 
 **테이블명 주의**: `developers` ❌ → `users` ✅ / `dev_id` ❌ → `user_id` ✅
 
 ---
 
-## 8. 마일스톤 (Module 기준)
+## 8. 초기 마일스톤 계획 (실제 완료 이력 아님)
 
 | 주차 | 목표 | 담당 모듈 | 완료 기준 |
 |------|------|-----------|-----------|

@@ -1,4 +1,9 @@
-# M5·M6 구현 아키텍처
+# Module 5 ↔ Module 6 연결 아키텍처
+
+이 문서는 서로 다른 두 서비스의 연결과 구현 근거를 함께 설명합니다. 기능을 하나의 Module 5로 통합한 명세가 아닙니다.
+
+- [Module 5 — YouTube 추천](MODULE_5_GRAPH_YOUTUBE_RULE.md)
+- [Module 6 — 온톨로지 지식 그래프 관리](MODULE_6_ONTOLOGY_KNOWLEDGE_GRAPH.md)
 
 기준: 2026-11-11 저장소 실행 코드. 설계 목표와 현재 구현을 구분하며 실측하지 않은 성능·정확도·운영 안정성을 주장하지 않습니다.
 

@@ -1,7 +1,7 @@
 # MODULE_CONTRACT.md — 모듈별 입출력 계약
 
 **버전**: v1.0 | **작성일**: 2026-06-04  
-**이 문서는 모듈 간 통신의 유일한 계약서다. 변경 시 영향받는 모든 모듈에 공지 필수.**
+> 문서 정정: M5·M6는 현재 HTTP API 기준으로 각각 분리했습니다. M0~M4 본문은 초기 설계로, 모든 현행 실행과 일치한다는 보장은 없습니다. 이번 수정은 런타임 API 변경이 아닙니다.
 
 ---
 
@@ -356,166 +356,79 @@ auto_merge: false    # 시니어 최종 승인은 항상 사람이 한다
 
 ---
 
-## Module 5 — 독립 GraphDB + YouTube 추천
+## Module 5 — 기술 맥락 기반 YouTube 추천
 
-```yaml
-module_id:    module_5_graph_youtube
-module_name:  독립 GraphDB + YouTube 추천
-responsibility: >
-  별도 웹 UI에서 문서를 업로드받아 엔티티/관계를 추출하고
-  Neo4j Aura에 저장한다. 키워드 기반 YouTube 영상을 추천한다.
-  현재 Module 0~4와 독립적으로 동작하나, doc_id/file_hash를
-  공통 키로 보존하여 향후 KMS 연결이 가능하도록 설계한다.
+**실행 서비스:** backend/m5 · FastAPI :8006. 문서 수집·개념 추출·검수·그래프 쓰기는 Module 6의 책임이다. M5는 neo4j_m6를 읽어 탐색 정보와 추천 영상을 제공하며 PlatformState나 LangGraph를 사용하지 않는다.
 
-input:
-  - file: multipart/form-data
-  - source_system: "graph_youtube"  (고정값)
+| 메서드 | 경로 | 입력·출력 / 동작 |
+| --- | --- | --- |
+| GET | `/health` | 서비스 응답 |
+| GET | `/graph/overview` | Concept·Mechanism·Domain 요약 |
+| GET | `/graph/concept` | query keyword 필수; 개념·연결 정보. 없으면 404 |
+| GET | `/graph/mechanism/{mechanism_name}` | 메커니즘·코드 예시. 없으면 404 |
+| POST | `/youtube/ranked` | 아래 요청 → concept_name과 videos 배열 |
+| POST | `/extract` | 호환용 스텁. 추출·저장 작업을 실행하지 않음 |
 
-output:  # Module5State 형식 (PlatformState와 독립)
-  - doc_id: str (UUID, 반드시 생성)
-  - file_hash: str (SHA-256)
-  - source_system: "graph_youtube"
-  - original_filename: str
-  - entities: List[dict]
-  - relations: List[dict]
-  - keywords: List[str]
-  - recommend_query: List[str]
-  - youtube_results: List[dict]
-  - status: "stored | failed"
-
-required_state_fields: []  # 독립 파이프라인
-
-uses_kms: false            # MVP에서 KMS 연결 없음
-                           # 향후: doc_id/file_hash로 KMS 매칭 가능
-uses_langsmith: true
-
-validation_rule:
-  - 1차: doc_id, source_system, original_filename 존재 여부
-  - 2차: entities 목록이 비어있지 않은지 확인
-  - 3차: youtube_results URL 형식 유효성 확인
-
-retry_rule:
-  - 엔티티 추출 실패: 1회 재시도 후 빈 목록 반환
-  - Neo4j 저장 실패: 1회 재시도 후 status=failed
-  - YouTube API 실패: 빈 목록 반환, 파이프라인 중단 없음
-
-error_rule:
-  - Neo4j 연결 실패: status=failed, error_message 기록
-  - YouTube API 429: 빈 목록 반환 (알림 없음)
-  - 파일 파싱 실패: status=failed 즉시 반환
-
-kms_extension_points:
-  - doc_id: 향후 KMS documents 테이블의 doc_id와 매칭 가능
-  - file_hash: KMS의 동일 문서 중복 감지 + 연결 기준
-  - 향후 추가 예정: chunk_id, embedding, pgVector 연결
+```json
+{
+  "concept_name": "CsrfAttack",
+  "mechanism_name": null,
+  "code_id": null,
+  "code_lang": "Python",
+  "code_framework": "Django"
+}
 ```
+
+concept_name만 필수이며 나머지는 선택값이다. code_id는 현재 처리에 사용하지 않는다. 영상 항목은 rank, recommendation_type, query_used, title, url, thumbnail, channel_title을 포함한다. 검색어는 최대 5개, 검색어별 영상은 최대 1건이다. 학습된 추천 모델의 점수가 아닌 규칙 기반 우선순위다. API 키가 없으면 503, 개념이 없으면 404이며 일부 검색 실패는 생략한다. 결과 0~5개·rank 공백·영상 중복이 가능하다.
+
+`/youtube/recommend`와 파일 업로드 기반 Module5State는 현행 API 계약이 아니다. 상세 정책은 [Module 5 전용 문서](MODULE_5_GRAPH_YOUTUBE_RULE.md), 실행·모델은 [M5 README](../backend/m5/README.md)와 [schemas.py](../backend/m5/app/schemas.py)를 따른다.
 
 ---
 
-## Module 6 — 외부 문서 지식 그래프 (M6, HTTP API)
+## Module 6 — 온톨로지 기반 지식 그래프 관리
 
-```yaml
-module_id:    module_6_knowledge_graph
-module_name:  외부 문서 지식 그래프 파이프라인 (FastAPI + Celery + Neo4j)
-responsibility: >
-  외부 문서 URL을 입력받아 Prescan→Crawl→Extract→HITL→WriteGraph
-  5단계 파이프라인을 비동기로 수행하고, HITL 승인 후 Neo4j에
-  Concept 그래프를 구축한다. PlatformState와 독립된 별도 FastAPI
-  서비스이며, 프론트엔드는 Vite 프록시 `/m6-api` → `m6:8007`로 접근한다.
+**실행 서비스:** backend/m6 · FastAPI :8007 + Celery worker(queue m6_graph). 외부 URL을 수집·청킹하고 개념을 추출·해소한 후 HITL 승인 항목을 Neo4j에 반영한다. M5의 YouTube 검색을 실행하지 않으며 PlatformState나 LangGraph를 사용하지 않는다.
 
-# PlatformState 기반이 아닌 독립 HTTP 서비스이므로
-# input/output은 PlatformState 필드가 아닌 HTTP 요청/응답 형식으로 정의한다.
-endpoints:
-  - POST /documents/check-duplicate
-      request:  { url: HttpUrl }
-      response: { is_duplicate: bool, doc_id: str | null }
+| 메서드 | 경로 | 입력·출력 / 동작 |
+| --- | --- | --- |
+| GET | `/health` | 서비스 응답 |
+| POST | `/pipeline/trigger` | {doc_id: HTTP(S) URL} → 202, session_id·message |
+| GET | `/pipeline/stream/{session_id}` | 세션별 Redis PubSub 이벤트를 SSE로 전달 |
+| POST | `/documents/check-duplicate` | {url} → is_duplicate·doc_id. 최신 미배제 문서가 COMMITTED인지 확인 |
+| POST | `/documents/metadata/learn` | framework·pattern·supported_langs·default_lang(선택) → framework·status |
+| POST | `/documents/metadata/resume` | session_id·doc_id·url·framework/lang(선택) → 202, status |
+| GET | `/staging/{session_id}` | {items: [...]} DRAFT·APPROVED 후보와 해소 결과 조회 |
+| POST | `/staging/{id}/approve` | 개별 승인 또는 세션 일괄 승인 |
+| POST | `/staging/{id}/reject` | 개별 반려 또는 세션 일괄 반려 |
+| POST | `/staging/{session_id}/commit` | 202, session_id·status=write_graph_triggered; APPROVED 반영 태스크 제출 |
+| GET | `/staging/{session_id}/diff` | draft·approved·committed 개수 |
+| GET | `/graph/topology` | nodes·edges; 선택 session_id의 DRAFT 노드를 추가 |
 
-  - POST /documents/metadata/learn
-      request:  { framework: str, pattern: str, supported_langs: [str], default_lang: str | null }
-      response: { framework: str, status: "learned" }
+staging 항목은 id, name, status, domains, infer_action, infer_confidence, target_concept_name, cwe_id, owasp_id, severity, description_ko, aliases, mechanisms, staging_id, state를 포함한다. status는 표시용 값이며 DB 검수 상태는 state로 구분한다. 메타데이터 재개 요청·응답은 [문서 API](../backend/m6/app/api/documents.py)를 따른다.
 
-  - POST /pipeline/trigger          (202)
-      request:  { doc_id: HttpUrl }   # 문서 원본 URL
-      response: { session_id: str, message: str }
-      side_effect: Celery chain (prescan|crawl|extract) 비동기 시작
+Prescan→Crawl→Extract는 Celery chain이며 Resolver는 Extract 내부 단계다. GraphWriter는 승인 후 별도 commit으로 실행한다. 202는 완료 응답이 아니므로 diff·topology로 확인한다. LOCAL_DEBUG=true는 eager 실행이다. SSE는 영속 replay를 제공하지 않는다.
 
-  - GET /pipeline/stream/{session_id}   (SSE, text/event-stream)
-      events: connected | log | step_update | heartbeat | finished
-      channel: Redis pub/sub "pipeline:{session_id}"
+4계층은 Domain → Concept → Mechanism/RootCause/Component → CodeExample이다. PostgreSQL은 문서·검수 상태와 개념 벡터를, Neo4j는 지식 관계를 보관한다. 단일 승인과 GraphWriter의 FOR UPDATE SKIP LOCKED는 동시성 제어이며 전체 exactly-once 보장이 아니다. staging 승인 API에 모든 세부 점수가 0인지 검사하는 게이트는 현재 구현되어 있지 않다.
 
-  - GET /staging/{session_id}
-      response: { items: [StagingConcept] }
-      # StagingConcept = GraphNode + { staging_id, state }
-      # GraphNode = { id, name, status, domains, infer_action?, infer_confidence?,
-      #               target_concept_name?, cwe_id?, owasp_id?, severity?,
-      #               description_ko?, aliases?, mechanisms? }
-      # status: infer_action in (MERGE, RELATED_TO) → "MERGE_PENDING", else "DRAFT"
-
-  - GET /staging/{session_id}/diff
-      response: { draft: int, approved: int, committed: int }   # DiffSummary
-
-  - POST /staging/{id}/approve      (200)
-      # id가 staging_concepts.id로 존재 → 단일 승인 (FOR UPDATE SKIP LOCKED)
-      single_response: { id: str, state: "APPROVED" }   # 409 처리중, 400 DRAFT 아님
-      # id가 존재하지 않으면 session_id로 간주 → 세션 일괄 승인
-      bulk_response:   { session_id: str, approved: int }
-
-  - POST /staging/{id}/reject       (200)
-      single_response: { id: str, state: "REJECTED" }   # 400 DRAFT 아님
-      bulk_response:   { session_id: str, rejected: int }
-
-  - POST /staging/{session_id}/commit   (202)
-      response: { session_id: str, status: "write_graph_triggered" }
-      side_effect: write_graph_task.apply_async(args=[session_id])
-
-  - GET /graph/topology
-      response: { nodes: [GraphNode (status="COMMITTED")], edges: [{source, target, type}] }
-      source: Neo4jConceptRepo.get_topology() — Concept 노드 + RELATED_TO 엣지
-
-required_state_fields: []   # 독립 서비스, PlatformState 불사용
-uses_kms: false
-uses_langsmith: true        # LANGCHAIN_PROJECT=module6-{githubId}
-
-validation_rule:
-  - SQL은 전부 asyncpg 파라미터 바인딩 ($1, $2 ...) — f-string 조합 금지
-  - staging 승인은 SELECT FOR UPDATE SKIP LOCKED로 이중 승인 방지
-  - 3-Factor 점수(score_jaro_winkler/name_vector/desc_vector) 0.0 전부인 채로
-    state=APPROVED 전이 금지 (schema.sql ★ 주의)
-
-error_rule:
-  - approve 409: 이미 처리 중이거나 존재하지 않는 staging 항목
-  - approve/reject 400: DRAFT 상태가 아닌 항목
-```
+문서 upsert·완료 문서 중복 검사·Neo4j MERGE·정규화 코드 키로 중복을 줄이지만 staging 재추출과 DB 간 원자성은 미완결이다. 상세 정책은 [Module 6 전용 문서](MODULE_6_ONTOLOGY_KNOWLEDGE_GRAPH.md), 실행·시드는 [M6 README](../backend/m6/README.md)를 따른다. `/graph/ingest`, `/graph/status/{task_id}`, `/graph/query`는 legacy 스텁이다.
 
 ---
 
 ## 모듈 간 연결 흐름 요약
 
+```mermaid
+flowchart LR
+    U["사용자"] --> M6["Module 6: 온톨로지 지식 그래프 관리"]
+    M6 --> P["문서·검수 상태 / 개념 벡터"]
+    M6 -->|승인 후 쓰기| G["neo4j_m6"]
+    U --> M5["Module 5: 기술 맥락 기반 YouTube 추천"]
+    M5 -->|읽기| G
+    M5 --> Y["YouTube Data API"]
 ```
-GitHub Webhook
-    │
-    ▼
-Module 1 (Orchestrator)
-    ├── pgVector 검색 (Module 0 KMS 활용)
-    │
-    ├── asyncio.gather([
-    │       Module 2 (정적분석 + 보안),
-    │       Module 3 (테스트 + 성능)
-    │   ])
-    │       각 모듈이 analysis_results에 AgentResult 추가
-    │
-    └── Module 4 (커리큘럼)
-            ├── analysis_results 취합 → 3-Way 판정
-            ├── GitHub 코멘트 작성
-            ├── Slack 에스컬레이션 (Critical 시)
-            └── pr_reviews + 학습 추천
 
-Module 5 (독립)
-    ← 별도 웹 UI에서 독립 실행
-    → Neo4j Aura 저장
-    → YouTube 추천
-    → doc_id / file_hash 보존 (향후 KMS 연결 준비)
-```
+M5와 M6는 각각 독립 서비스다. M6에서 그래프를 구축하고 M5에서 읽지만, 두 기능을 Module 5 하나의 파이프라인으로 정의하지 않는다. M0의 KMS 그래프와 neo4j_m6는 별도 인스턴스다.
+
+M0~M4의 기존 설계 계약은 위에 보존했으며 현재 실행과 차이가 있을 수 있다. 현재 M1은 정적·보안·테스트·성능 분석과 M3 리뷰 집계를 순차 호출하고, M4 학습 생성은 별도 요청 경로다. M1이 M5·M6를 직접 호출하는 경로는 이 문서에서 전제하지 않는다.
 
 ---
 

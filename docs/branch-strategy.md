@@ -1,7 +1,9 @@
 # 브랜치 전략
 
 **프로젝트**: 사내 지식 관리 + 신입 개발자 온보딩 플랫폼  
-**팀 구성**: 6명 (FE 1 + 서비스 5)
+**팀 구성**: 4명 (사용자 확인)
+
+아래 모듈별 브랜치명은 명명 기준이며 원격 브랜치 존재나 개인별 배정을 보장하지 않는다. 주차별 계획은 초기 운영안이다.
 
 ---
 
@@ -16,7 +18,8 @@ main                            ← 배포 브랜치
 ├── feature/module2-static-security  ← 정적분석 + 보안 (담당: Dev3)
 ├── feature/module3-test-performance ← 테스트 + 성능 (담당: Dev4)
 ├── feature/module4-curriculum  ← 커리큘럼 에이전트 (담당: Dev5)
-└── feature/module5-graph-youtube    ← GraphDB + YouTube 추천 (담당: Dev6)
+├── feature/module5-graph-youtube    ← 기술 맥락 기반 YouTube 추천
+└── feature/module6-knowledge-graph  ← 온톨로지 기반 지식 그래프 관리
 ```
 
 ---
@@ -30,7 +33,8 @@ main                            ← 배포 브랜치
 | Module 2 | `feature/module2-static-security` | ESLint/Pylint, SQL 인젝션/XSS/CSRF 탐지 |
 | Module 3 | `feature/module3-test-performance` | 커버리지 측정, N+1 쿼리 감지 |
 | Module 4 | `feature/module4-curriculum` | 3-Way 판정, GitHub 코멘트, Slack 에스컬레이션 |
-| Module 5 | `feature/module5-graph-youtube` | Neo4j 엔티티 추출, YouTube 학습 추천 |
+| Module 5 | `feature/module5-graph-youtube` | 그래프 조회·검색어 구성·YouTube 추천 |
+| Module 6 | `feature/module6-knowledge-graph` | 문서 수집·온톨로지 추출·HITL·지식 그래프 관리 |
 
 ---
 

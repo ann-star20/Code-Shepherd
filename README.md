@@ -18,6 +18,18 @@
 
 표는 모듈별 역할 요약이며 모든 기능의 완성을 뜻하지 않습니다. M3는 기본 Compose와 자동 적용되는 `docker-compose.override.yml`의 진입점이 다릅니다. 실제 실행 진입점은 두 파일을 함께 확인하세요.
 
+## Module 5 — 기술 맥락 기반 YouTube 추천
+
+사용자가 선택한 개념·메커니즘·언어·프레임워크를 바탕으로 영상을 찾는 독립 FastAPI 서비스(:8006)입니다. neo4j_m6를 읽어 검색어를 만들고 YouTube Data API를 호출합니다. 문서 추출·온톨로지 관리·그래프 저장은 담당하지 않습니다.
+
+[Module 5 전용 설명](docs/MODULE_5_GRAPH_YOUTUBE_RULE.md) · [M5 실행·API](backend/m5/README.md)
+
+## Module 6 — 온톨로지 기반 지식 그래프 관리
+
+외부 기술 문서를 수집·청킹·추출하고 기존 개념과 비교해 검수 후보로 저장하는 독립 서비스(:8007)입니다. 사람의 승인 후 Neo4j에 반영하며 4계층 온톨로지와 문서·검수 상태를 관리합니다. Celery·Redis·PostgreSQL/pgvector를 사용하고 영상 추천은 M5에 둡니다.
+
+[Module 6 전용 설명](docs/MODULE_6_ONTOLOGY_KNOWLEDGE_GRAPH.md) · [M6 실행·검수·시드](backend/m6/README.md)
+
 ## 아키텍처
 
 ```mermaid
@@ -26,7 +38,7 @@ flowchart LR
     GH["GitHub PR"] --> M1["M1 :8001"]
     M1 --> M2["M2 보안 스캔"]
     M1 --> M3["M3 검증·성능"]
-    M1 --> M4["M4 커리큘럼"]
+    UI --> M4["M4 커리큘럼"]
     UI --> M0["M0 KMS"]
     M0 --> KMSDB["KMS 저장소 / neo4j :7687"]
     UI --> M6["M6 API :8007"]

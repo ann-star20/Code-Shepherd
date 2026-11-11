@@ -1,7 +1,7 @@
 # AGENT_STATE_SCHEMA.md — LangGraph 공통 State 스키마
 
 **버전**: v1.0 | **위치**: `src/common/state.py` | **작성일**: 2026-06-04  
-**모든 모듈은 이 State 스키마를 기반으로 동작한다. 임의 재정의 금지.**
+> 아래 PlatformState는 초기 공통 설계입니다. M5는 추천 요청·응답 모델, M6는 HTTP·Celery·DB 상태를 사용하며 이 LangGraph State를 사용하지 않습니다. 두 모듈의 현행 상태는 섹션 5와 5-1을 따릅니다.
 
 ---
 
@@ -345,31 +345,44 @@ def evaluate(state: PlatformState) -> dict:
 
 ---
 
-## 5. Module 5 — 독립 State
+## 5. Module 5 — YouTube 추천 요청·응답
 
-Module 5 (GraphDB + YouTube)는 PlatformState를 사용하지 않는다.  
-doc_id / file_hash를 공통 키로 보존하여 향후 KMS 연결 가능하게 설계한다.
+M5는 PlatformState·LangGraph State를 사용하지 않는 FastAPI 요청·응답 서비스다. 과거 Module5State의 파일·entities·relations는 현행 상태 모델이 아니다.
 
 ```python
-class Module5State(TypedDict, total=False):
-    """Module 5 전용 독립 State."""
-    # 공통 키 (향후 KMS 연결을 위해 필수 보존)
-    doc_id:            str           # UUID v4 — 반드시 생성
-    file_hash:         str           # SHA-256 — 중복 감지 + KMS 매칭용
-    source_system:     str           # 항상 "graph_youtube"
-    original_filename: str
+# backend/m5/app/schemas.py의 현행 모델 요약
+class RankedRecommendRequest(BaseModel):
+    concept_name: str
+    mechanism_name: str | None = None
+    code_id: str | None = None
+    code_lang: str | None = None
+    code_framework: str | None = None
 
-    # 처리 결과
-    entities:          list[dict]    # 추출된 엔티티
-    relations:         list[dict]    # 엔티티 간 관계
-    keywords:          list[str]     # 키워드 목록
-    recommend_query:   list[str]     # YouTube 검색 쿼리
-    youtube_results:   list[dict]    # YouTube 추천 결과
-
-    # 상태
-    status:            str           # "stored | failed"
-    error_message:     str
+class RankedRecommendResponse(BaseModel):
+    concept_name: str
+    videos: list[VideoResult]
 ```
+
+code_id는 수신하지만 현재 사용하지 않는다. 영상 항목과 오류는 [M5 계약](MODULE_CONTRACT.md#module-5--기술-맥락-기반-youtube-추천), [M5 모델](../backend/m5/app/schemas.py)을 따른다.
+
+## 5-1. Module 6 — 문서 처리·검수 상태
+
+M6는 별도 HTTP API·Celery 작업·PostgreSQL 상태를 사용한다. 아래 데이터는 LangGraph 체크포인트나 Module5State에 속하지 않는다.
+
+| 상태·키 | 소유·용도 |
+| --- | --- |
+| trigger 요청 doc_id | M6 입력 필드명. 값은 문서 URL(HttpUrl) |
+| 내부 doc_id | 문서 식별자. URL 기반 슬러그와 콘텐츠 해시로 구성 |
+| session_id | 처리 세션, SSE 채널·staging 조회·commit 요청 연결 |
+| knowledge_documents.state | PENDING / CRAWLING / EXTRACTING / EXTRACTED / COMMITTED / FAILED |
+| staging_concepts.state | DRAFT / APPROVED / REJECTED / COMMITTED |
+| infer_action | MERGE / RELATED_TO / NEW |
+| infer_confidence·score_* | 후보 해소의 종합·세부 점수 |
+| target_concept_name | 병합·연관 대상으로 선택한 기준 개념 |
+
+클라이언트 GraphNode.status는 표시용 값이며 staging의 검수 state와 다를 수 있다. DRAFT/APPROVED 후보 표시에도 MERGE_PENDING이 사용될 수 있으므로 이를 DB 검수 상태로 해석하지 않는다.
+
+[Module 6 문서](MODULE_6_ONTOLOGY_KNOWLEDGE_GRAPH.md) · [M6 API 계약](MODULE_CONTRACT.md#module-6--온톨로지-기반-지식-그래프-관리) · [DDL](../backend/m6/script/schema.sql)
 
 ---
 
@@ -377,7 +390,7 @@ class Module5State(TypedDict, total=False):
 
 ```
 □ PlatformState의 14개 공통 필드는 다른 TypedDict에서 재정의 금지
-□ Module 5는 PlatformState를 상속하지 않는다 (독립 State)
+□ Module 5·6는 PlatformState·LangGraph State를 사용하지 않는다 (각 HTTP 모델·DB 상태 사용)
 □ task_id는 Module 1이 생성, 이후 변경 금지
 □ trace_id는 Module 1이 생성, 이후 변경 금지
 □ analysis_results는 덮어쓰기 금지 — 항상 기존 목록에 추가 (+= 패턴)

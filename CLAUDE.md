@@ -1,12 +1,12 @@
 # 팀 공통 개발 가이드라인
 
-**대상**: 전 모듈 담당자 (Module 0 ~ Module 5, FE)  
+**대상**: 전 모듈 담당자 (Module 0 ~ Module 6, FE)
 **목적**: 협업 진입점 — 세부 규칙은 아래 참조 문서로 연결됩니다.
 
-> **세부 Agent/Validation/Harness/Pydantic 규칙** → [`docs/GLOBAL_AGENT_RULE.md`](GLOBAL_AGENT_RULE.md)  
-> **LangGraph State 스키마** → [`docs/AGENT_STATE_SCHEMA.md`](AGENT_STATE_SCHEMA.md)  
-> **모듈 간 Output Contract** → [`docs/MODULE_CONTRACT.md`](MODULE_CONTRACT.md)  
-> **브랜치 구조 상세** → [`docs/branch-strategy.md`](branch-strategy.md)
+> **세부 Agent/Validation/Harness/Pydantic 규칙** → [`docs/GLOBAL_AGENT_RULE.md`](docs/GLOBAL_AGENT_RULE.md)
+> **LangGraph State 스키마** → [`docs/AGENT_STATE_SCHEMA.md`](docs/AGENT_STATE_SCHEMA.md)
+> **모듈 간 Output Contract** → [`docs/MODULE_CONTRACT.md`](docs/MODULE_CONTRACT.md)
+> **브랜치 구조 상세** → [`docs/branch-strategy.md`](docs/branch-strategy.md)
 
 ---
 
@@ -63,20 +63,20 @@ feature/{module}  →  PR  →  dev  →  (Week 5 통합)  →  main
 }
 ```
 
-> Agent 출력 전체 Contract → [`docs/GLOBAL_AGENT_RULE.md §4`](GLOBAL_AGENT_RULE.md)
+> Agent 출력 전체 Contract → [`docs/GLOBAL_AGENT_RULE.md §4`](docs/GLOBAL_AGENT_RULE.md)
 
 ---
 
 ## 4. Agent / Workflow / LLM Node / Tool 구분
 
-> **이미 정의됨** → [`docs/GLOBAL_AGENT_RULE.md §1`](GLOBAL_AGENT_RULE.md)
+> **이미 정의됨** → [`docs/GLOBAL_AGENT_RULE.md §1`](docs/GLOBAL_AGENT_RULE.md)
 
 ---
 
 ## 5. LangSmith + Harness
 
-> **이미 정의됨** → [`docs/GLOBAL_AGENT_RULE.md §7~8`](GLOBAL_AGENT_RULE.md)  
-> **빠른 시작** → [`docs/harness-guide.md`](harness-guide.md)
+> **이미 정의됨** → [`docs/GLOBAL_AGENT_RULE.md §7~8`](docs/GLOBAL_AGENT_RULE.md)
+> **빠른 시작** → [`docs/harness-guide.md`](docs/harness-guide.md)
 
 ### LangSmith 프로젝트 네이밍 (요약)
 
@@ -100,6 +100,10 @@ USE_MOCK_LLM=false   # 통합 테스트 / 데모
 코드 변경 없이 환경변수만으로 전환한다.
 
 ## 7. 모듈별 세부 스펙
+
+- Module 5: [기술 맥락 기반 YouTube 추천](docs/MODULE_5_GRAPH_YOUTUBE_RULE.md)
+- Module 6: [온톨로지 기반 지식 그래프 관리](docs/MODULE_6_ONTOLOGY_KNOWLEDGE_GRAPH.md)
+- 두 모듈은 독립 HTTP 서비스이며 공통 PlatformState를 사용하지 않는다. 문서 추출·그래프 쓰기를 M5의 책임으로 통합하지 않는다.
 
 코딩 시작 전 현재 브랜치를 확인하고, 해당 스펙 문서를 먼저 읽는다.
 
