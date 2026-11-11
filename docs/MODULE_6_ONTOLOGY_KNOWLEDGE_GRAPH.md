@@ -2,6 +2,8 @@
 
 Module 6는 **외부 기술 문서를 검수 가능한 지식 그래프로 구축·관리하는 서비스**다. [Module 5](MODULE_5_GRAPH_YOUTUBE_RULE.md)는 이 그래프를 조회해 YouTube 영상을 추천하는 별도 모듈이다.
 
+시드 구성 기준·검증 게이트·멱등성의 상세 근거는 [M6 지식 품질 관리](M6_SEED_AND_KNOWLEDGE_QUALITY.md)를 참고한다.
+
 ## 목적과 책임
 
 외부 URL 수집, 구조적 청킹, LLM 개념 추출·검증, 기존 개념과의 해소, 사람의 검수, Neo4j 반영을 담당한다. FastAPI :8007, Celery m6_graph queue, Redis, PostgreSQL/pgvector, Neo4j/APOC로 구성한다. 고정된 처리 순서와 명시적인 승인·재개 API를 사용하며 LangGraph는 사용하지 않는다.

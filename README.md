@@ -28,7 +28,7 @@
 
 외부 기술 문서를 수집·청킹·추출하고 기존 개념과 비교해 검수 후보로 저장하는 독립 서비스(:8007)입니다. 사람의 승인 후 Neo4j에 반영하며 4계층 온톨로지와 문서·검수 상태를 관리합니다. Celery·Redis·PostgreSQL/pgvector를 사용하고 영상 추천은 M5에 둡니다.
 
-[Module 6 전용 설명](docs/MODULE_6_ONTOLOGY_KNOWLEDGE_GRAPH.md) · [M6 실행·검수·시드](backend/m6/README.md)
+[Module 6 전용 설명](docs/MODULE_6_ONTOLOGY_KNOWLEDGE_GRAPH.md) · [M6 실행·검수·시드](backend/m6/README.md) · [시드 기준·지식 품질 관리](docs/M6_SEED_AND_KNOWLEDGE_QUALITY.md)
 
 ## 아키텍처
 
