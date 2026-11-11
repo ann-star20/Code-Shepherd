@@ -32,6 +32,10 @@
 
 ## 아키텍처
 
+![전체 프로젝트 아키텍처 — My Role: M5·M6](docs/assets/codeshepherd-system-architecture-my-role.svg)
+
+파란색과 My Role 배지는 M5·M6 담당 범위를 나타냅니다. 회색은 팀 모듈·공통 인프라입니다. 주요 요청·저장 경로를 표현하며 전체 서비스를 하나의 순차 실행 체인으로 나타내지 않습니다.
+
 ```mermaid
 flowchart LR
     UI["Frontend :5173"] --> CORE["api-core :8000"]
