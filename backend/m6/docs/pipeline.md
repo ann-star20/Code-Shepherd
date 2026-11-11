@@ -1,3 +1,5 @@
+> 문서 상태: 아래 본문은 과거 설계·요구사항을 포함합니다. 현재 구현 기준은 [M6 README](../README.md)와 [M5·M6 아키텍처](../../../docs/M5_M6_ARCHITECTURE.md)입니다. 구현 여부·임계값·스키마는 실행 코드와 DDL을 우선 확인하세요.
+
 # pipeline.md — 자동 지식그래프 구축 파이프라인 지침
 
 > 출처: `backend/app/worker/tasks.py`, `interfaces/api/{pipeline,staging,prescan}.py`. Celery+Redis 비동기 체인.
