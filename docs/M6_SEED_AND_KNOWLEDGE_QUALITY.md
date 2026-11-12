@@ -70,3 +70,11 @@ CodeExample의 언어·프레임워크 버전은 속성으로 저장하지만 **
 - backend/m6/app/worker/tasks.py: _ensure_domains, _validate_concepts, _write_graph_async
 - backend/m6/app/adapters/db/neo4j_repo.py
 - backend/m6/app/infrastructure/graph/hybrid_resolver.py
+
+## 기술서 핵심 메시지와 청킹 범위
+
+LLM이 생성한 결과를 단순 응답으로 소비하지 않고, 검증·승인·개념 해소를 거쳐 재사용 가능한 지식으로 전환하는 백엔드 시스템을 설계했다. 장시간 실행되는 추출·그래프 반영 작업은 Celery worker로 웹 서버와 분리하고, PostgreSQL의 문서·검수 상태와 Redis 진행 이벤트, 외부 API 호출 제한을 관리한다. PostgreSQL 상태 관리를 워크플로 Checkpointer 구현으로 표현하지 않는다.
+
+M6는 외부 URL의 정제 본문을 제목·문단 경계 우선으로 나눈다. 현재 기본값은 최소 탐색 위치 20,000자, 최대 30,000자, 겹침 2,500자다. 청크 전체를 모델 입력에 전달하며 별도 30,000자 절단은 제거했다. 이는 문자 기준 정책이며 모델별 토큰 한도와 프롬프트·출력 여유까지 자동 계산하는 토큰 예산 제어는 아니다.
+
+청킹 평가는 내용 누락·코드와 설명의 분리·추출 개념 및 관계의 정확성과 재현율·중복 후보·문서당 비용을 기준으로 수행해야 한다. 현재 길이를 품질 평가로 최적화했다고 주장하지 않는다. 대규모 트래픽 처리, API 성공률 향상, LLM 추출 정확도 개선, 자동 복구 완성을 입증할 수치가 없으면 성과로 기재하지 않는다.

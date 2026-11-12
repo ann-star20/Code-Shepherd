@@ -375,6 +375,16 @@ class TestNormalizeEtag:
 
 
 class TestChunkText:
+    def test_default_chunks_preserve_entire_long_document(self):
+        from app.worker.tasks import _chunk_text
+
+        text = "A" * 35000 + "TAIL_SENTINEL"
+        chunks = _chunk_text(text)
+        assert all(len(chunk) <= 30000 for chunk in chunks)
+        reconstructed = chunks[0] + "".join(chunk[2500:] for chunk in chunks[1:])
+        assert reconstructed == text
+
+
     def test_short_text_single_chunk(self):
         from app.worker.tasks import _chunk_text
         chunks = _chunk_text("hello world", max_len=4000)
@@ -560,8 +570,9 @@ class TestListAllowedDomains:
 
 
 class TestGeminiExtract:
+    @pytest.mark.parametrize("body_length", [30001, 35000, 40000])
     @pytest.mark.asyncio
-    async def test_prompt_includes_4layer_ontology_context(self):
+    async def test_prompt_includes_4layer_ontology_context(self, body_length):
         """4-Layer 온톨로지 프롬프트에 framework/language/allowed_domains 컨텍스트가 주입된다."""
         from app.worker.tasks import _gemini_extract
 
@@ -578,13 +589,15 @@ class TestGeminiExtract:
         metadata = {"framework": "Django", "language": "python", "allowed_domains": ["security", "performance"]}
 
         with patch("app.worker.tasks.httpx.AsyncClient", return_value=mock_client):
-            result = await _gemini_extract("some chunk text", ctx, metadata)
+            chunk = "A" * (body_length - 12) + "TAIL_SENTINEL"
+            result = await _gemini_extract(chunk, ctx, metadata)
 
         assert result == []
         sent_prompt = mock_client.post.call_args.kwargs["json"]["contents"][0]["parts"][0]["text"]
         assert "security" in sent_prompt
         assert "performance" in sent_prompt
         assert "Django" in sent_prompt
+        assert sent_prompt.endswith(chunk)
 
     @pytest.mark.asyncio
     async def test_prompt_includes_pydantic_format_instructions(self):

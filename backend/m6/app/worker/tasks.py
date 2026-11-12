@@ -290,8 +290,8 @@ _DEFENSE_NAME_PATTERN = re.compile(r"(Protection|Defense|Mitigation|Guard|Filter
 
 def _chunk_text(
     text: str,
-    min_len: int = 30000,
-    max_len: int = 40000,
+    min_len: int = 20000,
+    max_len: int = 30000,
     overlap: int = 2500,
 ) -> list[str]:
     """구조적 청킹 - 헤더/문단 경계 스냅 + 컨텍스트 오버랩 보존.
@@ -620,7 +620,7 @@ async def _gemini_extract(chunk: str, ctx: dict, metadata: dict | None = None) -
         "마크다운 래핑 기호 외에 어떠한 부연 설명 텍스트도 출력하지 마라.\n\n"
         + _FORMAT_INSTRUCTIONS
         + "\n\n"
-        + chunk[:30000]
+        + chunk
     )
     
     logger.debug("%s gemini_raw_request START %s", "=" * 10, "=" * 10)
